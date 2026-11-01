@@ -398,9 +398,14 @@ ar por alguns instantes no final. Se algo der errado, a janela mostra o motivo e
 na versão anterior. No rodapé do painel, **verificar atualizações** abre a mesma janela a qualquer momento.
 
 **Como funciona por baixo (segurança):** o site não tem poder sobre o servidor. Ao clicar, ele só
-deixa um *pedido* na pasta `atualizacao/`; quem atualiza é um serviço do próprio servidor
-(`prefichas-atualizador-<nome>`, instalado pelo assistente). O máximo que alguém conseguiria pedir
-pelo site é "atualize para a versão oficial do GitHub".
+deixa um *pedido* em `atualizacao/pedido/` — a única pasta em que consegue escrever. Quem atualiza é
+um serviço do próprio servidor (`prefichas-atualizador-<nome>`, instalado pelo assistente), que
+escreve o andamento em `atualizacao/estado/`, pasta do root que o site só consegue ler. O serviço
+recusa atalhos (symlinks) e nunca altera nada na pasta do site. O máximo que alguém conseguiria
+pedir pelo site é "atualize para a versão oficial do GitHub".
+
+> Instalações feitas antes desta versão: rode de novo `sudo ./scripts/instalar-atualizador.sh` e
+> `sudo docker compose up -d` para passar para a estrutura de pastas nova.
 
 > O assistente `novo-acampamento.sh` já ativa isso. Em instalações antigas (ou se o botão disser que a
 > atualização pelo painel não está ativada), rode uma vez, na pasta da instalação:
@@ -421,7 +426,7 @@ alterou arquivos dentro da pasta da instalação, o script **para sem mexer em n
 com `git status` (normalmente basta desfazer com `git checkout -- .`). Sem Docker:
 `sudo MODO=local ./scripts/atualizar.sh`.
 
-Para acompanhar uma atualização feita pelo painel: `cat atualizacao/log.txt` na pasta da instalação.
+Para acompanhar uma atualização feita pelo painel: `cat atualizacao/estado/log.txt` na pasta da instalação.
 
 ## 10. Comandos do dia a dia
 
@@ -527,6 +532,12 @@ sudo docker compose exec app node server/cli.js redefinir-senha seu-email@exempl
 
 **"Muitas tentativas" ao entrar no painel**
 - Proteção contra senha chutada: aguarde 1 minuto.
+- "Muitas tentativas erradas para esta conta": a conta fica bloqueada por 15 minutos depois de
+  8 senhas erradas (de qualquer lugar). Ajuste com `LOGIN_MAX_FALHAS_CONTA` e `LOGIN_BLOQUEIO_MINUTOS`.
+
+**Perdi o celular com o código das duas etapas**
+- Outro administrador gera uma **Nova senha** em Usuários (isso desliga as duas etapas), ou pelo
+  terminal: `sudo docker compose exec app node server/cli.js redefinir-senha seu-email@exemplo.com`.
 
 **"Muitos envios a partir desta rede" no formulário**
 - Muitas pessoas enviando do mesmo Wi-Fi (ex.: evento na paróquia). Aumente `LIMITE_ENVIOS_POR_HORA`
@@ -547,6 +558,14 @@ sudo docker compose exec app node server/cli.js redefinir-senha seu-email@exempl
 ---
 
 ## 13. Checklist de segurança
+
+- [ ] **Verificação em duas etapas** ativada pelos administradores (painel → Minha conta).
+- [ ] `URL_PUBLICA` preenchida no `.env` (o assistente já faz).
+- [ ] (Opcional) CAPTCHA no formulário, se houver envio de fichas falsas: crie um site gratuito no
+      Cloudflare Turnstile e preencha `TURNSTILE_SITE_KEY` e `TURNSTILE_SECRET` no `.env`, depois
+      `sudo docker compose up -d`. Limites do formulário: `LIMITE_ENVIOS_POR_HORA` (por IP),
+      `LIMITE_ENVIOS_POR_CONTATO_DIA` (mesmo telefone/e-mail, padrão 3) e `LIMITE_ENVIOS_GLOBAL_HORA`
+      (todos somados, padrão 300).
 
 - [ ] Firewall ligado, só com SSH, 80 e 443.
 - [ ] Sistema atualizado com frequência: `sudo apt update && sudo apt upgrade -y`

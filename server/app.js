@@ -43,7 +43,9 @@ export async function construirApp({ pool, config, logger = true, chavesLicenca 
       useDefaults: false,
       directives: {
         defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
+        // CAPTCHA opcional (Turnstile) precisa do script e do quadro da Cloudflare
+        scriptSrc: ["'self'", ...(config.captcha ? ['https://challenges.cloudflare.com'] : [])],
+        frameSrc: config.captcha ? ['https://challenges.cloudflare.com'] : ["'none'"],
         styleSrc: ["'self'"],
         imgSrc: ["'self'", 'data:'],
         fontSrc: ["'self'", 'data:'],
@@ -130,7 +132,7 @@ export async function construirApp({ pool, config, logger = true, chavesLicenca 
     // Páginas com nome, cores e ícone do acampamento
     const renderizar = criarRenderizadorHtml(config.pastaSite)
     const pagina = (nome) => async (req, reply) => {
-      const html = renderizar(nome, await carregarMarca(pool), `${req.protocol}://${req.host}`)
+      const html = renderizar(nome, await carregarMarca(pool), config.urlPublica)
       if (!html) return reply.code(404).send('Site não gerado. Rode "npm run build".')
       return reply.header('Cache-Control', 'no-cache').type('text/html; charset=utf-8').send(html)
     }

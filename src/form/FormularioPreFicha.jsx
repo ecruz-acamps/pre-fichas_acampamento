@@ -72,6 +72,26 @@ export default function FormularioPreFicha({ marca }) {
   const [enviado, setEnviado] = useState(false)
   const [cepStatus, setCepStatus] = useState({ carregando: false, msg: '' })
   const formRef = useRef(null)
+  // CAPTCHA opcional (Cloudflare Turnstile), só se o acampamento configurou
+  const captchaRef = useRef(null)
+  const widgetRef = useRef(null)
+  const [captchaToken, setCaptchaToken] = useState('')
+  useEffect(() => {
+    if (!marca.captcha?.siteKey || !captchaRef.current) return
+    const desenhar = () => {
+      if (widgetRef.current !== null || !window.turnstile) return
+      widgetRef.current = window.turnstile.render(captchaRef.current, {
+        sitekey: marca.captcha.siteKey, language: 'pt-br',
+        callback: (t) => setCaptchaToken(t), 'expired-callback': () => setCaptchaToken(''),
+      })
+    }
+    if (window.turnstile) return desenhar()
+    const sc = document.createElement('script')
+    sc.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit'
+    sc.async = true
+    sc.onload = desenhar
+    document.head.appendChild(sc)
+  }, [marca.captcha])
 
   const idade = useMemo(() => calcularIdade(f.data_nascimento), [f.data_nascimento])
   const compativeis = useMemo(() => modalidadesCompativeis(idade, f.estado_civil), [idade, f.estado_civil])
@@ -130,16 +150,19 @@ export default function FormularioPreFicha({ marca }) {
 
     setEnviando(true)
     try {
-      await api.post('/api/pre-fichas', f)
+      await api.post('/api/pre-fichas', marca.captcha ? { ...f, captcha: captchaToken } : f)
     } catch (err) {
       setEnviando(false)
-      if (err.dados?.erros) {
+      if (marca.captcha && window.turnstile && widgetRef.current !== null) { window.turnstile.reset(widgetRef.current); setCaptchaToken('') }
+      if (err.dados?.erros?.captcha) {
+        setErroEnvio('Confirme a verificação "não sou um robô" e envie de novo.')
+      } else if (err.dados?.erros) {
         setErros(err.dados.erros)
         setErroEnvio('Confira os campos destacados.')
       } else if (err.status === 503) {
         setErroEnvio('As inscrições ainda não estão disponíveis. Tente novamente mais tarde.')
       } else if (err.status === 429) {
-        setErroEnvio('Muitos envios a partir desta rede. Aguarde alguns minutos e tente novamente.')
+        setErroEnvio(err.dados?.mensagem || 'Muitos envios a partir desta rede. Aguarde alguns minutos e tente novamente.')
       } else {
         setErroEnvio('Não foi possível enviar sua pré-ficha. Verifique sua conexão e tente novamente.')
       }
@@ -410,6 +433,7 @@ export default function FormularioPreFicha({ marca }) {
         </section>
       )}
 
+      {marca.captcha && <div className="captcha" ref={captchaRef} />}
       {erroEnvio && <div className="alerta-erro" role="alert">{erroEnvio}</div>}
 
       <div className="acoes">

@@ -23,9 +23,23 @@ export function lerConfig(env = process.env) {
     proxiesConfiaveis: int(env.PROXIES_CONFIAVEIS, 1),
     sessaoHoras: int(env.SESSAO_HORAS, 12),
     limiteEnviosPorHora: int(env.LIMITE_ENVIOS_POR_HORA, 30),
+    // Proteção do formulário contra inundação
+    limiteEnviosGlobalHora: int(env.LIMITE_ENVIOS_GLOBAL_HORA, 300),   // somando todos os IPs
+    limiteEnviosPorContatoDia: int(env.LIMITE_ENVIOS_POR_CONTATO_DIA, 3), // mesmo telefone ou e-mail
+    // CAPTCHA opcional (Cloudflare Turnstile): ativo só com as duas chaves
+    captcha: env.TURNSTILE_SITE_KEY && env.TURNSTILE_SECRET ? {
+      siteKey: env.TURNSTILE_SITE_KEY,
+      secret: env.TURNSTILE_SECRET,
+      verificarUrl: env.TURNSTILE_VERIFICAR_URL || 'https://challenges.cloudflare.com/turnstile/v0/siteverify',
+    } : null,
     limiteLoginPorMinuto: int(env.LIMITE_LOGIN_POR_MINUTO, 10),
+    // Bloqueio por conta: N erros em 15 min bloqueiam aquele e-mail por 15 min (qualquer IP)
+    protecaoLogin: { maxFalhas: int(env.LOGIN_MAX_FALHAS_CONTA, 8), janelaMin: 15, bloqueioMin: int(env.LOGIN_BLOQUEIO_MINUTOS, 15), simultaneas: 2, fila: 20 },
     viaCepUrl: env.VIACEP_URL || 'https://viacep.com.br/ws',
     pastaSite: env.PASTA_SITE || new URL('../dist', import.meta.url).pathname,
+    // Endereço público do site (ex.: https://prefichas.seuacampamento.com.br), usado na
+    // prévia de links (WhatsApp). Nunca é deduzido do cabeçalho da requisição.
+    urlPublica: (env.URL_PUBLICA || '').replace(/\/+$/, '') || null,
     // Arquivo de marca aplicado na primeira inicialização (ex.: marcas/sao-padre-pio.json)
     marcaInicial: env.MARCA_INICIAL || null,
     // Aviso de atualização: compara a versão instalada com o GitHub

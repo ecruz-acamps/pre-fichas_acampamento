@@ -3,7 +3,7 @@
 // ATENÇÃO: o banco de teste é APAGADO a cada execução. Nunca aponte para produção.
 import { after, before, describe, test } from 'node:test'
 import { createServer } from 'node:http'
-import { mkdtempSync, writeFileSync, existsSync, readFileSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, writeFileSync, existsSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import assert from 'node:assert/strict'
@@ -12,6 +12,7 @@ import { lerConfig } from '../config.js'
 import { criarPool, migrar } from '../db.js'
 import { invalidarMarca } from '../marca.js'
 import { esquecerLicenca, gerarHashChave } from '../licenca.js'
+import { _codigoNoPasso, passoAtual } from '../totp.js'
 import { gerarHash } from '../senha.js'
 
 const URL_TESTE = process.env.DATABASE_URL_TESTE
@@ -53,6 +54,7 @@ describe('API', { skip: pular }, () => {
     chavesTeste = [await gerarHashChave('TST-0001', 'teste')]
     const config = {
       ...lerConfig({ DATABASE_URL: URL_TESTE }), cookieSeguro: false, limiteEnviosPorHora: 1000, limiteLoginPorMinuto: 1000,
+      limiteEnviosPorContatoDia: 100000, limiteEnviosGlobalHora: 100000,
     }
     app = await construirApp({ pool, config, logger: false, chavesLicenca: chavesTeste })
     await pool.query(
@@ -747,6 +749,7 @@ describe('API', { skip: pular }, () => {
 
     test('botão "Atualizar agora": sem atualizador instalado explica como ativar', async () => {
       const pasta = mkdtempSync(join(tmpdir(), 'atualizador-'))
+      mkdirSync(join(pasta, 'pedido')); mkdirSync(join(pasta, 'estado'))
       const a = await appCom({ versao: '2.0.0', commit: SHA_A }, { pastaControle: pasta })
       const r = await a.inject({ method: 'POST', url: '/api/admin/atualizacao/executar', headers: como('admin') })
       const info = (await a.inject({ method: 'GET', url: '/api/admin/atualizacao', headers: como('admin') })).json()
@@ -754,25 +757,29 @@ describe('API', { skip: pular }, () => {
       assert.equal(r.statusCode, 409)
       assert.match(r.json().mensagem, /instalar-atualizador\.sh/)
       assert.equal(info.atualizador.instalado, false)
-      assert.equal(existsSync(join(pasta, 'solicitar')), false)
+      assert.equal(existsSync(join(pasta, 'pedido', 'solicitar')), false)
     })
 
     test('botão "Atualizar agora": grava o pedido, mostra o andamento e não deixa pedir duas vezes', async () => {
       const pasta = mkdtempSync(join(tmpdir(), 'atualizador-'))
-      writeFileSync(join(pasta, 'atualizador.json'), JSON.stringify({ instalado_em: 'x', modo: 'docker' }))
+      mkdirSync(join(pasta, 'pedido')); mkdirSync(join(pasta, 'estado'))
+      writeFileSync(join(pasta, 'estado', 'atualizador.json'), JSON.stringify({ instalado_em: 'x', modo: 'docker' }))
       const a = await appCom({ versao: '2.0.0', commit: SHA_A }, { pastaControle: pasta })
       assert.equal((await a.inject({ method: 'POST', url: '/api/admin/atualizacao/executar', headers: como('equipe') })).statusCode, 403)
       const r = await a.inject({ method: 'POST', url: '/api/admin/atualizacao/executar', headers: como('admin') })
       assert.equal(r.statusCode, 200)
-      assert.ok(existsSync(join(pasta, 'solicitar')), 'pedido gravado para o atualizador do servidor')
-      assert.equal(JSON.parse(readFileSync(join(pasta, 'pedido.json'), 'utf8')).usuario, 'Admin')
+      assert.ok(existsSync(join(pasta, 'pedido', 'solicitar')), 'pedido gravado para o atualizador do servidor')
+      assert.equal(JSON.parse(readFileSync(join(pasta, 'pedido', 'pedido.json'), 'utf8')).usuario, 'Admin')
+      assert.equal(existsSync(join(pasta, 'estado', 'estado.json')), false, 'o site não escreve na pasta de estado')
+      const sol = (await a.inject({ method: 'GET', url: '/api/admin/atualizacao/progresso', headers: como('admin') })).json()
+      assert.equal(sol.estado.etapa, 'solicitado')
       const dup = await a.inject({ method: 'POST', url: '/api/admin/atualizacao/executar', headers: como('admin') })
       assert.equal(dup.statusCode, 409)
       assert.equal(dup.json().emAndamento, true)
 
       // o atualizador do servidor escreve o andamento; o painel lê
-      writeFileSync(join(pasta, 'estado.json'), JSON.stringify({ etapa: 'executando', sucesso: null }))
-      writeFileSync(join(pasta, 'log.txt'), '→ Fazendo backup antes de atualizar…\n→ Baixando o código novo…\n')
+      writeFileSync(join(pasta, 'estado', 'estado.json'), JSON.stringify({ etapa: 'executando', sucesso: null }))
+      writeFileSync(join(pasta, 'estado', 'log.txt'), '→ Fazendo backup antes de atualizar…\n→ Baixando o código novo…\n')
       const p = (await a.inject({ method: 'GET', url: '/api/admin/atualizacao/progresso', headers: como('admin') })).json()
       await a.close()
       assert.equal(p.estado.etapa, 'executando')
@@ -785,6 +792,131 @@ describe('API', { skip: pular }, () => {
       assert.equal((await a.inject({ method: 'GET', url: '/api/admin/atualizacao', headers: como('coord') })).statusCode, 403)
       assert.equal((await a.inject({ method: 'GET', url: '/api/admin/atualizacao' })).statusCode, 401)
       await a.close()
+    })
+  })
+
+
+  // ------------------------------------------------------------------ segurança (itens 4, 7, 8 e 9)
+  describe('segurança: login, duas etapas e proteção do formulário', () => {
+    const outraApp = (extra) => construirApp({ pool, logger: false, chavesLicenca: chavesTeste, config: { ...app.config, ...extra } })
+    const loginEm = (a, email, senha, ip, codigo) => a.inject({ method: 'POST', url: '/api/auth/login',
+      headers: { ...H, 'x-forwarded-for': ip }, payload: { email, senha, ...(codigo !== undefined ? { codigo } : {}) } })
+
+    before(async () => {
+      await pool.query(`insert into usuarios (email, nome, papel, senha_hash, trocar_senha) values
+        ('alvo@x.com', 'Alvo', 'admin', $1, false), ('dois@x.com', 'Dois', 'admin', $1, false)`, [await gerarHash(SENHA)])
+    })
+
+    test('item 8: erros de senha vindos de vários IPs bloqueiam a conta (e só ela)', async () => {
+      const a = await outraApp({ protecaoLogin: { maxFalhas: 3, janelaMin: 15, bloqueioMin: 15, simultaneas: 2, fila: 20 } })
+      for (let i = 1; i <= 3; i++) assert.equal((await loginEm(a, 'alvo@x.com', 'errada', `10.0.0.${i}`)).statusCode, 401)
+      const bloqueado = await loginEm(a, 'alvo@x.com', SENHA, '10.0.0.9')
+      assert.equal(bloqueado.statusCode, 429)
+      assert.match(bloqueado.json().mensagem, /conta/)
+      assert.equal((await loginEm(a, 'dois@x.com', SENHA, '10.0.0.9')).statusCode, 200, 'outra conta segue liberada')
+      await a.close()
+    })
+
+    test('item 8: verificação em duas etapas — ativar, exigir código, recusar reuso, desativar', async () => {
+      const { cookie } = await login('dois@x.com')
+      const c = { ...H, cookie }
+      const ini = await app.inject({ method: 'POST', url: '/api/auth/2fa/iniciar', headers: c })
+      const { segredo, uri } = ini.json()
+      assert.match(uri, /^otpauth:\/\/totp\//)
+      assert.equal((await app.inject({ method: 'POST', url: '/api/auth/2fa/ativar', headers: c, payload: { codigo: '000000' } })).statusCode, 400)
+      const atual = _codigoNoPasso(segredo, passoAtual())
+      assert.equal((await app.inject({ method: 'POST', url: '/api/auth/2fa/ativar', headers: c, payload: { codigo: atual } })).statusCode, 200)
+
+      const sem = await loginEm(app, 'dois@x.com', SENHA, '10.1.0.1')
+      assert.deepEqual([sem.statusCode, sem.json().precisa2fa], [401, true])
+      assert.equal(sem.cookies.length, 0, 'sem código não cria sessão')
+      assert.equal((await loginEm(app, 'dois@x.com', SENHA, '10.1.0.1', '123456')).statusCode, 401)
+      // o código usado na ativação não pode ser reutilizado; o do próximo período funciona
+      assert.equal((await loginEm(app, 'dois@x.com', SENHA, '10.1.0.1', atual)).statusCode, 401)
+      const proximo = _codigoNoPasso(segredo, passoAtual() + 1)
+      const ok = await loginEm(app, 'dois@x.com', SENHA, '10.1.0.1', proximo)
+      assert.equal(ok.statusCode, 200)
+      assert.equal(ok.json().usuario.totp_ativo, true)
+
+      assert.equal((await app.inject({ method: 'POST', url: '/api/auth/2fa/desativar', headers: c, payload: { senha: 'errada' } })).statusCode, 400)
+      assert.equal((await app.inject({ method: 'POST', url: '/api/auth/2fa/desativar', headers: c, payload: { senha: SENHA } })).statusCode, 200)
+      assert.equal((await loginEm(app, 'dois@x.com', SENHA, '10.1.0.2')).statusCode, 200)
+    })
+
+    test('item 8: "Nova senha" pelo admin desliga as duas etapas (recuperação)', async () => {
+      await pool.query(`update usuarios set totp_ativo = true, totp_segredo = 'JBSWY3DPEHPK3PXP' where email = 'alvo@x.com'`)
+      const { rows: [u] } = await pool.query(`select id from usuarios where email = 'alvo@x.com'`)
+      const r = await req('admin', 'POST', `/api/admin/usuarios/${u.id}/redefinir-senha`)
+      assert.equal(r.json().usuario.totp_ativo, false)
+    })
+
+    test('item 4: e-mail gigante na criação de usuário é recusado na hora', async () => {
+      const t0 = Date.now()
+      const r = await req('admin', 'POST', '/api/admin/usuarios', { email: 'a@' + '.'.repeat(30000) + 'x', nome: 'X' })
+      assert.equal(r.statusCode, 400)
+      assert.ok(Date.now() - t0 < 1000, 'resposta rápida')
+    })
+
+    test('item 9: mesma pessoa de novo é descartada sem revelar e fica no histórico', async () => {
+      const dados = { nome_completo: 'Pessoa Repetida', data_nascimento: '1999-09-09', telefone: '(48) 91234-0001', email: 'rep@x.com' }
+      assert.equal((await enviar(dados)).statusCode, 201)
+      const { rows: [{ n: antes }] } = await pool.query('select count(*)::int n from pre_fichas')
+      const r = await enviar({ ...dados, nome_completo: 'PESSOA  repetida', telefone: '(48) 95555-0002' })
+      assert.equal(r.statusCode, 201, 'resposta igual à de sucesso')
+      const { rows: [{ n: depois }] } = await pool.query('select count(*)::int n from pre_fichas')
+      assert.equal(depois, antes)
+      const id = await idPorNome('Pessoa Repetida')
+      const h = (await req('admin', 'GET', `/api/admin/pre-fichas/${id}/historico`)).json()
+      assert.match(h[0].observacao, /duplicada/)
+    })
+
+    test('item 9: limite por telefone/e-mail no dia e limite geral por hora', async () => {
+      const a = await outraApp({ limiteEnviosPorContatoDia: 2, limiteEnviosGlobalHora: 100000 })
+      const env = (nome) => a.inject({ method: 'POST', url: '/api/pre-fichas', payload: { ...FICHA, nome_completo: nome, telefone: '(48) 97777-4321', email: 'familia@x.com' } })
+      assert.equal((await env('Irmão Um')).statusCode, 201)
+      assert.equal((await env('Irmão Dois')).statusCode, 201)
+      const terceiro = await env('Irmão Três')
+      assert.equal(terceiro.statusCode, 429)
+      assert.match(terceiro.json().mensagem, /telefone ou e-mail/)
+      await a.close()
+      const g = await outraApp({ limiteEnviosGlobalHora: 1, limiteEnviosPorContatoDia: 100000 })
+      const e2 = (nome) => g.inject({ method: 'POST', url: '/api/pre-fichas', payload: { ...FICHA, nome_completo: nome, email: `${nome.split(' ')[1]}@x.com` } })
+      assert.equal((await e2('Global Um')).statusCode, 201)
+      assert.equal((await e2('Global Dois')).statusCode, 429)
+      await g.close()
+    })
+
+    test('item 9: CAPTCHA opcional (Turnstile) — exigido quando configurado', async () => {
+      const falso = createServer((rq, rs) => {
+        let corpo = ''
+        rq.on('data', (d) => { corpo += d }); rq.on('end', () => {
+          rs.writeHead(200, { 'content-type': 'application/json' })
+          rs.end(JSON.stringify({ success: new URLSearchParams(corpo).get('response') === 'token-bom' }))
+        })
+      })
+      await new Promise((r) => falso.listen(0, '127.0.0.1', r))
+      const a = await outraApp({ captcha: { siteKey: 'chave-publica', secret: 's', verificarUrl: `http://127.0.0.1:${falso.address().port}` }, limiteEnviosPorContatoDia: 100000, limiteEnviosGlobalHora: 100000 })
+      const marca = (await a.inject({ method: 'GET', url: '/api/marca' }))
+      assert.deepEqual(marca.json().captcha, { provedor: 'turnstile', siteKey: 'chave-publica' })
+      assert.match(marca.headers['content-security-policy'], /challenges\.cloudflare\.com/)
+      const sem = await a.inject({ method: 'POST', url: '/api/pre-fichas', payload: { ...FICHA, nome_completo: 'Com Captcha' } })
+      assert.equal(sem.statusCode, 400); assert.ok(sem.json().erros.captcha)
+      assert.equal((await a.inject({ method: 'POST', url: '/api/pre-fichas', payload: { ...FICHA, nome_completo: 'Com Captcha', captcha: 'token-ruim' } })).statusCode, 400)
+      assert.equal((await a.inject({ method: 'POST', url: '/api/pre-fichas', payload: { ...FICHA, nome_completo: 'Com Captcha', captcha: 'token-bom' } })).statusCode, 201)
+      await a.close(); falso.close()
+      assert.equal((await app.inject({ method: 'GET', url: '/api/marca' })).json().captcha, null, 'desligado por padrão')
+    })
+
+    test('item 7: o endereço da prévia (og:image) não vem do cabeçalho Host', async () => {
+      const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a5c90000000049454e44ae426082', 'hex')
+      await app.inject({ method: 'PUT', url: '/api/admin/marca/logo', headers: { ...como('admin'), 'content-type': 'image/png' }, payload: PNG })
+      const r = await app.inject({ method: 'GET', url: '/', headers: { host: 'site-do-atacante.com', 'x-forwarded-host': 'site-do-atacante.com' } })
+      assert.doesNotMatch(r.body, /site-do-atacante/)
+      const a = await outraApp({ urlPublica: 'https://prefichas.exemplo.com.br' })
+      const r2 = await a.inject({ method: 'GET', url: '/', headers: { host: 'site-do-atacante.com' } })
+      await a.close()
+      assert.match(r2.body, /og:image" content="https:\/\/prefichas\.exemplo\.com\.br\/api\/marca\/logo/)
+      await app.inject({ method: 'DELETE', url: '/api/admin/marca/logo', headers: como('admin') })
     })
   })
 

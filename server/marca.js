@@ -115,7 +115,8 @@ export function criarRenderizadorHtml(pastaSite) {
       `<meta property="og:title" content="${escapar(titulo)}" />`,
       `<meta property="og:description" content="${escapar(descricao)}" />`,
       `<meta property="og:site_name" content="${escapar(marca.nome)}" />`,
-      marca.logoUrl ? `<meta property="og:image" content="${escapar(urlBase + marca.logoUrl)}" />` : '',
+      // Só com o endereço configurado (URL_PUBLICA); nunca a partir do cabeçalho Host
+      marca.logoUrl && urlBase ? `<meta property="og:image" content="${escapar(urlBase + marca.logoUrl)}" />` : '',
       `<link rel="icon" href="${escapar(icone)}" />`,
       // Cores da marca já na primeira pintura (sem "piscar" a cor padrão)
       `<link rel="stylesheet" href="/api/marca/tema.css?v=${escapar(marca.versao)}" />`,

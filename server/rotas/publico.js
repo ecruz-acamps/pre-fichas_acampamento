@@ -24,8 +24,36 @@ async function consultarViaCep(baseUrl, cep) {
   return endereco
 }
 
+// Limite geral de envios por hora (todos os IPs somados)
+function criarLimiteGlobal(maxPorHora) {
+  let janela = 0, contagem = 0
+  return () => {
+    const agora = Math.floor(Date.now() / 3_600_000)
+    if (agora !== janela) { janela = agora; contagem = 0 }
+    contagem++
+    return contagem <= maxPorHora
+  }
+}
+
+async function conferirCaptcha(cfg, token, ip) {
+  if (!cfg) return true
+  if (typeof token !== 'string' || !token || token.length > 4096) return false
+  try {
+    const r = await fetch(cfg.verificarUrl, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ secret: cfg.secret, response: token, remoteip: ip }),
+      signal: AbortSignal.timeout(8000),
+    })
+    return (await r.json()).success === true
+  } catch {
+    return false
+  }
+}
+
 export default async function rotasPublicas(app) {
   const { pool, config } = app
+  const dentroDoLimiteGlobal = criarLimiteGlobal(config.limiteEnviosGlobalHora)
 
   app.get('/api/saude', async () => {
     await pool.query('select 1')
@@ -51,7 +79,41 @@ export default async function rotasPublicas(app) {
     const erros = validar(f, marca.termos.length)
     if (Object.keys(erros).length) return reply.code(400).send({ mensagem: 'Dados inválidos.', erros })
 
+    if (!(await conferirCaptcha(config.captcha, req.body?.captcha, req.ip))) {
+      return reply.code(400).send({ mensagem: 'Confirme que você não é um robô.', erros: { captcha: 'Confirme a verificação.' } })
+    }
+    if (!dentroDoLimiteGlobal()) {
+      req.log.warn('Limite geral de envios por hora atingido')
+      return reply.code(429).send({ mensagem: 'Muitas inscrições neste momento. Tente novamente mais tarde.' })
+    }
+
     const registro = montarRegistro(f, marca.termos)
+
+    // Mesma pessoa já na fila (nome + data de nascimento): descarta sem revelar a quem enviou
+    const { rows: [existente] } = await pool.query(
+      `select id from pre_fichas
+        where chave_local(nome_completo) = chave_local($1) and data_nascimento = $2
+          and status in ('aguardando', 'em_contato', 'confirmado')
+        order by id limit 1`, [registro.nome_completo, registro.data_nascimento])
+    if (existente) {
+      await pool.query(
+        `insert into pre_fichas_historico (pre_ficha_id, tipo, observacao, detalhes) values ($1, 'observacao', $2, $3)`,
+        [existente.id, 'Nova pré-ficha enviada para a mesma pessoa (nome e data de nascimento) — descartada como duplicada.',
+          JSON.stringify({ duplicada: true, telefone: registro.telefone, email: registro.email })])
+      req.log.info({ ficha: existente.id }, 'Pré-ficha duplicada descartada')
+      return reply.code(201).send({ ok: true })
+    }
+
+    // Limite por contato: mesmo telefone ou e-mail em 24 h
+    const { rows: [{ n }] } = await pool.query(
+      `select count(*)::int n from pre_fichas
+        where created_at > now() - interval '24 hours'
+          and (regexp_replace(telefone, '\D', '', 'g') = $1 or email = $2)`,
+      [registro.telefone.replace(/\D/g, ''), registro.email])
+    if (n >= config.limiteEnviosPorContatoDia) {
+      return reply.code(429).send({ mensagem: 'Muitas pré-fichas com este telefone ou e-mail hoje. Fale com o acampamento pelo WhatsApp.' })
+    }
+
     const valores = COLUNAS.map((c) => registro[c])
     const marcadores = COLUNAS.map((_, i) => `$${i + 1}`)
     // created_at, status e id NÃO vêm do usuário: são definidos pelo banco.
@@ -66,7 +128,8 @@ export default async function rotasPublicas(app) {
   // Identidade do acampamento (nome, cores, textos, declarações, tribos)
   app.get('/api/marca', async (req, reply) => {
     reply.header('Cache-Control', 'no-cache')
-    return carregarMarca(pool)
+    const marca = await carregarMarca(pool)
+    return { ...marca, captcha: config.captcha ? { provedor: 'turnstile', siteKey: config.captcha.siteKey } : null }
   })
 
   app.get('/api/marca/tema.css', async (req, reply) => {

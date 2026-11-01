@@ -25,9 +25,19 @@ fi
 NOME="${NOME:-pre-fichas}"
 UNIDADE="prefichas-atualizador-${NOME}"
 
-mkdir -p atualizacao
-chown "$DONO" atualizacao
-chmod 755 atualizacao
+# atualizacao/        root, 755
+# atualizacao/estado/ root, 755 — só o atualizador escreve (o site só lê)
+# atualizacao/pedido/ usuário do site — onde o painel deixa o pedido
+for d in atualizacao atualizacao/estado atualizacao/pedido; do
+  if [ -L "$d" ]; then echo "✗ $d é um atalho (symlink). Remova e rode de novo."; exit 1; fi
+done
+mkdir -p atualizacao/estado atualizacao/pedido
+chown root:root atualizacao atualizacao/estado
+chmod 755 atualizacao atualizacao/estado
+chown "$DONO" atualizacao/pedido
+chmod 755 atualizacao/pedido
+# restos da versão anterior (pasta única)
+rm -f atualizacao/solicitar atualizacao/pedido.json atualizacao/estado.json atualizacao/log.txt atualizacao/atualizador.json atualizacao/.trava
 
 cat > "/etc/systemd/system/${UNIDADE}.service" <<UNIT
 [Unit]
@@ -46,7 +56,7 @@ cat > "/etc/systemd/system/${UNIDADE}.path" <<UNIT
 Description=Aguarda pedidos de atualização do painel (${NOME})
 
 [Path]
-PathExists=${PASTA}/atualizacao/solicitar
+PathExists=${PASTA}/atualizacao/pedido/solicitar
 Unit=${UNIDADE}.service
 
 [Install]
@@ -55,6 +65,5 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable --now "${UNIDADE}.path" >/dev/null
-printf '{"instalado_em":"%s","modo":"%s","unidade":"%s"}\n' "$(date -Iseconds)" "$MODO" "$UNIDADE" > atualizacao/atualizador.json
-chown "$DONO" atualizacao/atualizador.json
+printf '{"instalado_em":"%s","modo":"%s","unidade":"%s"}\n' "$(date -Iseconds)" "$MODO" "$UNIDADE" > atualizacao/estado/atualizador.json
 echo "✓ Atualização pelo painel ativada (${UNIDADE})."

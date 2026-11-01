@@ -37,6 +37,7 @@ const AJUDA = `Uso:
   node server/cli.js criar-coordenador <email> "<nome>"  cria um coordenador de núcleo
                                                      (associe os núcleos dele pelo painel)
   node server/cli.js redefinir-senha <email>         gera nova senha temporária
+                                                     (e desliga a verificação em duas etapas)
   node server/cli.js desativar <email>               bloqueia o acesso
   node server/cli.js ativar <email>                  libera o acesso
   node server/cli.js listar                          lista os usuários
@@ -82,7 +83,8 @@ try {
     }
     case 'redefinir-senha': {
       const senha = gerarSenhaTemporaria()
-      const r = await pool.query('update usuarios set senha_hash = $1, trocar_senha = true where email = $2 returning id',
+      const r = await pool.query(`update usuarios set senha_hash = $1, trocar_senha = true,
+          totp_ativo = false, totp_segredo = null, totp_ultimo_passo = null where email = $2 returning id`,
         [await gerarHash(senha), email])
       if (!r.rowCount) throw new Error(`Usuário não encontrado: ${email}`)
       await pool.query('delete from sessoes where usuario_id = $1', [r.rows[0].id])

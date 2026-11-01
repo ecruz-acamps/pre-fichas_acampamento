@@ -4,6 +4,8 @@ import { api } from '../lib/api.js'
 export default function Login({ marca, onEntrar }) {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
+  const [codigo, setCodigo] = useState('')
+  const [pedeCodigo, setPedeCodigo] = useState(false)
   const [erro, setErro] = useState('')
   const [carregando, setCarregando] = useState(false)
 
@@ -11,12 +13,17 @@ export default function Login({ marca, onEntrar }) {
     e.preventDefault()
     setErro(''); setCarregando(true)
     try {
-      onEntrar(await api.post('/api/auth/login', { email, senha }))
+      onEntrar(await api.post('/api/auth/login', { email, senha, ...(pedeCodigo ? { codigo } : {}) }))
     } catch (err) {
       setCarregando(false)
-      setErro(err.status === 429
+      if (err.dados?.precisa2fa) {
+        setPedeCodigo(true)
+        if (pedeCodigo) setErro(err.dados.mensagem)
+        return
+      }
+      setErro(err.dados?.mensagem || (err.status === 429
         ? 'Muitas tentativas. Aguarde um minuto e tente novamente.'
-        : err.dados?.mensagem || 'Não foi possível entrar.')
+        : 'Não foi possível entrar.'))
     }
   }
 
@@ -36,11 +43,19 @@ export default function Login({ marca, onEntrar }) {
           <input id="senha" type="password" autoComplete="current-password" required value={senha}
             onChange={(e) => setSenha(e.target.value)} />
         </div>
+        {pedeCodigo && (
+          <div className="campo">
+            <label htmlFor="codigo">Código do aplicativo autenticador</label>
+            <input id="codigo" inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus required
+              placeholder="000000" value={codigo} onChange={(e) => setCodigo(e.target.value.replace(/\D/g, ''))} />
+            <small className="dica">Abra o aplicativo (Google Authenticator, Microsoft Authenticator…) e digite os 6 números.</small>
+          </div>
+        )}
         {erro && <div className="alerta-erro" role="alert">{erro}</div>}
         <div className="acoes">
           <button className="botao-principal" disabled={carregando}>{carregando ? 'Entrando…' : 'Entrar'}</button>
         </div>
-        <p className="dica centro">Esqueceu a senha? Peça a um administrador para redefini-la.</p>
+        <p className="dica centro">Esqueceu a senha ou perdeu o celular? Peça a um administrador uma senha nova.</p>
       </form>
     </main>
   )
