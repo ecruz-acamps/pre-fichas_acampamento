@@ -10,7 +10,7 @@ distribuições os comandos de instalação de pacotes mudam, o resto é igual.
 2. [Preparar o servidor](#2-preparar-o-servidor)
 3. [Apontar o domínio](#3-apontar-o-domínio)
 4. [Instalar um acampamento](#4-instalar-um-acampamento)
-5. [Primeiro acesso e configuração](#5-primeiro-acesso-e-configuração)
+5. [Primeiro acesso, ativação e configuração](#5-primeiro-acesso-ativação-e-configuração)
 6. [Vários acampamentos no mesmo servidor](#6-vários-acampamentos-no-mesmo-servidor)
 7. [Rede interna, sem domínio público](#7-rede-interna-sem-domínio-público)
 8. [Backup e restauração](#8-backup-e-restauração)
@@ -48,6 +48,8 @@ Tudo roda em containers **Docker**, criados por um assistente (`scripts/novo-aca
 - **Um domínio** (ou subdomínio) para o formulário, ex.: `app.acampamentosaopadrepio.com.br`.
   Sem domínio também funciona dentro de uma rede interna (seção 7), mas sem HTTPS.
 - **Portas 80 e 443** liberadas para a internet (no firewall do servidor e no roteador/provedor).
+- **A chave de ativação** do sistema (formato `XXX-0000`), fornecida pelo responsável pela
+  implantação. Ela é pedida depois da instalação; sem ela o painel e o formulário não funcionam.
 - **Saída para a internet** a partir do servidor, para:
   - baixar o Docker e o código (instalação/atualização);
   - `viacep.com.br` (busca de endereço pelo CEP — se não houver, a pessoa digita o endereço);
@@ -166,7 +168,8 @@ sudo ./scripts/novo-acampamento.sh \
     --nome-admin "Seu Nome"
 ```
 
-(Se omitir alguma opção, o assistente pergunta no terminal.)
+(Se omitir alguma opção, o assistente pergunta no terminal. A chave de ativação também pode ser
+informada já no comando, com `--chave XXX-0000`.)
 
 O assistente:
 
@@ -175,12 +178,17 @@ O assistente:
    alguns minutos**;
 3. espera a aplicação responder e cria as tabelas do banco automaticamente;
 4. aplica a marca do acampamento;
-5. cria o **primeiro administrador** e mostra uma **senha temporária**:
+5. cria o **primeiro administrador** e mostra uma **senha temporária**;
+6. pede a **chave de ativação** (`XXX-0000`). Se você ainda não tiver a chave, aperte ENTER:
+   o painel vai pedi-la no primeiro acesso.
 
 ```
 Usuário criado: seu-email@exemplo.com
 Senha temporária: abcd-2345-efgh
 (será pedida uma nova senha no primeiro acesso)
+
+Chave de ativação (formato XXX-0000) — ENTER para ativar depois pelo painel: ●●●-●●●●
+✓ Sistema ativado.
 
 ✓ Acampamento São Padre Pio instalado.
   Formulário: https://app.seudominio.com.br/    Painel: https://app.seudominio.com.br/admin/
@@ -214,9 +222,13 @@ curl -s https://app.seudominio.com.br/api/saude      # {"ok":true}
 
 ---
 
-## 5. Primeiro acesso e configuração
+## 5. Primeiro acesso, ativação e configuração
 
 1. Abra `https://SEU-DOMINIO/admin/`, entre com o e-mail e a **senha temporária** e crie a sua senha.
+1. Se o sistema ainda não foi ativado, aparece a tela **Ativação do sistema**: digite (ou cole) a
+   chave `XXX-0000` e clique em **Ativar**. Isso é feito **uma única vez** por instalação.
+   Enquanto não houver ativação, o painel fica bloqueado e o formulário público mostra
+   "Inscrições em breve". (Também é possível ativar pelo terminal — veja a seção 10.)
 2. **Configurações** → confira nome, cor, contatos, textos e declarações; envie a **logo**;
    ajuste as **Regras da fila** (recusas para ir ao fim da fila; edições de preferência do cônjuge).
 3. **Núcleos** → crie os núcleos com as cidades/bairros de cada um.
@@ -398,6 +410,8 @@ Sempre dentro da pasta do acampamento (`cd /opt/prefichas-...`):
 | Bloquear / liberar acesso | `sudo docker compose exec app node server/cli.js desativar email@x.com` (ou `ativar`) |
 | Aplicar um arquivo de marca | `sudo docker compose exec app node server/cli.js marca aplicar marcas/arquivo.json` |
 | Salvar a marca atual | `sudo docker compose exec app node server/cli.js marca exportar` |
+| Ativar o sistema | `sudo docker compose exec app node server/cli.js licenca ativar XXX-0000` |
+| Ver se está ativado | `sudo docker compose exec app node server/cli.js licenca status` |
 
 Os serviços voltam sozinhos quando o servidor reinicia (`restart: unless-stopped`).
 
@@ -471,6 +485,12 @@ Logs: `sudo journalctl -u pre-fichas -f`.
 ```bash
 sudo docker compose exec app node server/cli.js redefinir-senha seu-email@exemplo.com
 ```
+
+**O painel pede a chave de ativação / o formulário mostra "Inscrições em breve"**
+- A instalação ainda não foi ativada. Entre como administrador e informe a chave, ou rode
+  `sudo docker compose exec app node server/cli.js licenca ativar XXX-0000`.
+- Chave recusada: confira as letras e os números com o responsável. Após 5 tentativas erradas,
+  aguarde 1 minuto. Cada acampamento (pasta) é ativado separadamente.
 
 **"Muitas tentativas" ao entrar no painel**
 - Proteção contra senha chutada: aguarde 1 minuto.

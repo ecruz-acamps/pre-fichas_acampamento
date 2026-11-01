@@ -1,5 +1,6 @@
 import { gerarHash, senhaForte, verificarSenha, verificarSenhaFicticia } from '../senha.js'
 import { COOKIE, criarSessao, encerrarOutrasSessoes, encerrarSessao } from '../sessao.js'
+import { licencaAtivada } from '../licenca.js'
 
 export default async function rotasAuth(app) {
   const { pool, config } = app
@@ -32,7 +33,7 @@ export default async function rotasAuth(app) {
     reply.setCookie(COOKIE, token, opcoesCookie())
     const { rows: [eu] } = await pool.query(
       'select id, email, nome, papel, trocar_senha from usuarios where id = $1', [usuario.id])
-    return { usuario: eu }
+    return { usuario: eu, licencaAtivada: await licencaAtivada(pool) }
   })
 
   app.post('/api/auth/logout', async (req, reply) => {
@@ -42,7 +43,7 @@ export default async function rotasAuth(app) {
   })
 
   // Quem está logado (usuario: null quando ninguém está)
-  app.get('/api/auth/eu', async (req) => ({ usuario: req.usuario ?? null }))
+  app.get('/api/auth/eu', async (req) => ({ usuario: req.usuario ?? null, licencaAtivada: await licencaAtivada(pool) }))
 
   // Troca da própria senha (também usada no primeiro acesso)
   app.post('/api/auth/senha', {

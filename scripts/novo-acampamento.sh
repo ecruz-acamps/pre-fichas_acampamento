@@ -14,13 +14,14 @@
 #   --admin EMAIL      e-mail do primeiro administrador
 #   --nome-admin NOME  nome do primeiro administrador
 #   --porta N          porta local da aplicação (padrão 3000; use 3001, 3002... para vários acampamentos)
+#   --chave XXX-0000   chave de ativação (se omitida, é pedida no fim; ENTER ativa depois pelo painel)
 #   --multi            vários acampamentos no mesmo servidor: não sobe Caddy próprio
 #                      (mostra o trecho para o proxy compartilhado, deploy/Caddyfile.multi)
 #   --forcar           sobrescreve um .env existente (CUIDADO: troca a senha do banco gerada antes)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-MARCA="" DOMINIO="" ADMIN="" NOME_ADMIN="" PORTA="3000" MULTI=0 FORCAR=0
+MARCA="" DOMINIO="" ADMIN="" NOME_ADMIN="" PORTA="3000" MULTI=0 FORCAR=0 CHAVE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --marca) MARCA="$2"; shift 2 ;;
@@ -28,9 +29,10 @@ while [ $# -gt 0 ]; do
     --admin) ADMIN="$2"; shift 2 ;;
     --nome-admin) NOME_ADMIN="$2"; shift 2 ;;
     --porta) PORTA="$2"; shift 2 ;;
+    --chave) CHAVE="$2"; shift 2 ;;
     --multi) MULTI=1; shift ;;
     --forcar) FORCAR=1; shift ;;
-    -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,23p' "$0"; exit 0 ;;
     *) echo "Opção desconhecida: $1"; exit 1 ;;
   esac
 done
@@ -97,6 +99,20 @@ curl -fsS "http://127.0.0.1:${PORTA}/api/saude" >/dev/null || { echo; echo "A ap
 
 echo
 docker compose exec -T app node server/cli.js criar-admin "$ADMIN" "$NOME_ADMIN"
+echo
+
+# Ativação: depois de instalado e configurado, o sistema pede a chave
+ATIVADO=0
+for tentativa in 1 2 3; do
+  if [ -z "$CHAVE" ] && [ -t 0 ]; then
+    read -r -p "Chave de ativação (formato XXX-0000) — ENTER para ativar depois pelo painel: " CHAVE
+  fi
+  [ -z "$CHAVE" ] && break
+  if docker compose exec -T app node server/cli.js licenca ativar "$CHAVE"; then ATIVADO=1; break; fi
+  CHAVE=""
+  [ -t 0 ] || break
+done
+[ "$ATIVADO" = 1 ] || echo "⚠ Sistema ainda não ativado: o painel vai pedir a chave no primeiro acesso (ou rode: docker compose exec app node server/cli.js licenca ativar XXX-0000)."
 echo
 NOME_ACAMP="$(curl -fsS "http://127.0.0.1:${PORTA}/api/marca" | grep -o '"nome":"[^"]*"' | head -1 | cut -d'"' -f4)"
 echo "✓ ${NOME_ACAMP:-Acampamento} instalado."

@@ -30,6 +30,9 @@ async function requisitar(metodo, url, corpo, arquivo) {
     if (resposta.status === 401 && url.startsWith('/api/admin')) {
       window.dispatchEvent(new Event('sessao-expirada'))
     }
+    if (resposta.status === 403 && dados?.licencaPendente) {
+      window.dispatchEvent(new Event('licenca-pendente'))
+    }
     throw new ErroApi(resposta.status, dados)
   }
   return dados

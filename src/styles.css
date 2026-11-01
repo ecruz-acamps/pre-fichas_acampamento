@@ -381,3 +381,11 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
 .selo-evento.evento-conjuge { background: #fce4ec; color: #ad1457; }
 .filtros select.filtro-ativo { border-color: var(--cor); background: var(--cor-clara); }
 .link.inline { display: inline; margin: 0; font-size: inherit; }
+
+/* ---------- ativação ---------- */
+.ativacao { text-align: center; }
+.serial { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 18px 0 8px; }
+.serial input { width: 110px !important; text-align: center; font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 1.6rem !important; letter-spacing: 0.25em; text-transform: uppercase; padding: 10px 6px !important; }
+.serial input:last-child { width: 140px !important; }
+.serial span { font-size: 1.6rem; color: var(--texto-suave); }

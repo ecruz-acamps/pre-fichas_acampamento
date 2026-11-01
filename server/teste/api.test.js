@@ -7,6 +7,7 @@ import { construirApp } from '../app.js'
 import { lerConfig } from '../config.js'
 import { criarPool, migrar } from '../db.js'
 import { invalidarMarca } from '../marca.js'
+import { esquecerLicenca, gerarHashChave } from '../licenca.js'
 import { gerarHash } from '../senha.js'
 
 const URL_TESTE = process.env.DATABASE_URL_TESTE
@@ -24,7 +25,7 @@ const FICHA = {
 }
 
 describe('API', { skip: pular }, () => {
-  let app, pool
+  let app, pool, chavesTeste
   const H = { 'x-requested-with': 'fetch' }
   const sessoes = {}
 
@@ -43,10 +44,13 @@ describe('API', { skip: pular }, () => {
     await pool.query('drop schema public cascade; create schema public')
     await migrar(pool, { info: () => {} })
     invalidarMarca()
+    esquecerLicenca()
+    // Chave fictícia só para os testes (as chaves reais nunca aparecem no repositório)
+    chavesTeste = [await gerarHashChave('TST-0001', 'teste')]
     const config = {
       ...lerConfig({ DATABASE_URL: URL_TESTE }), cookieSeguro: false, limiteEnviosPorHora: 1000, limiteLoginPorMinuto: 1000,
     }
-    app = await construirApp({ pool, config, logger: false })
+    app = await construirApp({ pool, config, logger: false, chavesLicenca: chavesTeste })
     await pool.query(
       `insert into usuarios (email, nome, papel, senha_hash, trocar_senha) values
         ('admin@x.com', 'Admin', 'admin', $1, false),
@@ -59,6 +63,58 @@ describe('API', { skip: pular }, () => {
   after(async () => {
     await app?.close()
     await pool?.end()
+  })
+
+
+  // ------------------------------------------------------------------ licença
+  describe('ativação com chave', () => {
+    const ativar = (quem, chave) => req(quem, 'POST', '/api/admin/licenca/ativar', { chave })
+
+    test('antes de ativar: formulário fechado e painel bloqueado (login continua funcionando)', async () => {
+      assert.equal((await app.inject({ method: 'GET', url: '/api/licenca' })).json().ativada, false)
+      const envio = await enviar({ nome_completo: 'Antes da Ativação' })
+      assert.equal(envio.statusCode, 503)
+      assert.equal(envio.json().licencaPendente, true)
+      const fila = await req('admin', 'GET', '/api/admin/pre-fichas')
+      assert.equal(fila.statusCode, 403)
+      assert.equal(fila.json().licencaPendente, true)
+      assert.equal((await req('admin', 'GET', '/api/auth/eu')).json().licencaAtivada, false)
+      assert.equal((await app.inject({ method: 'GET', url: '/api/admin/pre-fichas' })).statusCode, 401)
+    })
+
+    test('só administrador ativa; formato e chave errados são recusados', async () => {
+      assert.equal((await ativar('equipe', 'TST-0001')).statusCode, 403)
+      const formato = await ativar('admin', 'AB-12')
+      assert.equal(formato.statusCode, 400)
+      assert.match(formato.json().mensagem, /XXX-0000/)
+      const errada = await ativar('admin', 'TST-0002')
+      assert.equal(errada.statusCode, 400)
+      assert.match(errada.json().mensagem, /inválida/)
+    })
+
+    test('excesso de tentativas de ativação é bloqueado', async () => {
+      const app2 = await construirApp({ pool, config: { ...app.config }, logger: false, chavesLicenca: chavesTeste })
+      const codigos = []
+      for (let i = 0; i < 6; i++) {
+        codigos.push((await app2.inject({ method: 'POST', url: '/api/admin/licenca/ativar', headers: como('admin'), payload: { chave: 'ZZZ-9999' } })).statusCode)
+      }
+      await app2.close()
+      assert.deepEqual(codigos, [400, 400, 400, 400, 400, 429])
+    })
+
+    test('chave correta (aceita minúsculas e sem traço) ativa o sistema de vez', async () => {
+      const r = await ativar('admin', 'tst 0001')
+      assert.equal(r.statusCode, 200)
+      assert.equal((await app.inject({ method: 'GET', url: '/api/licenca' })).json().ativada, true)
+      assert.equal((await req('admin', 'GET', '/api/auth/eu')).json().licencaAtivada, true)
+      assert.equal((await req('admin', 'GET', '/api/admin/pre-fichas')).statusCode, 200)
+      const s = (await req('admin', 'GET', '/api/admin/licenca')).json()
+      assert.deepEqual([s.ativada, s.origem, s.ativada_por], [true, 'painel', 'Admin'])
+      assert.equal((await ativar('admin', 'ZZZ-0000')).json().jaAtivada, true)
+      const { rows: [l] } = await pool.query('select * from licenca')
+      assert.equal(l.chave_id, 'teste')
+      assert.ok(!JSON.stringify(l).includes('0001'), 'a chave não é gravada no banco')
+    })
   })
 
   // ------------------------------------------------------------------ envio

@@ -31,6 +31,9 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
   declarações obrigatórias e tribos — pelo painel (**Configurações**) ou por arquivo
   (`marcas/*.json`). Vale na hora, sem reiniciar. Veja [`marcas/README.md`](marcas/README.md).
 - Assistente de instalação: `./scripts/novo-acampamento.sh` coloca um acampamento no ar.
+- **Ativação por chave**: depois de instalado e configurado, o sistema pede uma chave de ativação
+  (`XXX-0000`), fornecida pelo responsável pela implantação. Até ativar, o painel fica bloqueado
+  e o formulário não recebe inscrições.
 
 **Formulário (público)**
 - Dados pessoais, informações religiosas, contato, endereço, acampamento e informações adicionais.
@@ -92,7 +95,8 @@ sudo ./scripts/novo-acampamento.sh \
 ```
 
 O assistente gera o `.env` (com senha aleatória para o banco), sobe banco + aplicação + HTTPS,
-aplica a marca e cria o primeiro administrador (mostra a senha temporária).
+aplica a marca, cria o primeiro administrador (mostra a senha temporária) e pede a **chave de
+ativação** (ou use `--chave XXX-0000`; se deixar em branco, o painel pede no primeiro acesso).
 Acesse `https://SEU-DOMINIO/` (formulário) e `https://SEU-DOMINIO/admin/` (painel).
 
 Prefere configurar à mão? `cp .env.example .env`, edite e rode `docker compose up -d --build`.
