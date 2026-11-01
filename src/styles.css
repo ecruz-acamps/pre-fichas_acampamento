@@ -468,3 +468,13 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
 .barra-progresso span { display: block; height: 100%; width: 40%; background: var(--cor); border-radius: 999px; animation: deslizar 1.6s ease-in-out infinite; }
 @keyframes deslizar { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
 .log-atualizacao { background: #1f1b16; color: #f3eee6; border-radius: 8px; padding: 10px 12px; font-size: 0.8rem; max-height: 200px; overflow: auto; white-space: pre-wrap; }
+
+/* ---------- verificação em duas etapas ---------- */
+.duas-etapas { margin-top: 16px; }
+.duas-etapas h2 { margin-top: 0; }
+.passos-2fa { padding-left: 20px; }
+.passos-2fa li { margin-bottom: 12px; }
+.chave-2fa { display: block; font-size: 1.15rem; letter-spacing: 0.08em; padding: 8px 10px; margin: 6px 0; word-break: break-all; }
+.codigo-2fa { max-width: 160px; margin-top: 6px; font-size: 1.3rem; letter-spacing: 0.3em; text-align: center; }
+.linha-desativar { display: flex; gap: 8px; margin: 8px 0; }
+.captcha { display: flex; justify-content: center; margin: 16px 0 0; min-height: 65px; }

@@ -19,7 +19,7 @@ export async function buscarSessao(pool, token, horas) {
     `update sessoes s set expira_em = now() + make_interval(hours => $2)
        from usuarios u
       where s.id = $1 and s.expira_em > now() and u.id = s.usuario_id and u.ativo
-      returning u.id, u.email, u.nome, u.papel, u.trocar_senha`,
+      returning u.id, u.email, u.nome, u.papel, u.trocar_senha, u.totp_ativo`,
     [hashToken(token), horas],
   )
   return rows[0] ?? null

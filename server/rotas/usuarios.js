@@ -4,7 +4,7 @@ import { gerarHash, gerarSenhaTemporaria } from '../senha.js'
 
 const PAPEIS = LISTA_PAPEIS.map((p) => p.valor)
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
-const CAMPOS = 'id, email, nome, papel, ativo, trocar_senha, criado_em, ultimo_login'
+const CAMPOS = 'id, email, nome, papel, ativo, trocar_senha, criado_em, ultimo_login, totp_ativo'
 const SQL_USUARIOS = (where) => `
   select ${CAMPOS},
     coalesce((select array_agg(un.nucleo_id order by un.nucleo_id) from usuario_nucleos un
@@ -46,7 +46,8 @@ export default async function rotasUsuarios(app) {
     const email = String(req.body?.email ?? '').trim().toLowerCase()
     const nome = String(req.body?.nome ?? '').trim()
     const papel = req.body?.papel ?? 'equipe'
-    if (!EMAIL.test(email) || email.length > 200) return reply.code(400).send({ mensagem: 'E-mail inválido.' })
+    // tamanho antes do formato: evita que um texto enorme deixe a verificação lenta
+    if (email.length > 200 || !EMAIL.test(email)) return reply.code(400).send({ mensagem: 'E-mail inválido.' })
     if (!nome || nome.length > 120) return reply.code(400).send({ mensagem: 'Informe o nome.' })
     if (!PAPEIS.includes(papel)) return reply.code(400).send({ mensagem: 'Papel inválido.' })
     const nucleos = lerNucleos(req.body?.nucleos ?? [])
@@ -105,7 +106,10 @@ export default async function rotasUsuarios(app) {
     const id = Number(req.params.id)
     const senhaTemporaria = gerarSenhaTemporaria()
     const { rows: [u] } = await pool.query(
-      `update usuarios set senha_hash = $1, trocar_senha = true where id = $2 returning ${CAMPOS}`,
+      // também desliga a verificação em duas etapas (recuperação de quem perdeu o celular)
+      `update usuarios set senha_hash = $1, trocar_senha = true,
+              totp_ativo = false, totp_segredo = null, totp_ultimo_passo = null
+        where id = $2 returning ${CAMPOS}`,
       [await gerarHash(senhaTemporaria), id])
     if (!u) return reply.code(404).send({ mensagem: 'Usuário não encontrado.' })
     await pool.query('delete from sessoes where usuario_id = $1', [id])

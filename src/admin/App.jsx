@@ -111,7 +111,7 @@ export default function App() {
             {usuario.nome}
             <small> · {usuario.papel === 'coordenador' ? 'coordenador(a)' : usuario.papel}</small>
           </span>
-          <button className="link" onClick={() => setTela('senha')}>Alterar senha</button>
+          <button className="link" onClick={() => setTela('senha')}>Minha conta</button>
           <button className="botao-secundario" onClick={sair}>Sair</button>
         </div>
       </header>
@@ -133,7 +133,7 @@ export default function App() {
       {atual === 'nucleos' && <Nucleos {...props} onAlterar={recarregarNucleos} />}
       {atual === 'usuarios' && <Usuarios {...props} usuarioAtual={usuario} />}
       {atual === 'configuracoes' && <Configuracoes {...props} onSalvar={(m) => setMarca(m)} />}
-      {atual === 'senha' && <AlterarSenha onConcluir={() => setTela('fila')} />}
+      {atual === 'senha' && <AlterarSenha usuario={usuario} onUsuario={setUsuario} onConcluir={() => setTela('fila')} />}
 
       <footer className="rodape-painel">
         {marca?.nome} · Sistema de pré-fichas{atualizacao?.instalada?.versao ? ` · versão ${atualizacao.instalada.versao}` : ''}

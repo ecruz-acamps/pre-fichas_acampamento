@@ -151,7 +151,10 @@ export default function Usuarios({ usuarioAtual, nucleos }) {
                     </button>
                   )}
                 </td>
-                <td>{u.ativo ? (u.trocar_senha ? 'Aguardando 1º acesso' : 'Ativo') : 'Desativado'}</td>
+                <td>
+                  {u.ativo ? (u.trocar_senha ? 'Aguardando 1º acesso' : 'Ativo') : 'Desativado'}
+                  {u.totp_ativo && <span className="selo info" title="Verificação em duas etapas ativa">2 etapas</span>}
+                </td>
                 <td className="nowrap">{u.ultimo_login ? formatarDataHora(u.ultimo_login) : '—'}</td>
                 <td className="nowrap">
                   <div className="acoes-linha">

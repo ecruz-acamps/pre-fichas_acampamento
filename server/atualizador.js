@@ -1,6 +1,7 @@
 // Comunicação com o atualizador do servidor (scripts/atualizador-servico.sh).
-// O site NÃO executa nada no servidor: apenas grava um pedido na pasta
-// atualizacao/ e lê o andamento que o atualizador escreve ali.
+// O site NÃO executa nada no servidor:
+//   - grava o pedido em atualizacao/pedido/ (única pasta em que pode escrever);
+//   - lê o andamento em atualizacao/estado/ (pasta do root, somente leitura para o site).
 import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 
@@ -17,14 +18,22 @@ function gravar(caminho, conteudo) {
 
 export function estadoAtualizador(pasta) {
   if (!pasta) return { instalado: false }
-  const instalacao = lerJson(join(pasta, 'atualizador.json'))
+  const estadoDir = join(pasta, 'estado')
+  const pedidoDir = join(pasta, 'pedido')
+  const instalacao = lerJson(join(estadoDir, 'atualizador.json'))
+  const pendente = existsSync(join(pedidoDir, 'solicitar'))
+  let estado = lerJson(join(estadoDir, 'estado.json'))
+  // Pedido feito e o atualizador ainda não começou
+  if (pendente && estado?.etapa !== 'executando') {
+    const pedido = lerJson(join(pedidoDir, 'pedido.json'))
+    estado = { etapa: 'solicitado', sucesso: null, mensagem: 'Aguardando o servidor', atualizado_em: pedido?.em ?? null }
+  }
   return {
     instalado: Boolean(instalacao),
     instalacao,
-    pendente: existsSync(join(pasta, 'solicitar')),
-    estado: lerJson(join(pasta, 'estado.json')),
-    pedido: lerJson(join(pasta, 'pedido.json')),
-    log: ultimasLinhas(join(pasta, 'log.txt'), 40),
+    pendente,
+    estado,
+    log: estado?.etapa === 'solicitado' ? [] : ultimasLinhas(join(estadoDir, 'log.txt'), 40),
   }
 }
 
@@ -34,17 +43,16 @@ export function solicitarAtualizacao(pasta, usuario) {
   if (!s.instalado) {
     return { erro: 'A atualização pelo painel não está ativada neste servidor. Rode uma vez: sudo ./scripts/instalar-atualizador.sh' }
   }
-  if (s.pendente || ['solicitado', 'executando'].includes(s.estado?.etapa)) {
+  if (s.pendente || s.estado?.etapa === 'executando') {
     return { erro: 'Já existe uma atualização em andamento.', emAndamento: true }
   }
   const agora = new Date().toISOString()
+  const pedidoDir = join(pasta, 'pedido')
   try {
-    gravar(join(pasta, 'pedido.json'), JSON.stringify({ usuario: usuario.nome, email: usuario.email, em: agora }))
-    gravar(join(pasta, 'estado.json'), JSON.stringify({ etapa: 'solicitado', sucesso: null, mensagem: 'Aguardando o servidor', atualizado_em: agora }))
-    gravar(join(pasta, 'log.txt'), '')
-    writeFileSync(join(pasta, 'solicitar'), agora) // por último: é o que dispara o atualizador
+    gravar(join(pedidoDir, 'pedido.json'), JSON.stringify({ usuario: usuario.nome, email: usuario.email, em: agora }))
+    writeFileSync(join(pedidoDir, 'solicitar'), agora) // por último: é o que dispara o atualizador
   } catch (e) {
-    return { erro: `Não foi possível registrar o pedido (${e.code ?? e.message}). Verifique as permissões da pasta atualizacao/.` }
+    return { erro: `Não foi possível registrar o pedido (${e.code ?? e.message}). Verifique as permissões da pasta atualizacao/pedido/.` }
   }
   return { ok: true }
 }

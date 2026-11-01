@@ -45,9 +45,17 @@ services:
       PROXIES_CONFIAVEIS: "1"
       SESSAO_HORAS: ${SESSAO_HORAS:-12}
       LIMITE_ENVIOS_POR_HORA: ${LIMITE_ENVIOS_POR_HORA:-30}
+      LIMITE_ENVIOS_POR_CONTATO_DIA: ${LIMITE_ENVIOS_POR_CONTATO_DIA:-3}
+      LIMITE_ENVIOS_GLOBAL_HORA: ${LIMITE_ENVIOS_GLOBAL_HORA:-300}
+      LOGIN_MAX_FALHAS_CONTA: ${LOGIN_MAX_FALHAS_CONTA:-8}
+      LOGIN_BLOQUEIO_MINUTOS: ${LOGIN_BLOQUEIO_MINUTOS:-15}
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET: ${TURNSTILE_SECRET:-}
       VIACEP_URL: ${VIACEP_URL:-https://viacep.com.br/ws}
       # Identidade aplicada só na primeira inicialização (depois, pelo painel)
       MARCA_INICIAL: ${MARCA_INICIAL:-}
+      # Endereço público (prévia de links no WhatsApp)
+      URL_PUBLICA: ${URL_PUBLICA:-}
       # Aviso de atualização (GitHub)
       ATUALIZACAO_VERIFICAR: ${ATUALIZACAO_VERIFICAR:-true}
       ATUALIZACAO_REPO: ${ATUALIZACAO_REPO:-ecruz-acamps/pre-fichas_acampamento}
@@ -58,8 +66,9 @@ services:
     volumes:
       # Arquivos de marca e logos (marcas/*.json, *.png) ficam acessíveis ao container
       - ./marcas:/app/marcas:ro
-      # Pasta onde o painel deixa o pedido de atualização para o atualizador do servidor
-      - ./atualizacao:/app/atualizacao
+      # Atualização pelo painel: o site deixa o pedido em pedido/ e só LÊ o andamento em estado/
+      - ./atualizacao/pedido:/app/atualizacao/pedido
+      - ./atualizacao/estado:/app/atualizacao/estado:ro
     # Porta só no próprio servidor (para um proxy compartilhado, se houver vários acampamentos)
     ports:
       - "127.0.0.1:${PORTA_LOCAL:-3000}:3000"

@@ -18,6 +18,8 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
 | HTTPS | Caddy (certificado automático) — ou o seu Nginx |
 | Implantação | Docker Compose — ou systemd, sem Docker |
 
+> 🗺️ **Próximos passos:** veja o [`ROADMAP.md`](ROADMAP.md) — a versão 2.0 trará o app Android e iOS para os neocampistas.
+>
 > 📘 **Instalação passo a passo no Linux:** [`docs/INSTALACAO.md`](docs/INSTALACAO.md)
 > (preparar o servidor, domínio, HTTPS, vários acampamentos, backup, atualização e solução de problemas).
 
@@ -228,7 +230,10 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
 - As regras valem no servidor (o navegador só orienta), inclusive o que cada papel enxerga.
 - A data/hora da inscrição é definida pelo banco e um *trigger* impede alterá-la.
 - Senhas com scrypt, senha temporária com troca obrigatória, cookie `HttpOnly` + `SameSite=Strict`,
-  proteção CSRF, limite de tentativas de login, CSP. Logo enviada é conferida (SVG com script é recusado).
+  proteção CSRF, CSP.
+- Login: limite por IP **e por conta**, e **verificação em duas etapas** opcional (aplicativo autenticador).
+- Formulário: limite por IP, por telefone/e-mail e geral; inscrição repetida da mesma pessoa é descartada;
+  CAPTCHA opcional (Cloudflare Turnstile). Logo enviada é conferida (SVG com script é recusado).
 - O banco não fica exposto na rede.
 
 ---

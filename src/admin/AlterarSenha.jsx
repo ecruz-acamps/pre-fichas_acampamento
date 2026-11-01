@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import { api } from '../lib/api.js'
+import DuasEtapas from './DuasEtapas.jsx'
 
-export default function AlterarSenha({ primeiroAcesso = false, onConcluir, onSair }) {
+export default function AlterarSenha({ primeiroAcesso = false, onConcluir, onSair, usuario, onUsuario }) {
   const [atual, setAtual] = useState('')
   const [nova, setNova] = useState('')
   const [confirmacao, setConfirmacao] = useState('')
@@ -56,5 +57,10 @@ export default function AlterarSenha({ primeiroAcesso = false, onConcluir, onSai
   )
 
   if (primeiroAcesso) return <main className="pagina estreita">{formulario}</main>
-  return <div className="estreito">{formulario}</div>
+  return (
+    <div className="estreito">
+      {formulario}
+      {usuario && <DuasEtapas usuario={usuario} onAlterado={onUsuario} />}
+    </div>
+  )
 }
