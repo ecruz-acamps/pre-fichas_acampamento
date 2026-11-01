@@ -1,0 +1,17 @@
+# Um Caddy para VÁRIOS acampamentos no mesmo servidor.
+# Cada acampamento roda em sua pasta, com PORTA_LOCAL diferente e COMPOSE_PROFILES vazio.
+#
+# Instale o Caddy no servidor (https://caddyserver.com/docs/install), copie este arquivo
+# para /etc/caddy/Caddyfile, ajuste os domínios/portas e rode: sudo systemctl reload caddy
+#
+# O próprio scripts/novo-acampamento.sh mostra o bloco a acrescentar aqui.
+
+app.acampamentosaopadrepio.com.br {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3001
+}
+
+prefichas.beataalbertina.com.br {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3002
+}

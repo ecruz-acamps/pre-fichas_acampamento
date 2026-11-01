@@ -5,6 +5,8 @@ import pg from 'pg'
 pg.types.setTypeParser(1082, (v) => v)
 // bigint (ids) como número JavaScript — seguro até 9 quatrilhões.
 pg.types.setTypeParser(20, (v) => Number(v))
+const lerArrayBigint = pg.types.getTypeParser(1016)
+pg.types.setTypeParser(1016, (v) => lerArrayBigint(v).map((x) => (x === null ? null : Number(x))))
 
 export function criarPool(databaseUrl) {
   return new pg.Pool({ connectionString: databaseUrl, max: 10 })

@@ -8,8 +8,6 @@ COPY admin ./admin
 COPY public ./public
 COPY src ./src
 COPY shared ./shared
-ARG VITE_WHATSAPP_CONTATO=5548996954410
-ENV VITE_WHATSAPP_CONTATO=$VITE_WHATSAPP_CONTATO
 RUN npm run build
 
 # ---------- 2) Imagem final: só o servidor e o site gerado ----------
@@ -21,6 +19,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY server ./server
 COPY shared ./shared
+COPY marcas ./marcas
 COPY --from=build /app/dist ./dist
 USER node
 EXPOSE 3000

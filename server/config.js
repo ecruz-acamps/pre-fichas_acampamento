@@ -26,6 +26,8 @@ export function lerConfig(env = process.env) {
     limiteLoginPorMinuto: int(env.LIMITE_LOGIN_POR_MINUTO, 10),
     viaCepUrl: env.VIACEP_URL || 'https://viacep.com.br/ws',
     pastaSite: env.PASTA_SITE || new URL('../dist', import.meta.url).pathname,
+    // Arquivo de marca aplicado na primeira inicialização (ex.: marcas/sao-padre-pio.json)
+    marcaInicial: env.MARCA_INICIAL || null,
     logNivel: env.LOG_NIVEL || (producao ? 'info' : 'debug'),
   }
   if (!config.databaseUrl) {

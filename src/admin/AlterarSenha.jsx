@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { api } from '../lib/api.js'
 
-export default function AlterarSenha({ primeiroAcesso = false, menu, onConcluir, onSair }) {
+export default function AlterarSenha({ primeiroAcesso = false, onConcluir, onSair }) {
   const [atual, setAtual] = useState('')
   const [nova, setNova] = useState('')
   const [confirmacao, setConfirmacao] = useState('')
@@ -56,10 +56,5 @@ export default function AlterarSenha({ primeiroAcesso = false, menu, onConcluir,
   )
 
   if (primeiroAcesso) return <main className="pagina estreita">{formulario}</main>
-  return (
-    <div className="painel">
-      <header className="painel-topo"><h1>Minha conta</h1>{menu}</header>
-      <div className="estreito">{formulario}</div>
-    </div>
-  )
+  return <div className="estreito">{formulario}</div>
 }

@@ -16,7 +16,7 @@ export const INICIAL = {
   cep: '', logradouro: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '',
   como_conheceu: '', como_conheceu_outro: '', motivo: '', modalidade: '',
   possui_vicio: null, vicio_qual: '', restricoes_medicas: '', retiros_anteriores: '',
-  aceite_lgpd: false, aceite_atividades: false, aceite_lista_espera: false,
+  aceites: [], // uma marcação (true) para cada declaração configurada na marca
   website: '', // honeypot anti-robô (fica escondido)
 }
 
@@ -39,7 +39,8 @@ export function normalizarEntrada(bruto) {
   const f = {}
   for (const [campo, padrao] of Object.entries(INICIAL)) {
     const v = entrada[campo]
-    if (typeof padrao === 'string') f[campo] = typeof v === 'string' ? v : ''
+    if (Array.isArray(padrao)) f[campo] = Array.isArray(v) ? v.slice(0, 20).map((x) => x === true) : []
+    else if (typeof padrao === 'string') f[campo] = typeof v === 'string' ? v : ''
     else if (padrao === null) f[campo] = v === true || v === false ? v : null
     else f[campo] = v === true
   }
@@ -50,7 +51,11 @@ const DATA_ISO = /^\d{4}-\d{2}-\d{2}$/
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 const valores = (lista) => lista.map((o) => (typeof o === 'string' ? o : o.valor))
 
-export function validar(f) {
+/**
+ * Valida a pré-ficha. `quantidadeTermos` é o número de declarações da marca
+ * (todas precisam ser aceitas).
+ */
+export function validar(f, quantidadeTermos = 0) {
   const e = {}
   const idade = DATA_ISO.test(f.data_nascimento) ? calcularIdade(f.data_nascimento) : null
   const vazio = (v) => v === null || v === undefined || (typeof v === 'string' && !v.trim())
@@ -107,14 +112,17 @@ export function validar(f) {
   obrig('possui_vicio', 'Selecione uma opção.')
   if (f.possui_vicio) obrig('vicio_qual', 'Qual vício?')
 
-  if (!f.aceite_lgpd) e.aceite_lgpd = 'É necessário aceitar.'
-  if (!f.aceite_atividades) e.aceite_atividades = 'É necessário aceitar.'
-  if (!f.aceite_lista_espera) e.aceite_lista_espera = 'É necessário aceitar.'
+  for (let i = 0; i < quantidadeTermos; i++) {
+    if (f.aceites[i] !== true) e[`aceite_${i}`] = 'É necessário aceitar.'
+  }
   return e
 }
 
-/** Converte os dados do formulário (já validados) no registro gravado no banco. */
-export function montarRegistro(f) {
+/**
+ * Converte os dados do formulário (já validados) no registro gravado no banco.
+ * `termos` = textos das declarações aceitas (gravados junto com a ficha).
+ */
+export function montarRegistro(f, termos = []) {
   const t = (v) => (v ?? '').trim() || null
   const menor = calcularIdade(f.data_nascimento) < 18
   return {
@@ -150,8 +158,6 @@ export function montarRegistro(f) {
     vicio_qual: f.possui_vicio ? t(f.vicio_qual) : null,
     restricoes_medicas: t(f.restricoes_medicas),
     retiros_anteriores: t(f.retiros_anteriores),
-    aceite_lgpd: f.aceite_lgpd,
-    aceite_atividades: f.aceite_atividades,
-    aceite_lista_espera: f.aceite_lista_espera,
+    termos_aceitos: JSON.stringify(termos.map((t) => t.replace(/\*\*/g, ''))),
   }
 }

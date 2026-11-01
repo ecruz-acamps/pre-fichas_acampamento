@@ -1,4 +1,5 @@
 import { montarRegistro, normalizarEntrada, validar } from '../../shared/validacao.js'
+import { carregarMarca, lerLogo, temaCss } from '../marca.js'
 
 const COLUNAS = Object.keys(montarRegistro(normalizarEntrada({ data_nascimento: '2000-01-01' })))
 
@@ -42,10 +43,11 @@ export default async function rotasPublicas(app) {
       return reply.code(201).send({ ok: true })
     }
 
-    const erros = validar(f)
+    const marca = await carregarMarca(pool)
+    const erros = validar(f, marca.termos.length)
     if (Object.keys(erros).length) return reply.code(400).send({ mensagem: 'Dados inválidos.', erros })
 
-    const registro = montarRegistro(f)
+    const registro = montarRegistro(f, marca.termos)
     const valores = COLUNAS.map((c) => registro[c])
     const marcadores = COLUNAS.map((_, i) => `$${i + 1}`)
     // created_at, status e id NÃO vêm do usuário: são definidos pelo banco.
@@ -55,6 +57,27 @@ export default async function rotasPublicas(app) {
       [...valores, req.ip],
     )
     return reply.code(201).send({ ok: true })
+  })
+
+  // Identidade do acampamento (nome, cores, textos, declarações, tribos)
+  app.get('/api/marca', async (req, reply) => {
+    reply.header('Cache-Control', 'no-cache')
+    return carregarMarca(pool)
+  })
+
+  app.get('/api/marca/tema.css', async (req, reply) => {
+    const marca = await carregarMarca(pool)
+    reply.header('Cache-Control', req.query.v ? 'public, max-age=31536000, immutable' : 'no-cache')
+    return reply.type('text/css; charset=utf-8').send(temaCss(marca))
+  })
+
+  app.get('/api/marca/logo', async (req, reply) => {
+    const logo = await lerLogo(pool)
+    if (!logo) return reply.code(404).send({ mensagem: 'Sem logo.' })
+    reply.header('Cache-Control', req.query.v ? 'public, max-age=31536000, immutable' : 'no-cache')
+    // SVG aberto diretamente não pode executar nada
+    reply.header('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'; img-src data:")
+    return reply.type(logo.logo_tipo).send(logo.logo)
   })
 
   // Consulta de CEP (o navegador fala só com o nosso servidor)

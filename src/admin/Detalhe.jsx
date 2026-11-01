@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api.js'
+import { CorTribo } from '../lib/marca.jsx'
 import { ESTADOS_CIVIS, MODALIDADES, SEXOS, STATUS, rotuloDe } from '../../shared/opcoes.js'
 import { calcularIdade, formatarData, formatarDataHora, linkWhatsApp, mascaraCep, simNao } from '../../shared/util.js'
 
@@ -13,7 +14,7 @@ function Item({ rotulo, children }) {
   )
 }
 
-export default function Detalhe({ ficha: f, posicao, onFechar, onSalvar }) {
+export default function Detalhe({ ficha: f, marca, posicao, nomeNucleo, onFechar, onSalvar }) {
   const [status, setStatus] = useState(f.status)
   const [obs, setObs] = useState(f.observacoes_internas || '')
   const [salvando, setSalvando] = useState(false)
@@ -80,6 +81,21 @@ export default function Detalhe({ ficha: f, posicao, onFechar, onSalvar }) {
             </div>
           </section>
 
+          {f.participacoes?.length > 0 && (
+            <>
+              <h3>Acampamentos realizados</h3>
+              <ul className="lista-participacoes">
+                {f.participacoes.map((p) => (
+                  <li key={p.acampamento_id}>
+                    <strong>{p.numero}º {rotuloDe(MODALIDADES, p.modalidade)}</strong>
+                    {p.data_inicio && <span className="dica"> · {formatarData(p.data_inicio)}</span>}
+                    {' · '}<CorTribo tribo={p.tribo} marca={marca} />
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+
           <h3>Dados pessoais</h3>
           <dl className="grade">
             <Item rotulo="Data de nascimento">{formatarData(f.data_nascimento)} ({calcularIdade(f.data_nascimento)} anos)</Item>
@@ -115,6 +131,7 @@ export default function Detalhe({ ficha: f, posicao, onFechar, onSalvar }) {
             <Item rotulo="Endereço">{endereco}</Item>
             <Item rotulo="Bairro">{f.bairro}</Item>
             <Item rotulo="Cidade/UF">{f.cidade}/{f.uf}</Item>
+            <Item rotulo="Núcleo">{f.nucleos?.map(nomeNucleo).filter(Boolean).join(', ') || 'Nenhum núcleo cobre este endereço'}</Item>
           </dl>
 
           <h3>Acampamento</h3>
@@ -132,6 +149,13 @@ export default function Detalhe({ ficha: f, posicao, onFechar, onSalvar }) {
             <Item rotulo="Restrições médicas"><span className="texto-longo">{f.restricoes_medicas}</span></Item>
             <Item rotulo="Retiros que já participou"><span className="texto-longo">{f.retiros_anteriores}</span></Item>
           </dl>
+
+          {f.termos_aceitos?.length > 0 && (
+            <details className="termos-aceitos">
+              <summary>Declarações aceitas no envio ({f.termos_aceitos.length})</summary>
+              <ul>{f.termos_aceitos.map((t, i) => <li key={i}>{t}</li>)}</ul>
+            </details>
+          )}
 
           <h3>Histórico</h3>
           {historico.length ? (

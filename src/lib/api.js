@@ -8,14 +8,17 @@ export class ErroApi extends Error {
   }
 }
 
-async function requisitar(metodo, url, corpo) {
+async function requisitar(metodo, url, corpo, arquivo) {
   const opcoes = {
     method: metodo,
     credentials: 'same-origin',
     // Cabeçalho exigido pelo servidor nas rotas protegidas (defesa contra CSRF).
     headers: { 'X-Requested-With': 'fetch' },
   }
-  if (corpo !== undefined) {
+  if (arquivo) {
+    opcoes.headers['Content-Type'] = arquivo.type
+    opcoes.body = arquivo
+  } else if (corpo !== undefined) {
     opcoes.headers['Content-Type'] = 'application/json'
     opcoes.body = JSON.stringify(corpo)
   }
@@ -36,4 +39,8 @@ export const api = {
   get: (url) => requisitar('GET', url),
   post: (url, corpo = {}) => requisitar('POST', url, corpo),
   patch: (url, corpo = {}) => requisitar('PATCH', url, corpo),
+  put: (url, corpo = {}) => requisitar('PUT', url, corpo),
+  delete: (url) => requisitar('DELETE', url),
+  /** Envia um arquivo como corpo da requisição (ex.: logo). */
+  enviarArquivo: (url, arquivo) => requisitar('PUT', url, undefined, arquivo),
 }

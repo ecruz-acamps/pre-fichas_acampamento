@@ -2,12 +2,14 @@ import { lerConfig } from './config.js'
 import { criarPool, migrar } from './db.js'
 import { construirApp } from './app.js'
 import { limparSessoesExpiradas } from './sessao.js'
+import { aplicarMarcaInicial } from './marca.js'
 
 const config = lerConfig()
 const pool = criarPool(config.databaseUrl)
 const app = await construirApp({ pool, config })
 
 await migrar(pool, app.log)
+await aplicarMarcaInicial(pool, config.marcaInicial, app.log)
 
 const limpeza = setInterval(() => limparSessoesExpiradas(pool).catch((e) => app.log.error(e)), 60 * 60 * 1000)
 limpeza.unref()

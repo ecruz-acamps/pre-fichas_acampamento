@@ -20,67 +20,113 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
 
 ## Funcionalidades
 
-**Formulário**
-- Dados pessoais, informações religiosas, contato, endereço, acampamento e informações adicionais.
-- Telefone/WhatsApp obrigatório (é por ele que a equipe faz o contato).
-- Menores de 18 anos: pede nome e telefone de um responsável.
-- CEP preenche rua, bairro, cidade e UF automaticamente.
-- Modalidade validada pela idade/estado civil (Mirim 7–13, FAC 13–18, Juvenil 18–30,
-  Sênior casado(a) ou 30+).
-- As três declarações obrigatórias do formulário atual.
-- Proteção contra robôs (campo invisível) e limite de envios por IP.
+**Feito para vários acampamentos**
+- Cada acampamento tem **sua própria instalação** (banco de dados separado): os dados do
+  São Padre Pio e da Beata Albertina nunca se misturam. Podem ficar em servidores diferentes
+  ou no mesmo servidor, cada um com seu domínio.
+- **Marca configurável** sem mexer no código: nome, logo, cor, contatos, textos do formulário,
+  declarações obrigatórias e tribos — pelo painel (**Configurações**) ou por arquivo
+  (`marcas/*.json`). Vale na hora, sem reiniciar. Veja [`marcas/README.md`](marcas/README.md).
+- Assistente de instalação: `./scripts/novo-acampamento.sh` coloca um acampamento no ar.
 
-**Painel**
-- Fila separada por modalidade, com a **posição** de cada pessoa.
-- Status: Aguardando → Em contato → Confirmado / Desistiu / Já participou.
-  Quem sai da fila libera a posição para o próximo.
-- Busca, filtros, link direto para o WhatsApp e aviso de **possível duplicado**.
-- Observações internas e **histórico** de quem alterou o quê e quando.
-- Exportação para CSV (abre no Excel).
-- **Usuários**: administradores criam contas da equipe, redefinem senhas e desativam acessos.
-  Toda senha criada por um admin é temporária e precisa ser trocada no primeiro acesso.
+**Formulário (público)**
+- Dados pessoais, informações religiosas, contato, endereço, acampamento e informações adicionais.
+- Telefone/WhatsApp obrigatório; responsável para menores de 18 anos.
+- CEP preenche o endereço; modalidade validada pela idade/estado civil.
+- Declarações configuráveis por acampamento — o texto exato aceito fica gravado na ficha.
+- Proteção contra robôs e limite de envios por IP.
+
+**Fila de espera**
+- Fila por modalidade, com a **posição** de cada pessoa (ordem de inscrição).
+- Filtros por **núcleo, cidade e bairro**, busca, status, aviso de possível duplicado, WhatsApp direto.
+- **Resumo por cidade e bairro**: quantas pessoas há em cada lugar, por modalidade.
+- Observações internas e histórico de quem alterou o quê. Exportação CSV.
+
+**Coordenadores de núcleo**
+- Um **núcleo** reúne cidades inteiras e/ou bairros específicos (ex.: "São José inteira +
+  Florianópolis/Centro"). Maiúsculas e acentos não importam ("SAO JOSE" = "São José").
+- O **coordenador de núcleo** só vê as pré-fichas da sua área — garantido pelo servidor —
+  e usa o resumo para saber quem chamar em cada acampamento.
+- O painel mostra quais cidades/bairros com pré-fichas ainda não têm núcleo.
+
+**Acampamentos realizados**
+- Cadastre cada edição (**número + modalidade**, ex.: 45º Juvenil, com datas).
+- Marque quem **fez o acampamento** e a **cor da tribo** (azul, preto, amarelo, verde, roxo,
+  laranja, marrom — lista configurável). A pessoa sai da fila automaticamente.
+- Contagem por tribo, exportação da lista e histórico de acampamentos em cada ficha.
+
+**Papéis**
+
+| Papel | Pode |
+|---|---|
+| Administrador | tudo: usuários, núcleos, configurações da marca, acampamentos, fila |
+| Equipe | ver toda a fila, atualizar status, registrar acampamentos e tribos |
+| Coordenador de núcleo | ver e atualizar só a fila das cidades/bairros dos seus núcleos |
 
 **Segurança**
-- As regras valem no servidor (o formulário só orienta): campos, tamanhos, opções e idade × modalidade.
-- A data/hora da inscrição é definida pelo banco e um *trigger* impede alterá-la — ninguém "fura a fila".
-- A equipe só altera `status` e `observações`; não há exclusão de fichas pelo sistema.
-- Senhas com scrypt; sessão em cookie `HttpOnly` + `SameSite=Strict`; proteção CSRF;
-  limite de tentativas de login; cabeçalhos de segurança (CSP, etc.).
-- O banco não fica exposto na rede; só o proxy (portas 80/443) é publicado.
+- As regras valem no servidor (o navegador só orienta), inclusive o que cada papel enxerga.
+- A data/hora da inscrição é definida pelo banco e um *trigger* impede alterá-la.
+- Senhas com scrypt, senha temporária com troca obrigatória, cookie `HttpOnly` + `SameSite=Strict`,
+  proteção CSRF, limite de tentativas de login, CSP. Logo enviada é conferida (SVG com script é recusado).
+- O banco não fica exposto na rede.
 
 ---
 
 ## Instalação com Docker (recomendado)
 
 Requisitos: um servidor Linux com [Docker Engine e o plugin Compose](https://docs.docker.com/engine/install/).
-Para HTTPS automático, um domínio (ex.: `prefichas.seudominio.com.br`) apontando para o IP
-do servidor, com as portas 80 e 443 liberadas.
+Para HTTPS automático, um domínio apontando para o IP do servidor, com as portas 80 e 443 liberadas.
 
 ```bash
-# 1. Baixar o código
-sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/pre-fichas
-cd /opt/pre-fichas
-
-# 2. Configurar
-sudo cp .env.example .env
-sudo nano .env        # DOMINIO, POSTGRES_PASSWORD (use: openssl rand -hex 24), WhatsApp...
-sudo chmod 600 .env
-
-# 3. Subir (banco + aplicação + HTTPS)
-sudo docker compose up -d --build
-
-# 4. Criar o primeiro administrador (mostra uma senha temporária)
-sudo docker compose exec app node server/cli.js criar-admin voce@email.com "Seu Nome"
+sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/prefichas-sao-padre-pio
+cd /opt/prefichas-sao-padre-pio
+sudo ./scripts/novo-acampamento.sh \
+    --marca marcas/sao-padre-pio.json \
+    --dominio app.acampamentosaopadrepio.com.br \
+    --admin voce@email.com --nome-admin "Seu Nome"
 ```
 
-Pronto: acesse `https://SEU-DOMINIO/` (formulário) e `https://SEU-DOMINIO/admin/` (painel).
-As tabelas são criadas automaticamente na primeira inicialização.
+O assistente gera o `.env` (com senha aleatória para o banco), sobe banco + aplicação + HTTPS,
+aplica a marca e cria o primeiro administrador (mostra a senha temporária).
+Acesse `https://SEU-DOMINIO/` (formulário) e `https://SEU-DOMINIO/admin/` (painel).
 
-**Rede interna, sem domínio público?** No `.env` use `DOMINIO=:80` e `COOKIE_SEGURO=false`
-(acesso por `http://IP-DO-SERVIDOR`). Para HTTPS com certificado interno, veja `deploy/Caddyfile`.
+Prefere configurar à mão? `cp .env.example .env`, edite e rode `docker compose up -d --build`.
 
-**Já tem Nginx no servidor?** Remova o serviço `caddy` do `docker-compose.yml`, descomente
-`ports: ["127.0.0.1:3000:3000"]` no serviço `app` e use `deploy/nginx.conf`.
+**Rede interna, sem domínio público?** Use `--dominio :80` (acesso por `http://IP-DO-SERVIDOR`).
+
+**Já tem Nginx no servidor?** Rode o assistente com `--multi` (sem Caddy próprio) e use
+`deploy/nginx.conf` apontando para a porta local (`--porta`, padrão 3000).
+
+### Vários acampamentos no mesmo servidor
+
+Cada acampamento fica em uma pasta própria, com porta local diferente, e um único Caddy
+na frente atende todos os domínios:
+
+```bash
+sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/prefichas-sao-padre-pio
+sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/prefichas-beata-albertina
+
+cd /opt/prefichas-sao-padre-pio && sudo ./scripts/novo-acampamento.sh --multi --porta 3001 \
+    --marca marcas/sao-padre-pio.json --dominio app.acampamentosaopadrepio.com.br \
+    --admin admin@saopadrepio.com.br --nome-admin "Coordenação SPP"
+
+cd /opt/prefichas-beata-albertina && sudo ./scripts/novo-acampamento.sh --multi --porta 3002 \
+    --marca marcas/beata-albertina.json --dominio prefichas.beataalbertina.com.br \
+    --admin admin@beataalbertina.com.br --nome-admin "Coordenação Beata"
+```
+
+Depois instale o Caddy no servidor e use [`deploy/Caddyfile.multi`](deploy/Caddyfile.multi)
+(o assistente imprime o bloco de cada domínio). Cada instalação tem seu banco, seus usuários,
+seus backups e sua marca.
+
+### Novo acampamento? Crie a marca dele
+
+```bash
+cp marcas/sao-padre-pio.json marcas/meu-acampamento.json   # edite nome, cor, contatos, tribos...
+cp ~/logo.png marcas/meu-acampamento.png                     # e indique "logo": "meu-acampamento.png" no .json
+```
+
+Tudo pode ser ajustado depois no painel → **Configurações** (inclusive importar/exportar o `.json`).
 
 ### Comandos do dia a dia
 
@@ -90,6 +136,9 @@ docker compose logs -f app             # logs da aplicação
 docker compose exec app node server/cli.js listar
 docker compose exec app node server/cli.js redefinir-senha pessoa@email.com
 docker compose exec app node server/cli.js desativar pessoa@email.com
+docker compose exec app node server/cli.js criar-coordenador pessoa@email.com "Nome"
+docker compose exec app node server/cli.js marca aplicar marcas/beata-albertina.json
+docker compose exec app node server/cli.js marca exportar        # mostra a marca atual (JSON)
 
 # Atualizar para uma nova versão do código
 git pull && docker compose up -d --build
@@ -121,6 +170,8 @@ sudo chmod 600 /etc/pre-fichas.env
 # Serviço
 sudo cp deploy/pre-fichas.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now pre-fichas
+
+echo 'MARCA_INICIAL=marcas/sao-padre-pio.json' | sudo tee -a /etc/pre-fichas.env
 
 # Primeiro administrador
 sudo bash -c 'set -a; . /etc/pre-fichas.env; node server/cli.js criar-admin voce@email.com "Seu Nome"'
@@ -165,15 +216,16 @@ DATABASE_URL_TESTE=postgres://usuario:senha@localhost:5432/prefichas_teste npm t
 ## Estrutura
 
 ```
-index.html, admin/index.html   páginas (formulário e painel)
+index.html, admin/index.html   páginas (formulário e painel; o servidor aplica a marca)
 src/form/                      formulário público
-src/admin/                     login, fila, detalhes, usuários, exportação CSV
-shared/                        regras de validação e opções (usadas no site E no servidor)
-server/                        API (Fastify), sessões, senhas, CLI de usuários
+src/admin/                     fila, resumo, acampamentos, núcleos, usuários, configurações
+shared/                        regras de validação, opções e marca (site E servidor)
+server/                        API (Fastify), sessões, senhas, marca, CLI
+marcas/                        identidade de cada acampamento (.json + logo)
 server/migrations/             estrutura do banco (aplicada automaticamente)
 server/teste/                  testes de integração
-deploy/                        Caddyfile, nginx.conf, serviço systemd
-scripts/                       backup e restauração
+deploy/                        Caddyfile, Caddyfile.multi, nginx.conf, serviço systemd
+scripts/                       novo-acampamento, backup e restauração
 Dockerfile, docker-compose.yml implantação com Docker
 ```
 
@@ -181,5 +233,6 @@ Dockerfile, docker-compose.yml implantação com Docker
 
 A posição é calculada **por modalidade**, ordenando pela data/hora de inscrição registrada pelo
 banco (precisão de microssegundos) e, em empate, pelo número da ficha. Entram na contagem as
-fichas com status **Aguardando** ou **Em contato**. A view `fila_espera` traz a mesma posição
+fichas com status **Aguardando** ou **Em contato**; ao registrar que a pessoa fez um
+acampamento, ela passa a **Já participou** e sai da fila. A view `fila_espera` traz a mesma posição
 para consultas direto no banco.

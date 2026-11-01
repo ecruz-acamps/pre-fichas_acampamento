@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api.js'
 import { MODALIDADES, STATUS, STATUS_NA_FILA, rotuloDe } from '../../shared/opcoes.js'
-import { calcularIdade, formatarDataHora, linkWhatsApp, somenteDigitos } from '../../shared/util.js'
+import { calcularIdade, chaveLocal, formatarDataHora, linkWhatsApp, melhorGrafia, somenteDigitos } from '../../shared/util.js'
 import Detalhe from './Detalhe.jsx'
 import { exportarCsv } from './csv.js'
 
 /** Posição na fila: por modalidade, ordem de chegada, contando só quem ainda está na fila. */
-function calcularPosicoes(linhas) {
+export function calcularPosicoes(linhas) {
   const contador = {}
   const posicoes = new Map()
   for (const l of linhas) {
@@ -20,73 +20,106 @@ function calcularPosicoes(linhas) {
 /** Marca fichas com o mesmo e-mail ou telefone (possível cadastro repetido). */
 function calcularDuplicados(linhas) {
   const porChave = new Map()
+  const chaves = (l) => [`e:${l.email}`, `t:${somenteDigitos(l.telefone)}`]
+  for (const l of linhas) for (const c of chaves(l)) porChave.set(c, (porChave.get(c) || 0) + 1)
+  return new Set(linhas.filter((l) => chaves(l).some((c) => porChave.get(c) > 1)).map((l) => l.id))
+}
+
+/** Lista de opções {chave, nome, total} a partir de um campo (agrupando grafias diferentes). */
+export function opcoesLocais(linhas, campo) {
+  const mapa = new Map()
   for (const l of linhas) {
-    for (const chave of [`e:${l.email}`, `t:${somenteDigitos(l.telefone)}`]) {
-      porChave.set(chave, (porChave.get(chave) || 0) + 1)
-    }
+    const chave = chaveLocal(l[campo])
+    if (!chave) continue
+    const item = mapa.get(chave) ?? { chave, nome: l[campo], total: 0 }
+    item.nome = melhorGrafia(item.nome, l[campo])
+    item.total++
+    mapa.set(chave, item)
   }
-  return new Set(
-    linhas
-      .filter((l) => porChave.get(`e:${l.email}`) > 1 || porChave.get(`t:${somenteDigitos(l.telefone)}`) > 1)
-      .map((l) => l.id),
-  )
+  return [...mapa.values()].sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'))
 }
 
 const normalizar = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
-export default function Fila({ menu }) {
+export function useFichas() {
   const [linhas, setLinhas] = useState([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
-  const [modalidade, setModalidade] = useState('todas')
-  const [filtroStatus, setFiltroStatus] = useState('fila')
-  const [busca, setBusca] = useState('')
-  const [selecionada, setSelecionada] = useState(null)
-
   const recarregar = useCallback(async () => {
     setCarregando(true); setErro('')
     try {
       setLinhas(await api.get('/api/admin/pre-fichas'))
     } catch (e) {
       console.error(e)
-      setErro('Não foi possível carregar a fila. Tente novamente.')
+      setErro('Não foi possível carregar as pré-fichas. Tente novamente.')
     } finally {
       setCarregando(false)
     }
   }, [])
-
   useEffect(() => { recarregar() }, [recarregar])
+  return { linhas, setLinhas, carregando, erro, recarregar }
+}
+
+/** Filtro de núcleo usado na fila e no resumo. */
+export function filtrarNucleo(linhas, nucleo) {
+  if (!nucleo) return linhas
+  if (nucleo === 'sem') return linhas.filter((l) => !l.nucleos.length)
+  return linhas.filter((l) => l.nucleos.includes(Number(nucleo)))
+}
+
+export function SeletorNucleo({ nucleos, coordenador, valor, onChange }) {
+  if (nucleos.length <= (coordenador ? 1 : 0)) return null
+  return (
+    <select value={valor} onChange={(e) => onChange(e.target.value)} aria-label="Núcleo">
+      <option value="">{coordenador ? 'Todos os meus núcleos' : 'Todos os núcleos'}</option>
+      {nucleos.map((n) => <option key={n.id} value={n.id}>{n.nome}</option>)}
+      {!coordenador && <option value="sem">Sem núcleo definido</option>}
+    </select>
+  )
+}
+
+export default function Fila({ usuario, marca, nucleos }) {
+  const { linhas, setLinhas, carregando, erro, recarregar } = useFichas()
+  const [modalidade, setModalidade] = useState('todas')
+  const [filtroStatus, setFiltroStatus] = useState('fila')
+  const [nucleo, setNucleo] = useState('')
+  const [cidade, setCidade] = useState('')
+  const [bairro, setBairro] = useState('')
+  const [busca, setBusca] = useState('')
+  const [selecionada, setSelecionada] = useState(null)
 
   const posicoes = useMemo(() => calcularPosicoes(linhas), [linhas])
   const duplicados = useMemo(() => calcularDuplicados(linhas), [linhas])
 
+  // Filtros de lugar (núcleo → cidade → bairro), antes de modalidade/status
+  const doNucleo = useMemo(() => filtrarNucleo(linhas, nucleo), [linhas, nucleo])
+  const porLugar = useMemo(() => doNucleo.filter((l) =>
+    (!cidade || chaveLocal(l.cidade) === cidade) && (!bairro || chaveLocal(l.bairro) === bairro)), [doNucleo, cidade, bairro])
+  const cidades = useMemo(() => opcoesLocais(doNucleo, 'cidade'), [doNucleo])
+  const bairros = useMemo(() => (cidade ? opcoesLocais(doNucleo.filter((l) => chaveLocal(l.cidade) === cidade), 'bairro') : []), [doNucleo, cidade])
+
   const contagemFila = useMemo(() => {
     const c = { todas: 0 }
-    for (const l of linhas) {
+    for (const l of porLugar) {
       if (!STATUS_NA_FILA.includes(l.status)) continue
       c.todas++
       c[l.modalidade] = (c[l.modalidade] || 0) + 1
     }
     return c
-  }, [linhas])
+  }, [porLugar])
 
   const visiveis = useMemo(() => {
     const termo = normalizar(busca.trim())
     const termoDigitos = somenteDigitos(busca)
-    return linhas.filter((l) => {
+    return porLugar.filter((l) => {
       if (modalidade !== 'todas' && l.modalidade !== modalidade) return false
       if (filtroStatus === 'fila' && !STATUS_NA_FILA.includes(l.status)) return false
       if (filtroStatus !== 'fila' && filtroStatus !== 'todos' && l.status !== filtroStatus) return false
       if (!termo) return true
-      return (
-        normalizar(l.nome_completo).includes(termo) ||
-        normalizar(l.email).includes(termo) ||
-        normalizar(l.cidade).includes(termo) ||
-        normalizar(l.paroquia).includes(termo) ||
+      return [l.nome_completo, l.email, l.cidade, l.bairro, l.paroquia].some((v) => normalizar(v).includes(termo)) ||
         (termoDigitos.length >= 4 && somenteDigitos(l.telefone).includes(termoDigitos))
-      )
     })
-  }, [linhas, modalidade, filtroStatus, busca])
+  }, [porLugar, modalidade, filtroStatus, busca])
 
   async function atualizar(id, campos) {
     try {
@@ -101,37 +134,53 @@ export default function Fila({ menu }) {
     }
   }
 
+  const nomeNucleo = (id) => nucleos.find((n) => n.id === id)?.nome
+  const coordenador = usuario.papel === 'coordenador'
+
   return (
-    <div className="painel">
-      <header className="painel-topo">
-        <div>
-          <h1>Fila de espera</h1>
-          <p className="subtitulo">{contagemFila.todas} pessoa(s) aguardando · ordem por data e hora de inscrição</p>
-        </div>
-        {menu}
-      </header>
+    <>
+      <div className="titulo-secao">
+        <h1>Fila de espera</h1>
+        <p className="subtitulo">
+          {contagemFila.todas} pessoa(s) aguardando · ordem por data e hora de inscrição
+          {coordenador && nucleos.length > 0 && ` · ${nucleos.map((n) => n.nome).join(', ')}`}
+        </p>
+      </div>
+
+      {coordenador && nucleos.length === 0 && (
+        <div className="alerta-ok">Seu usuário ainda não está ligado a nenhum núcleo. Peça a um administrador para definir as suas cidades/bairros.</div>
+      )}
 
       <nav className="abas" aria-label="Modalidades">
         {[{ valor: 'todas', rotulo: 'Todas' }, ...MODALIDADES].map((m) => (
-          <button key={m.valor} className={`aba ${modalidade === m.valor ? 'ativa' : ''}`}
-            onClick={() => setModalidade(m.valor)}>
+          <button key={m.valor} className={`aba ${modalidade === m.valor ? 'ativa' : ''}`} onClick={() => setModalidade(m.valor)}>
             {m.rotulo} <span className="contador">{contagemFila[m.valor] || 0}</span>
           </button>
         ))}
       </nav>
 
       <div className="filtros">
-        <input type="search" placeholder="Buscar por nome, e-mail, telefone, cidade ou paróquia"
+        <input type="search" placeholder="Buscar por nome, e-mail, telefone, bairro ou paróquia"
           value={busca} onChange={(e) => setBusca(e.target.value)} />
         <select value={filtroStatus} onChange={(e) => setFiltroStatus(e.target.value)} aria-label="Status">
           <option value="fila">Na fila (aguardando + em contato)</option>
           <option value="todos">Todos os status</option>
           {STATUS.map((s) => <option key={s.valor} value={s.valor}>{s.rotulo}</option>)}
         </select>
-        <button className="botao-secundario" onClick={recarregar} disabled={carregando}>
-          {carregando ? 'Atualizando…' : 'Atualizar'}
-        </button>
-        <button className="botao-secundario" onClick={() => exportarCsv(visiveis, posicoes)} disabled={!visiveis.length}>
+      </div>
+      <div className="filtros">
+        <SeletorNucleo nucleos={nucleos} coordenador={coordenador} valor={nucleo}
+          onChange={(v) => { setNucleo(v); setCidade(''); setBairro('') }} />
+        <select value={cidade} onChange={(e) => { setCidade(e.target.value); setBairro('') }} aria-label="Cidade">
+          <option value="">Todas as cidades</option>
+          {cidades.map((c) => <option key={c.chave} value={c.chave}>{c.nome} ({c.total})</option>)}
+        </select>
+        <select value={bairro} onChange={(e) => setBairro(e.target.value)} disabled={!cidade} aria-label="Bairro">
+          <option value="">{cidade ? 'Todos os bairros' : 'Bairro (escolha a cidade)'}</option>
+          {bairros.map((b) => <option key={b.chave} value={b.chave}>{b.nome} ({b.total})</option>)}
+        </select>
+        <button className="botao-secundario" onClick={recarregar} disabled={carregando}>{carregando ? 'Atualizando…' : 'Atualizar'}</button>
+        <button className="botao-secundario" onClick={() => exportarCsv(visiveis, posicoes, nomeNucleo)} disabled={!visiveis.length}>
           Exportar CSV
         </button>
       </div>
@@ -147,7 +196,7 @@ export default function Fila({ menu }) {
               <th>Nome</th>
               <th>Idade</th>
               <th>Modalidade</th>
-              <th>Cidade</th>
+              <th>Cidade / bairro</th>
               <th>Telefone</th>
               <th>Status</th>
             </tr>
@@ -165,7 +214,7 @@ export default function Fila({ menu }) {
                   </td>
                   <td>{calcularIdade(l.data_nascimento)}</td>
                   <td>{rotuloDe(MODALIDADES, l.modalidade)}</td>
-                  <td>{l.cidade}/{l.uf}</td>
+                  <td>{l.cidade}/{l.uf}{l.bairro && <small className="dica bloco">{l.bairro}</small>}</td>
                   <td className="nowrap" onClick={(e) => e.stopPropagation()}>
                     {wa ? <a href={wa} target="_blank" rel="noreferrer">{l.telefone}</a> : l.telefone}
                   </td>
@@ -188,11 +237,13 @@ export default function Fila({ menu }) {
       {selecionada && (
         <Detalhe
           ficha={selecionada}
+          marca={marca}
           posicao={posicoes.get(selecionada.id)}
+          nomeNucleo={nomeNucleo}
           onFechar={() => setSelecionada(null)}
           onSalvar={(campos) => atualizar(selecionada.id, campos)}
         />
       )}
-    </div>
+    </>
   )
 }

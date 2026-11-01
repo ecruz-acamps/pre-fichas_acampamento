@@ -9,7 +9,23 @@ import {
 } from '../../shared/util.js'
 import { INICIAL, validar } from '../../shared/validacao.js'
 
-const WHATSAPP = import.meta.env.VITE_WHATSAPP_CONTATO || '5548996954410'
+import { TextoMarca } from '../lib/marca.jsx'
+
+/** Contatos do acampamento (rodapé), conforme a marca configurada. */
+function Contatos({ marca }) {
+  const itens = []
+  if (marca.whatsapp) {
+    itens.push(<span key="w">WhatsApp: <a href={`https://wa.me/${marca.whatsapp}`} target="_blank" rel="noreferrer">
+      {mascaraTelefone(marca.whatsapp.replace(/^55/, ''))}</a></span>)
+  }
+  if (marca.email) itens.push(<span key="e">E-mail: <a href={`mailto:${marca.email}`}>{marca.email}</a></span>)
+  if (marca.instagram) {
+    itens.push(<span key="i">Instagram: <a href={`https://instagram.com/${marca.instagram}`} target="_blank" rel="noreferrer">@{marca.instagram}</a></span>)
+  }
+  if (marca.site) itens.push(<span key="s"><a href={marca.site} target="_blank" rel="noreferrer">{marca.site.replace(/^https?:\/\//, '')}</a></span>)
+  if (!itens.length) return null
+  return <span className="contatos">Em caso de dúvidas: {itens.reduce((acc, item, i) => (i ? [...acc, ' · ', item] : [item]), [])}</span>
+}
 
 /* ---------- componentes de campo ---------- */
 
@@ -48,7 +64,7 @@ function SimNao({ id, rotulo, valor, onChange, erro }) {
 
 /* ---------- formulário ---------- */
 
-export default function FormularioPreFicha() {
+export default function FormularioPreFicha({ marca }) {
   const [f, setF] = useState(INICIAL)
   const [erros, setErros] = useState({})
   const [enviando, setEnviando] = useState(false)
@@ -102,7 +118,7 @@ export default function FormularioPreFicha() {
   async function enviar(ev) {
     ev.preventDefault()
     setErroEnvio('')
-    const e = validar(f)
+    const e = validar(f, marca.termos.length)
     setErros(e)
     const primeiro = Object.keys(e).find((k) => e[k])
     if (primeiro) {
@@ -137,15 +153,9 @@ export default function FormularioPreFicha() {
       <div className="cartao sucesso">
         <div className="icone-sucesso" aria-hidden="true">✓</div>
         <h2>Pré-ficha enviada!</h2>
-        <p>
-          Obrigado, <strong>{f.nome_completo.split(' ')[0]}</strong>. Você entrou na
-          <strong> lista de espera</strong>. A ordem é definida pela data e hora do envio.
-        </p>
-        <p>Quando chegar a sua vez, alguém da equipe entrará em contato pelo telefone informado.</p>
-        <p className="rodape-texto">
-          Dúvidas? WhatsApp:{' '}
-          <a href={`https://wa.me/${WHATSAPP}`} target="_blank" rel="noreferrer">{mascaraTelefone(WHATSAPP.replace(/^55/, ''))}</a>
-        </p>
+        <p>Obrigado, <strong>{f.nome_completo.split(' ')[0]}</strong>!</p>
+        <p><TextoMarca texto={marca.mensagemSucesso} /></p>
+        <p className="rodape-texto"><Contatos marca={marca} /></p>
       </div>
     )
   }
@@ -347,30 +357,24 @@ export default function FormularioPreFicha() {
         </Campo>
       </section>
 
-      <section className="termos">
-        <label className={`check ${erros.aceite_lgpd ? 'com-erro' : ''}`} id="aceite_lgpd">
-          <input type="checkbox" checked={f.aceite_lgpd} onChange={set('aceite_lgpd')} />
-          <span>Autorizo o uso dos meus dados pessoais exclusivamente para fins do acampamento, sem exposição pública.</span>
-        </label>
-        <label className={`check ${erros.aceite_atividades ? 'com-erro' : ''}`} id="aceite_atividades">
-          <input type="checkbox" checked={f.aceite_atividades} onChange={set('aceite_atividades')} />
-          <span>
-            Entendo que durante o acampamento são realizadas atividades físicas moderadas. Por questões de
-            segurança, não é permitida a participação de gestantes ou pessoas com restrições médicas graves.
-          </span>
-        </label>
-        <label className={`check ${erros.aceite_lista_espera ? 'com-erro' : ''}`} id="aceite_lista_espera">
-          <input type="checkbox" checked={f.aceite_lista_espera} onChange={set('aceite_lista_espera')} />
-          <span>
-            Entendo que estou entrando em uma <strong>lista de espera</strong> e que o preenchimento dessa
-            pré-ficha não significa que estarei automaticamente participando do próximo acampamento.
-            Compreendo que quando chegar a minha vez de participar, alguém irá entrar em contato comigo por telefone.
-          </span>
-        </label>
-        {(erros.aceite_lgpd || erros.aceite_atividades || erros.aceite_lista_espera) && (
-          <small className="erro">Marque todas as declarações para continuar.</small>
-        )}
-      </section>
+      {marca.termos.length > 0 && (
+        <section className="termos">
+          {marca.termos.map((termo, i) => (
+            <label key={i} className={`check ${erros[`aceite_${i}`] ? 'com-erro' : ''}`} id={`aceite_${i}`}>
+              <input type="checkbox" checked={f.aceites[i] === true} onChange={(e) => {
+                const aceites = [...f.aceites]
+                aceites[i] = e.target.checked
+                set('aceites')(aceites)
+                setErros((a) => ({ ...a, [`aceite_${i}`]: undefined }))
+              }} />
+              <span><TextoMarca texto={termo} /></span>
+            </label>
+          ))}
+          {marca.termos.some((_, i) => erros[`aceite_${i}`]) && (
+            <small className="erro">Marque todas as declarações para continuar.</small>
+          )}
+        </section>
+      )}
 
       {erroEnvio && <div className="alerta-erro" role="alert">{erroEnvio}</div>}
 
@@ -382,8 +386,7 @@ export default function FormularioPreFicha() {
 
       <p className="rodape-texto">
         Ao enviar a ficha de inscrição, você concorda com os termos e condições do acampamento.<br />
-        Em caso de dúvidas, entre em contato através do WhatsApp:{' '}
-        <a href={`https://wa.me/${WHATSAPP}`} target="_blank" rel="noreferrer">{mascaraTelefone(WHATSAPP.replace(/^55/, ''))}</a>.
+        <Contatos marca={marca} />
       </p>
     </form>
   )

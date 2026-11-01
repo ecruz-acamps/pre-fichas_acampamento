@@ -5,10 +5,14 @@ import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
 import estaticos from '@fastify/static'
 import { COOKIE, buscarSessao } from './sessao.js'
+import { carregarMarca, criarRenderizadorHtml } from './marca.js'
 import rotasPublicas from './rotas/publico.js'
 import rotasAuth from './rotas/auth.js'
 import rotasFila from './rotas/fila.js'
 import rotasUsuarios from './rotas/usuarios.js'
+import rotasNucleos from './rotas/nucleos.js'
+import rotasAcampamentos from './rotas/acampamentos.js'
+import rotasMarca from './rotas/marca.js'
 
 export async function construirApp({ pool, config, logger = true }) {
   const app = Fastify({
@@ -87,19 +91,33 @@ export async function construirApp({ pool, config, logger = true }) {
   await app.register(rotasAuth)
   await app.register(rotasFila)
   await app.register(rotasUsuarios)
+  await app.register(rotasNucleos)
+  await app.register(rotasAcampamentos)
+  await app.register(rotasMarca)
 
   // ---- Site (arquivos gerados pelo `npm run build`) ----
   if (existsSync(config.pastaSite)) {
     await app.register(estaticos, {
       root: config.pastaSite,
       wildcard: false,
-      index: ['index.html'],
+      index: false,
+      // index.html só pelas rotas acima (com a marca aplicada)
+      allowedPath: (caminho) => !caminho.endsWith('index.html'),
       setHeaders(reply, caminho) {
         reply.header('Cache-Control', caminho.includes('/assets/')
           ? 'public, max-age=31536000, immutable'
           : 'no-cache')
       },
     })
+    // Páginas com nome, cores e ícone do acampamento
+    const renderizar = criarRenderizadorHtml(config.pastaSite)
+    const pagina = (nome) => async (req, reply) => {
+      const html = renderizar(nome, await carregarMarca(pool), `${req.protocol}://${req.host}`)
+      if (!html) return reply.code(404).send('Site não gerado. Rode "npm run build".')
+      return reply.header('Cache-Control', 'no-cache').type('text/html; charset=utf-8').send(html)
+    }
+    app.get('/', pagina('form'))
+    app.get('/admin/', pagina('admin'))
     app.get('/admin', (req, reply) => reply.redirect('/admin/', 301))
   } else {
     app.log.warn(`Pasta do site não encontrada (${config.pastaSite}). Rode "npm run build".`)

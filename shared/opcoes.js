@@ -41,6 +41,12 @@ export const STATUS = [
 
 export const STATUS_NA_FILA = ['aguardando', 'em_contato']
 
+export const PAPEIS = [
+  { valor: 'admin', rotulo: 'Administrador', descricao: 'acesso total, usuários, núcleos e configurações' },
+  { valor: 'equipe', rotulo: 'Equipe', descricao: 'vê toda a fila e registra os acampamentos' },
+  { valor: 'coordenador', rotulo: 'Coordenador de núcleo', descricao: 'vê só as cidades/bairros do seu núcleo' },
+]
+
 export const UFS = [
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA',
   'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO',

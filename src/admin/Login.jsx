@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { api } from '../lib/api.js'
 
-export default function Login({ onEntrar }) {
+export default function Login({ marca, onEntrar }) {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
@@ -24,8 +24,9 @@ export default function Login({ onEntrar }) {
   return (
     <main className="pagina estreita">
       <form className="cartao login" onSubmit={entrar}>
+        {marca?.logoUrl && <img className="logo" src={marca.logoUrl} alt="" />}
         <h1>Fila de espera</h1>
-        <p className="subtitulo">Acesso restrito à equipe do acampamento.</p>
+        <p className="subtitulo">{marca?.nome ? `${marca.nome} · ` : ''}acesso restrito à equipe.</p>
         <div className="campo">
           <label htmlFor="email">E-mail</label>
           <input id="email" type="email" autoComplete="username" required value={email}

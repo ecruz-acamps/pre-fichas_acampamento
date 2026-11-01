@@ -31,6 +31,9 @@ const COLUNAS = [
   ['Bairro', (l) => l.bairro],
   ['Cidade', (l) => l.cidade],
   ['UF', (l) => l.uf],
+  ['Núcleo', (l, pos, nomeNucleo) => (l.nucleos ?? []).map(nomeNucleo).filter(Boolean).join(', ')],
+  ['Acampamentos realizados', (l) => (l.participacoes ?? [])
+    .map((p) => `${p.numero}º ${rotuloDe(MODALIDADES, p.modalidade)}${p.tribo ? ` (${p.tribo})` : ''}`).join(', ')],
   ['Como conheceu', (l) => l.como_conheceu],
   ['Motivo', (l) => l.motivo],
   ['Vício', (l) => (l.possui_vicio ? l.vicio_qual || 'Sim' : 'Não')],
@@ -46,15 +49,19 @@ function celula(v) {
   return /[";\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
-export function exportarCsv(linhas, posicoes) {
-  // ";" + BOM UTF-8: abre corretamente no Excel em português
-  const cabecalho = COLUNAS.map(([n]) => celula(n)).join(';')
-  const corpo = linhas.map((l) => COLUNAS.map(([, fn]) => celula(fn(l, posicoes))).join(';'))
-  const blob = new Blob(['﻿' + [cabecalho, ...corpo].join('\r\n')], { type: 'text/csv;charset=utf-8' })
+export function baixarCsv(nomeArquivo, cabecalhos, linhas) {
+  const conteudo = [cabecalhos, ...linhas].map((l) => l.map(celula).join(';')).join('\r\n')
+  const blob = new Blob(['\uFEFF' + conteudo], { type: 'text/csv;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `fila-espera-${new Date().toISOString().slice(0, 10)}.csv`
+  a.download = nomeArquivo
   a.click()
   URL.revokeObjectURL(url)
+}
+
+export function exportarCsv(linhas, posicoes, nomeNucleo = () => '') {
+  baixarCsv(`fila-espera-${new Date().toISOString().slice(0, 10)}.csv`,
+    COLUNAS.map(([n]) => n),
+    linhas.map((l) => COLUNAS.map(([, fn]) => fn(l, posicoes, nomeNucleo))))
 }

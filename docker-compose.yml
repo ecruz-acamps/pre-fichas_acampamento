@@ -1,10 +1,12 @@
-# Implantação completa em um servidor Linux:
+# Implantação de UM acampamento em um servidor Linux:
 #   banco PostgreSQL + aplicação Node + Caddy (HTTPS automático)
 #
-#   cp .env.example .env    # e preencha
-#   docker compose up -d --build
+#   ./scripts/novo-acampamento.sh      # assistente (gera o .env e sobe tudo)
+#   — ou —
+#   cp .env.example .env && docker compose up -d --build
 #
-name: pre-fichas
+# Vários acampamentos no mesmo servidor: veja "Vários acampamentos" no README.
+name: ${COMPOSE_PROJECT_NAME:-pre-fichas}
 
 services:
   db:
@@ -25,11 +27,8 @@ services:
     # Sem "ports": o banco NÃO fica exposto para fora do servidor.
 
   app:
-    build:
-      context: .
-      args:
-        VITE_WHATSAPP_CONTATO: ${VITE_WHATSAPP_CONTATO:-5548996954410}
-    image: pre-fichas-app:latest
+    build: .
+    image: ${COMPOSE_PROJECT_NAME:-pre-fichas}-app:latest
     restart: unless-stopped
     depends_on:
       db:
@@ -41,12 +40,21 @@ services:
       SESSAO_HORAS: ${SESSAO_HORAS:-12}
       LIMITE_ENVIOS_POR_HORA: ${LIMITE_ENVIOS_POR_HORA:-30}
       VIACEP_URL: ${VIACEP_URL:-https://viacep.com.br/ws}
-    # Para usar um Nginx/Apache que já existe no servidor em vez do Caddy,
-    # remova o serviço "caddy" e descomente a linha abaixo:
-    # ports: ["127.0.0.1:3000:3000"]
+      # Identidade aplicada só na primeira inicialização (depois, pelo painel)
+      MARCA_INICIAL: ${MARCA_INICIAL:-}
+    volumes:
+      # Arquivos de marca e logos (marcas/*.json, *.png) ficam acessíveis ao container
+      - ./marcas:/app/marcas:ro
+    # Porta só no próprio servidor (para um proxy compartilhado, se houver vários acampamentos)
+    ports:
+      - "127.0.0.1:${PORTA_LOCAL:-3000}:3000"
 
+  # Proxy HTTPS. Ativo quando COMPOSE_PROFILES=caddy (padrão do .env.example).
+  # Com vários acampamentos no mesmo servidor, deixe COMPOSE_PROFILES vazio e use
+  # um único proxy para todos (deploy/Caddyfile.multi).
   caddy:
     image: caddy:2-alpine
+    profiles: ["caddy"]
     restart: unless-stopped
     depends_on:
       - app
@@ -54,7 +62,7 @@ services:
       - "80:80"
       - "443:443"
     environment:
-      DOMINIO: ${DOMINIO:?defina DOMINIO no .env}
+      DOMINIO: ${DOMINIO:-:80}
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

@@ -57,3 +57,27 @@ export function linkWhatsApp(telefone) {
   if (!d) return null
   return `https://wa.me/${d.length <= 11 ? `55${d}` : d}`
 }
+
+/**
+ * Normaliza nomes de cidade/bairro para comparação ("São José" = "SAO JOSE").
+ * Mesma regra da função chave_local() do banco.
+ */
+export function chaveLocal(texto) {
+  const s = String(texto ?? '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim()
+  return s || null
+}
+
+/** Divide um texto com **negrito** em partes para exibir com segurança. */
+export function partesNegrito(texto) {
+  return String(texto ?? '').split(/\*\*(.+?)\*\*/g).map((parte, i) => ({ texto: parte, negrito: i % 2 === 1 }))
+}
+
+/** Escolhe a grafia "mais completa" de um nome: não toda em maiúsculas e com acentos. */
+export function melhorGrafia(a, b) {
+  if (!a) return b
+  if (!b) return a
+  const nota = (s) => (s === s.toUpperCase() ? 0 : 4) + (s.normalize('NFD') !== s ? 2 : 0) + (s[0] === s[0].toUpperCase() ? 1 : 0)
+  return nota(b) > nota(a) ? b : a
+}
