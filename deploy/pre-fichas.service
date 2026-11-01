@@ -1,0 +1,36 @@
+# Serviço systemd para rodar SEM Docker (Node.js 22 + PostgreSQL instalados no servidor).
+#   sudo cp deploy/pre-fichas.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now pre-fichas
+#   journalctl -u pre-fichas -f        # acompanhar os logs
+
+[Unit]
+Description=Pre-fichas do Acampamento (fila de espera)
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=prefichas
+Group=prefichas
+WorkingDirectory=/opt/pre-fichas
+EnvironmentFile=/etc/pre-fichas.env
+Environment=NODE_ENV=production
+Environment=TZ=America/Sao_Paulo
+ExecStart=/usr/bin/node server/index.js
+Restart=on-failure
+RestartSec=5
+
+# Endurecimento
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

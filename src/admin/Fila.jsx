@@ -1,26 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { supabase } from '../lib/supabase.js'
-import { MODALIDADES, STATUS, STATUS_NA_FILA, rotuloDe } from '../lib/opcoes.js'
-import { calcularIdade, formatarDataHora, linkWhatsApp, somenteDigitos } from '../lib/util.js'
+import { api } from '../lib/api.js'
+import { MODALIDADES, STATUS, STATUS_NA_FILA, rotuloDe } from '../../shared/opcoes.js'
+import { calcularIdade, formatarDataHora, linkWhatsApp, somenteDigitos } from '../../shared/util.js'
 import Detalhe from './Detalhe.jsx'
 import { exportarCsv } from './csv.js'
-
-const LOTE = 1000
-
-async function carregarTodas() {
-  const linhas = []
-  for (let de = 0; ; de += LOTE) {
-    const { data, error } = await supabase
-      .from('pre_fichas')
-      .select('*')
-      .order('created_at', { ascending: true })
-      .order('id', { ascending: true })
-      .range(de, de + LOTE - 1)
-    if (error) throw error
-    linhas.push(...data)
-    if (data.length < LOTE) return linhas
-  }
-}
 
 /** Posição na fila: por modalidade, ordem de chegada, contando só quem ainda está na fila. */
 function calcularPosicoes(linhas) {
@@ -51,7 +34,7 @@ function calcularDuplicados(linhas) {
 
 const normalizar = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
-export default function Fila({ usuario }) {
+export default function Fila({ menu }) {
   const [linhas, setLinhas] = useState([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState('')
@@ -63,7 +46,7 @@ export default function Fila({ usuario }) {
   const recarregar = useCallback(async () => {
     setCarregando(true); setErro('')
     try {
-      setLinhas(await carregarTodas())
+      setLinhas(await api.get('/api/admin/pre-fichas'))
     } catch (e) {
       console.error(e)
       setErro('Não foi possível carregar a fila. Tente novamente.')
@@ -106,15 +89,16 @@ export default function Fila({ usuario }) {
   }, [linhas, modalidade, filtroStatus, busca])
 
   async function atualizar(id, campos) {
-    const { data, error } = await supabase.from('pre_fichas').update(campos).eq('id', id).select().single()
-    if (error) {
-      console.error(error)
+    try {
+      const atualizada = await api.patch(`/api/admin/pre-fichas/${id}`, campos)
+      setLinhas((ls) => ls.map((l) => (l.id === id ? atualizada : l)))
+      setSelecionada((s) => (s?.id === id ? atualizada : s))
+      return true
+    } catch (e) {
+      console.error(e)
       alert('Não foi possível salvar a alteração.')
       return false
     }
-    setLinhas((ls) => ls.map((l) => (l.id === id ? data : l)))
-    setSelecionada((s) => (s?.id === id ? data : s))
-    return true
   }
 
   return (
@@ -124,10 +108,7 @@ export default function Fila({ usuario }) {
           <h1>Fila de espera</h1>
           <p className="subtitulo">{contagemFila.todas} pessoa(s) aguardando · ordem por data e hora de inscrição</p>
         </div>
-        <div className="painel-usuario">
-          <span>{usuario.email}</span>
-          <button className="botao-secundario" onClick={() => supabase.auth.signOut()}>Sair</button>
-        </div>
+        {menu}
       </header>
 
       <nav className="abas" aria-label="Modalidades">

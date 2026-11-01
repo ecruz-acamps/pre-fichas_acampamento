@@ -3,12 +3,20 @@
 Sistema para receber as pré-fichas de novos campistas e organizar a **fila de espera**
 por ordem de chegada (data e hora do envio — quem se inscreveu primeiro tem preferência).
 
-- **`/`** → formulário público de pré-ficha (qualquer pessoa preenche, funciona no celular)
-- **`/admin/`** → painel da fila de espera (só usuários autorizados, com login)
+Roda **100% no seu servidor Linux** (on-premises): sem serviços de nuvem, sem CDN, sem
+fontes externas. A única chamada externa é a consulta de CEP ao [ViaCEP](https://viacep.com.br),
+feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
 
-Tecnologias: React + Vite (site estático) e [Supabase](https://supabase.com) (banco Postgres,
-login e regras de segurança). O endereço é preenchido automaticamente pelo CEP usando a
-API pública [ViaCEP](https://viacep.com.br).
+- **`/`** → formulário público de pré-ficha (funciona no celular)
+- **`/admin/`** → painel da fila de espera (login da equipe)
+
+| Camada | Tecnologia |
+|---|---|
+| Site | React + Vite (gerado como arquivos estáticos) |
+| Servidor / API | Node.js 22 + Fastify |
+| Banco de dados | PostgreSQL 16 |
+| HTTPS | Caddy (certificado automático) — ou o seu Nginx |
+| Implantação | Docker Compose — ou systemd, sem Docker |
 
 ## Funcionalidades
 
@@ -16,79 +24,162 @@ API pública [ViaCEP](https://viacep.com.br).
 - Dados pessoais, informações religiosas, contato, endereço, acampamento e informações adicionais.
 - Telefone/WhatsApp obrigatório (é por ele que a equipe faz o contato).
 - Menores de 18 anos: pede nome e telefone de um responsável.
-- CEP consulta o ViaCEP e preenche rua, bairro, cidade e UF.
+- CEP preenche rua, bairro, cidade e UF automaticamente.
 - Modalidade validada pela idade/estado civil (Mirim 7–13, FAC 13–18, Juvenil 18–30,
-  Sênior casado(a) ou 30+); quando só uma serve, ela já vem marcada.
-- Campos condicionais (pastoral → qual; vício → qual; religião/como conheceu "Outro").
+  Sênior casado(a) ou 30+).
 - As três declarações obrigatórias do formulário atual.
-- Proteção simples contra robôs (campo "honeypot").
+- Proteção contra robôs (campo invisível) e limite de envios por IP.
 
-**Painel da fila**
-- Fila separada por modalidade, com a **posição** de cada pessoa (ordem de inscrição).
-- Data e hora da inscrição até os segundos.
+**Painel**
+- Fila separada por modalidade, com a **posição** de cada pessoa.
 - Status: Aguardando → Em contato → Confirmado / Desistiu / Já participou.
-  Quem sai da fila (confirmado, desistiu, participou) libera a posição para o próximo.
-- Busca por nome, e-mail, telefone, cidade ou paróquia; filtro por status.
-- Ficha completa com observações internas da equipe (registra quem e quando alterou).
-- Link direto para o WhatsApp da pessoa.
-- Aviso de **possível duplicado** (mesmo e-mail ou telefone em mais de uma ficha).
+  Quem sai da fila libera a posição para o próximo.
+- Busca, filtros, link direto para o WhatsApp e aviso de **possível duplicado**.
+- Observações internas e **histórico** de quem alterou o quê e quando.
 - Exportação para CSV (abre no Excel).
+- **Usuários**: administradores criam contas da equipe, redefinem senhas e desativam acessos.
+  Toda senha criada por um admin é temporária e precisa ser trocada no primeiro acesso.
 
-**Segurança (garantida no banco, não só na tela)**
-- Quem envia a ficha **não consegue ler** nenhuma ficha, nem a própria.
-- A data/hora da inscrição é definida pelo servidor: ninguém consegue "furar a fila".
-- Só usuários cadastrados na tabela `admins` veem e alteram as fichas; mesmo um admin
-  só pode alterar `status` e `observacoes_internas`. Não há exclusão pelo sistema.
+**Segurança**
+- As regras valem no servidor (o formulário só orienta): campos, tamanhos, opções e idade × modalidade.
+- A data/hora da inscrição é definida pelo banco e um *trigger* impede alterá-la — ninguém "fura a fila".
+- A equipe só altera `status` e `observações`; não há exclusão de fichas pelo sistema.
+- Senhas com scrypt; sessão em cookie `HttpOnly` + `SameSite=Strict`; proteção CSRF;
+  limite de tentativas de login; cabeçalhos de segurança (CSP, etc.).
+- O banco não fica exposto na rede; só o proxy (portas 80/443) é publicado.
 
-## Como colocar no ar
+---
 
-### 1. Criar o banco no Supabase
-1. Crie uma conta e um projeto em <https://supabase.com> (o plano gratuito atende).
-2. No projeto, abra **SQL Editor**, cole o conteúdo de
-   [`supabase/migrations/0001_pre_fichas.sql`](supabase/migrations/0001_pre_fichas.sql) e clique em **Run**.
-3. Em **Authentication → Sign In / Providers**, **desative "Allow new users to sign up"**
-   (assim só quem você cadastrar consegue entrar no painel).
+## Instalação com Docker (recomendado)
 
-### 2. Cadastrar quem pode ver a fila
-1. Em **Authentication → Users → Add user → Create new user**, informe o e-mail e uma senha
-   (marque *Auto Confirm User*). Também dá para usar *Send invitation*: a pessoa recebe um
-   e-mail e define a própria senha ao abrir o link.
-2. No **SQL Editor**, autorize a pessoa:
-   ```sql
-   insert into public.admins (user_id, nome)
-   select id, 'Nome da pessoa' from auth.users where email = 'pessoa@email.com';
-   ```
-   Para remover o acesso: `delete from public.admins where user_id = (select id from auth.users where email = 'pessoa@email.com');`
-3. Em **Authentication → URL Configuration**, coloque o endereço do site em *Site URL*
-   e adicione `https://SEU-SITE/admin/` em *Redirect URLs* (para convites e "esqueci minha senha").
+Requisitos: um servidor Linux com [Docker Engine e o plugin Compose](https://docs.docker.com/engine/install/).
+Para HTTPS automático, um domínio (ex.: `prefichas.seudominio.com.br`) apontando para o IP
+do servidor, com as portas 80 e 443 liberadas.
 
-### 3. Configurar e publicar o site
-1. Copie `.env.example` para `.env` e preencha com os dados de **Project Settings → API**
-   (`Project URL` e a chave pública `anon`/`publishable` — **nunca** a `service_role`).
-2. Rodar localmente:
-   ```bash
-   npm install
-   npm run dev        # http://localhost:5173  e  http://localhost:5173/admin/
-   ```
-3. Publicar: qualquer hospedagem de site estático serve (Vercel, Netlify, Cloudflare Pages…).
-   - Comando de build: `npm run build` · Pasta de saída: `dist`
-   - Cadastre as mesmas variáveis `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` e
-     `VITE_WHATSAPP_CONTATO` nas configurações da hospedagem.
+```bash
+# 1. Baixar o código
+sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/pre-fichas
+cd /opt/pre-fichas
+
+# 2. Configurar
+sudo cp .env.example .env
+sudo nano .env        # DOMINIO, POSTGRES_PASSWORD (use: openssl rand -hex 24), WhatsApp...
+sudo chmod 600 .env
+
+# 3. Subir (banco + aplicação + HTTPS)
+sudo docker compose up -d --build
+
+# 4. Criar o primeiro administrador (mostra uma senha temporária)
+sudo docker compose exec app node server/cli.js criar-admin voce@email.com "Seu Nome"
+```
+
+Pronto: acesse `https://SEU-DOMINIO/` (formulário) e `https://SEU-DOMINIO/admin/` (painel).
+As tabelas são criadas automaticamente na primeira inicialização.
+
+**Rede interna, sem domínio público?** No `.env` use `DOMINIO=:80` e `COOKIE_SEGURO=false`
+(acesso por `http://IP-DO-SERVIDOR`). Para HTTPS com certificado interno, veja `deploy/Caddyfile`.
+
+**Já tem Nginx no servidor?** Remova o serviço `caddy` do `docker-compose.yml`, descomente
+`ports: ["127.0.0.1:3000:3000"]` no serviço `app` e use `deploy/nginx.conf`.
+
+### Comandos do dia a dia
+
+```bash
+docker compose ps                      # situação dos serviços
+docker compose logs -f app             # logs da aplicação
+docker compose exec app node server/cli.js listar
+docker compose exec app node server/cli.js redefinir-senha pessoa@email.com
+docker compose exec app node server/cli.js desativar pessoa@email.com
+
+# Atualizar para uma nova versão do código
+git pull && docker compose up -d --build
+```
+
+---
+
+## Instalação sem Docker (systemd)
+
+Requisitos: Node.js 22+, PostgreSQL 14+ e um proxy HTTPS (Nginx + certbot, por exemplo).
+
+```bash
+# Banco de dados
+sudo -u postgres createuser prefichas --pwprompt
+sudo -u postgres createdb prefichas -O prefichas
+
+# Aplicação
+sudo useradd --system --home /opt/pre-fichas prefichas
+sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/pre-fichas
+cd /opt/pre-fichas
+sudo npm ci && sudo npm run build && sudo npm prune --omit=dev
+sudo chown -R root:root /opt/pre-fichas
+
+# Configuração
+echo 'DATABASE_URL=postgres://prefichas:SENHA@localhost:5432/prefichas' | sudo tee /etc/pre-fichas.env
+echo 'HOST=127.0.0.1' | sudo tee -a /etc/pre-fichas.env
+sudo chmod 600 /etc/pre-fichas.env
+
+# Serviço
+sudo cp deploy/pre-fichas.service /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now pre-fichas
+
+# Primeiro administrador
+sudo bash -c 'set -a; . /etc/pre-fichas.env; node server/cli.js criar-admin voce@email.com "Seu Nome"'
+```
+
+Depois configure o Nginx com `deploy/nginx.conf` e gere o certificado com `certbot --nginx`.
+
+---
+
+## Backup
+
+```bash
+./scripts/backup.sh                       # Docker (padrão) — salva em ./backups
+MODO=local DATABASE_URL=... ./scripts/backup.sh   # sem Docker
+./scripts/restaurar.sh backups/prefichas-AAAA-MM-DD_HHMMSS.dump
+```
+
+Agende um backup diário no cron (`sudo crontab -e`):
+
+```
+0 2 * * * cd /opt/pre-fichas && ./scripts/backup.sh >> /var/log/pre-fichas-backup.log 2>&1
+```
+
+Os backups com mais de 30 dias são apagados (`MANTER_DIAS`). **Copie a pasta `backups/` para
+outro lugar** (outro servidor, HD externo) — backup no mesmo disco não protege contra falha do disco.
+
+---
+
+## Desenvolvimento
+
+```bash
+npm install
+cp .env.example .env     # e defina DATABASE_URL apontando para um PostgreSQL local
+npm run dev:api          # API em http://localhost:3000
+npm run dev              # site em http://localhost:5173 (repassa /api para a API)
+npm run usuarios -- criar-admin voce@email.com "Seu Nome"
+
+# Testes de integração (APAGAM o banco indicado — use um banco só para testes)
+DATABASE_URL_TESTE=postgres://usuario:senha@localhost:5432/prefichas_teste npm test
+```
 
 ## Estrutura
 
 ```
-index.html                 página do formulário
-admin/index.html           página do painel
-src/form/                  formulário público
-src/admin/                 login, fila, detalhes da ficha, exportação CSV
-src/lib/                   Supabase, ViaCEP, opções e utilitários
-supabase/migrations/       tabelas, permissões e regras de segurança (RLS)
+index.html, admin/index.html   páginas (formulário e painel)
+src/form/                      formulário público
+src/admin/                     login, fila, detalhes, usuários, exportação CSV
+shared/                        regras de validação e opções (usadas no site E no servidor)
+server/                        API (Fastify), sessões, senhas, CLI de usuários
+server/migrations/             estrutura do banco (aplicada automaticamente)
+server/teste/                  testes de integração
+deploy/                        Caddyfile, nginx.conf, serviço systemd
+scripts/                       backup e restauração
+Dockerfile, docker-compose.yml implantação com Docker
 ```
 
 ## Regra da fila
 
-A posição é calculada **por modalidade**, ordenando por `created_at` (data/hora do servidor,
-com precisão de microssegundos) e, em empate, pelo `id`. Entram na contagem apenas as fichas
-com status **Aguardando** ou **Em contato**. A view `fila_espera` no banco traz a mesma
-posição, caso queira consultar direto pelo Supabase.
+A posição é calculada **por modalidade**, ordenando pela data/hora de inscrição registrada pelo
+banco (precisão de microssegundos) e, em empate, pelo número da ficha. Entram na contagem as
+fichas com status **Aguardando** ou **Em contato**. A view `fila_espera` traz a mesma posição
+para consultas direto no banco.

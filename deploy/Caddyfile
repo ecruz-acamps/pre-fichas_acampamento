@@ -1,0 +1,15 @@
+# Caddy obtém e renova o certificado HTTPS automaticamente (Let's Encrypt)
+# quando DOMINIO é um domínio público apontando para este servidor.
+#
+# Rede interna sem domínio público? Use no .env:
+#   DOMINIO=:80            -> só HTTP (defina também COOKIE_SEGURO=false)
+#   DOMINIO=prefichas.lan  -> HTTPS com certificado interno (descomente "tls internal")
+{$DOMINIO} {
+	encode zstd gzip
+	# tls internal
+	reverse_proxy app:3000
+	log {
+		output stdout
+		format console
+	}
+}

@@ -212,3 +212,21 @@ dl { margin: 0; }
 .item dd { margin: 0; word-break: break-word; }
 .item dd.vazio { color: #b0a79c; }
 .texto-longo { white-space: pre-wrap; }
+
+/* ---------- complementos (versão on-premises) ---------- */
+.centro { display: block; text-align: center; margin-top: 12px; }
+.estreito { max-width: 440px; margin: 24px auto 0; }
+.painel-usuario { flex-wrap: wrap; justify-content: flex-end; }
+.historico { list-style: none; padding: 0; margin: 0; }
+.historico li { border-left: 3px solid var(--marrom-claro); padding: 4px 0 8px 12px; margin-bottom: 6px; }
+.novo-usuario { margin-bottom: 16px; }
+.novo-usuario h2 { margin-bottom: 12px; }
+.linha-form { display: grid; grid-template-columns: 1fr 1fr 1.2fr auto; gap: 0 12px; align-items: end; }
+.linha-form .botao-principal { margin-bottom: 16px; min-height: 44px; }
+@media (max-width: 760px) { .linha-form { grid-template-columns: 1fr; } }
+.tabela tr.inativo td { color: #9a9087; }
+.acoes-linha { display: flex; gap: 6px; }
+.senha-gerada { margin-bottom: 16px; }
+.senha-gerada p { margin: 0 0 8px; }
+.senha-gerada .senha { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 1.4rem; letter-spacing: 0.05em; color: var(--texto); }
+.selo.info { background: var(--marrom-claro); color: var(--marrom); }

@@ -1,29 +1,24 @@
 import { useState } from 'react'
-import { supabase } from '../lib/supabase.js'
+import { api } from '../lib/api.js'
 
-export default function Login() {
+export default function Login({ onEntrar }) {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [erro, setErro] = useState('')
   const [carregando, setCarregando] = useState(false)
-  const [modoRecuperar, setModoRecuperar] = useState(false)
-  const [aviso, setAviso] = useState('')
 
   async function entrar(e) {
     e.preventDefault()
-    setErro(''); setAviso(''); setCarregando(true)
-    if (modoRecuperar) {
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${window.location.origin}/admin/`,
-      })
+    setErro(''); setCarregando(true)
+    try {
+      const { usuario } = await api.post('/api/auth/login', { email, senha })
+      onEntrar(usuario)
+    } catch (err) {
       setCarregando(false)
-      if (error) setErro('Não foi possível enviar o e-mail de recuperação.')
-      else setAviso('Se o e-mail estiver cadastrado, você receberá um link para redefinir a senha.')
-      return
+      setErro(err.status === 429
+        ? 'Muitas tentativas. Aguarde um minuto e tente novamente.'
+        : err.dados?.mensagem || 'Não foi possível entrar.')
     }
-    const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password: senha })
-    setCarregando(false)
-    if (error) setErro('E-mail ou senha incorretos.')
   }
 
   return (
@@ -36,23 +31,16 @@ export default function Login() {
           <input id="email" type="email" autoComplete="username" required value={email}
             onChange={(e) => setEmail(e.target.value)} />
         </div>
-        {!modoRecuperar && (
-          <div className="campo">
-            <label htmlFor="senha">Senha</label>
-            <input id="senha" type="password" autoComplete="current-password" required value={senha}
-              onChange={(e) => setSenha(e.target.value)} />
-          </div>
-        )}
-        {erro && <div className="alerta-erro" role="alert">{erro}</div>}
-        {aviso && <div className="alerta-ok">{aviso}</div>}
-        <div className="acoes">
-          <button className="botao-principal" disabled={carregando}>
-            {carregando ? 'Aguarde…' : modoRecuperar ? 'Enviar link' : 'Entrar'}
-          </button>
+        <div className="campo">
+          <label htmlFor="senha">Senha</label>
+          <input id="senha" type="password" autoComplete="current-password" required value={senha}
+            onChange={(e) => setSenha(e.target.value)} />
         </div>
-        <button type="button" className="link" onClick={() => { setModoRecuperar(!modoRecuperar); setErro(''); setAviso('') }}>
-          {modoRecuperar ? 'Voltar ao login' : 'Esqueci minha senha'}
-        </button>
+        {erro && <div className="alerta-erro" role="alert">{erro}</div>}
+        <div className="acoes">
+          <button className="botao-principal" disabled={carregando}>{carregando ? 'Entrando…' : 'Entrar'}</button>
+        </div>
+        <p className="dica centro">Esqueceu a senha? Peça a um administrador para redefini-la.</p>
       </form>
     </main>
   )

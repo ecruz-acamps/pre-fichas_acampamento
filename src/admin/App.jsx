@@ -1,66 +1,67 @@
-import { useEffect, useState } from 'react'
-import { supabase, supabaseConfigurado } from '../lib/supabase.js'
+import { useCallback, useEffect, useState } from 'react'
+import { api } from '../lib/api.js'
 import Login from './Login.jsx'
 import Fila from './Fila.jsx'
-import NovaSenha from './NovaSenha.jsx'
-
-// Link de convite ou de recuperação de senha: pede para definir a senha.
-const veioDeLinkDeSenha = /type=(invite|recovery)/.test(window.location.hash)
+import AlterarSenha from './AlterarSenha.jsx'
+import Usuarios from './Usuarios.jsx'
 
 export default function App() {
-  const [sessao, setSessao] = useState(undefined) // undefined = carregando
-  const [autorizado, setAutorizado] = useState(null)
-  const [definirSenha, setDefinirSenha] = useState(veioDeLinkDeSenha)
+  const [usuario, setUsuario] = useState(undefined) // undefined = carregando
+  const [tela, setTela] = useState('fila')
 
-  useEffect(() => {
-    if (!supabaseConfigurado) return
-    supabase.auth.getSession().then(({ data }) => setSessao(data.session))
-    const { data: sub } = supabase.auth.onAuthStateChange((evento, s) => {
-      setSessao(s)
-      if (evento === 'PASSWORD_RECOVERY') setDefinirSenha(true)
-    })
-    return () => sub.subscription.unsubscribe()
+  const carregarUsuario = useCallback(async () => {
+    try {
+      const { usuario } = await api.get('/api/auth/eu')
+      setUsuario(usuario ?? null)
+    } catch {
+      setUsuario(null)
+    }
   }, [])
 
-  const userId = sessao?.user?.id
+  useEffect(() => { carregarUsuario() }, [carregarUsuario])
+
   useEffect(() => {
-    if (!userId) { setAutorizado(null); return }
-    supabase.rpc('is_admin').then(({ data, error }) => setAutorizado(!error && data === true))
-  }, [userId])
+    const expirou = () => setUsuario(null)
+    window.addEventListener('sessao-expirada', expirou)
+    return () => window.removeEventListener('sessao-expirada', expirou)
+  }, [])
 
-  if (!supabaseConfigurado) {
+  async function sair() {
+    await api.post('/api/auth/logout').catch(() => {})
+    setUsuario(null)
+    setTela('fila')
+  }
+
+  if (usuario === undefined) return <main className="pagina estreita"><p className="carregando">Carregando…</p></main>
+  if (!usuario) return <Login onEntrar={(u) => { setUsuario(u); setTela('fila') }} />
+
+  if (usuario.trocar_senha) {
     return (
-      <main className="pagina estreita">
-        <div className="cartao">
-          <h2>Configuração pendente</h2>
-          <p>Defina <code>VITE_SUPABASE_URL</code> e <code>VITE_SUPABASE_ANON_KEY</code> (veja o README).</p>
-        </div>
-      </main>
+      <AlterarSenha
+        primeiroAcesso
+        onConcluir={() => setUsuario({ ...usuario, trocar_senha: false })}
+        onSair={sair}
+      />
     )
   }
 
-  if (sessao === undefined || (sessao && autorizado === null)) {
-    return <main className="pagina estreita"><p className="carregando">Carregando…</p></main>
+  const menu = (
+    <div className="painel-usuario">
+      <span>{usuario.nome}</span>
+      {tela !== 'fila' && <button className="botao-secundario" onClick={() => setTela('fila')}>Fila</button>}
+      {usuario.papel === 'admin' && tela !== 'usuarios' && (
+        <button className="botao-secundario" onClick={() => setTela('usuarios')}>Usuários</button>
+      )}
+      {tela !== 'senha' && <button className="botao-secundario" onClick={() => setTela('senha')}>Alterar senha</button>}
+      <button className="botao-secundario" onClick={sair}>Sair</button>
+    </div>
+  )
+
+  if (tela === 'senha') {
+    return <AlterarSenha menu={menu} onConcluir={() => setTela('fila')} />
   }
-
-  if (!sessao) return <Login />
-
-  if (definirSenha) return <NovaSenha onConcluir={() => setDefinirSenha(false)} />
-
-  if (!autorizado) {
-    return (
-      <main className="pagina estreita">
-        <div className="cartao">
-          <h2>Acesso não autorizado</h2>
-          <p>
-            A conta <strong>{sessao.user.email}</strong> não tem permissão para ver a fila de espera.
-            Peça a um administrador para liberar seu acesso.
-          </p>
-          <button className="botao-secundario" onClick={() => supabase.auth.signOut()}>Sair</button>
-        </div>
-      </main>
-    )
+  if (tela === 'usuarios' && usuario.papel === 'admin') {
+    return <Usuarios menu={menu} usuarioAtual={usuario} />
   }
-
-  return <Fila usuario={sessao.user} />
+  return <Fila menu={menu} />
 }

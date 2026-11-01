@@ -1,128 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { supabase, supabaseConfigurado } from '../lib/supabase.js'
-import { buscarCep } from '../lib/viacep.js'
+import { api } from '../lib/api.js'
+import { buscarCep } from '../lib/cep.js'
 import {
   COMO_CONHECEU, ESTADOS_CIVIS, MODALIDADES, RELIGIOES, SEXOS, UFS,
-} from '../lib/opcoes.js'
+} from '../../shared/opcoes.js'
 import {
   calcularIdade, mascaraCep, mascaraTelefone, modalidadesCompativeis, somenteDigitos,
-} from '../lib/util.js'
+} from '../../shared/util.js'
+import { INICIAL, validar } from '../../shared/validacao.js'
 
 const WHATSAPP = import.meta.env.VITE_WHATSAPP_CONTATO || '5548996954410'
-
-const INICIAL = {
-  nome_completo: '', data_nascimento: '', estado_civil: '', sexo: '', profissao: '',
-  telefone: '', responsavel_nome: '', responsavel_telefone: '',
-  religiao: '', religiao_outra: '',
-  batizado: null, primeira_eucaristia: null, crismado: null,
-  paroquia: '', participa_pastoral: null, pastoral_qual: '',
-  email: '', instagram: '', facebook: '',
-  cep: '', logradouro: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '',
-  como_conheceu: '', como_conheceu_outro: '', motivo: '', modalidade: '',
-  possui_vicio: null, vicio_qual: '', restricoes_medicas: '', retiros_anteriores: '',
-  aceite_lgpd: false, aceite_atividades: false, aceite_lista_espera: false,
-  website: '', // honeypot anti-robô (fica escondido)
-}
-
-function validar(f, idade) {
-  const e = {}
-  const obrig = (campo, msg = 'Campo obrigatório.') => {
-    const v = f[campo]
-    if (v === null || v === undefined || (typeof v === 'string' && !v.trim())) e[campo] = msg
-  }
-
-  obrig('nome_completo')
-  if (!e.nome_completo && f.nome_completo.trim().split(/\s+/).length < 2)
-    e.nome_completo = 'Informe nome e sobrenome.'
-  obrig('data_nascimento')
-  if (!e.data_nascimento && (idade == null || idade < 5 || idade > 110))
-    e.data_nascimento = 'Data de nascimento inválida.'
-  obrig('estado_civil')
-  obrig('sexo')
-  obrig('telefone')
-  if (!e.telefone && somenteDigitos(f.telefone).length < 10)
-    e.telefone = 'Informe o telefone com DDD.'
-
-  if (idade != null && idade < 18) {
-    obrig('responsavel_nome', 'Obrigatório para menores de 18 anos.')
-    obrig('responsavel_telefone', 'Obrigatório para menores de 18 anos.')
-    if (!e.responsavel_telefone && somenteDigitos(f.responsavel_telefone).length < 10)
-      e.responsavel_telefone = 'Informe o telefone com DDD.'
-  }
-
-  obrig('religiao')
-  if (f.religiao === 'Outra') obrig('religiao_outra', 'Qual religião?')
-  obrig('batizado', 'Selecione uma opção.')
-  obrig('primeira_eucaristia', 'Selecione uma opção.')
-  obrig('crismado', 'Selecione uma opção.')
-  obrig('participa_pastoral', 'Selecione uma opção.')
-  if (f.participa_pastoral) obrig('pastoral_qual', 'Qual pastoral?')
-
-  obrig('email')
-  if (!e.email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(f.email.trim())) e.email = 'E-mail inválido.'
-
-  obrig('cep')
-  if (!e.cep && somenteDigitos(f.cep).length !== 8) e.cep = 'CEP inválido.'
-  obrig('cidade')
-  obrig('uf')
-
-  obrig('como_conheceu')
-  if (f.como_conheceu === 'Outro') obrig('como_conheceu_outro', 'Conte como conheceu.')
-  obrig('motivo')
-  obrig('modalidade', 'Escolha a modalidade.')
-  if (!e.modalidade && idade != null && !modalidadesCompativeis(idade, f.estado_civil).includes(f.modalidade))
-    e.modalidade = 'Esta modalidade não corresponde à sua idade / estado civil.'
-
-  obrig('possui_vicio', 'Selecione uma opção.')
-  if (f.possui_vicio) obrig('vicio_qual', 'Qual vício?')
-
-  if (!f.aceite_lgpd) e.aceite_lgpd = 'É necessário aceitar.'
-  if (!f.aceite_atividades) e.aceite_atividades = 'É necessário aceitar.'
-  if (!f.aceite_lista_espera) e.aceite_lista_espera = 'É necessário aceitar.'
-  return e
-}
-
-function montarRegistro(f) {
-  const t = (v) => (v ?? '').trim() || null
-  const menor = calcularIdade(f.data_nascimento) < 18
-  return {
-    nome_completo: f.nome_completo.trim().replace(/\s+/g, ' '),
-    data_nascimento: f.data_nascimento,
-    estado_civil: f.estado_civil,
-    sexo: f.sexo,
-    profissao: t(f.profissao),
-    telefone: f.telefone.trim(),
-    responsavel_nome: menor ? t(f.responsavel_nome) : null,
-    responsavel_telefone: menor ? t(f.responsavel_telefone) : null,
-    religiao: f.religiao === 'Outra' ? `Outra: ${f.religiao_outra.trim()}` : f.religiao,
-    batizado: f.batizado,
-    primeira_eucaristia: f.primeira_eucaristia,
-    crismado: f.crismado,
-    paroquia: t(f.paroquia),
-    participa_pastoral: f.participa_pastoral,
-    pastoral_qual: f.participa_pastoral ? t(f.pastoral_qual) : null,
-    email: f.email.trim().toLowerCase(),
-    instagram: t(f.instagram),
-    facebook: t(f.facebook),
-    cep: somenteDigitos(f.cep),
-    logradouro: t(f.logradouro),
-    numero: t(f.numero),
-    complemento: t(f.complemento),
-    bairro: t(f.bairro),
-    cidade: f.cidade.trim(),
-    uf: f.uf,
-    como_conheceu: f.como_conheceu === 'Outro' ? `Outro: ${f.como_conheceu_outro.trim()}` : f.como_conheceu,
-    motivo: f.motivo.trim(),
-    modalidade: f.modalidade,
-    possui_vicio: f.possui_vicio,
-    vicio_qual: f.possui_vicio ? t(f.vicio_qual) : null,
-    restricoes_medicas: t(f.restricoes_medicas),
-    retiros_anteriores: t(f.retiros_anteriores),
-    aceite_lgpd: f.aceite_lgpd,
-    aceite_atividades: f.aceite_atividades,
-    aceite_lista_espera: f.aceite_lista_espera,
-  }
-}
 
 /* ---------- componentes de campo ---------- */
 
@@ -191,10 +78,11 @@ export default function FormularioPreFicha() {
   const cepDigitos = somenteDigitos(f.cep)
   useEffect(() => {
     if (cepDigitos.length !== 8) { setCepStatus({ carregando: false, msg: '' }); return }
-    const ctrl = new AbortController()
+    let ativo = true
     setCepStatus({ carregando: true, msg: '' })
-    buscarCep(cepDigitos, { signal: ctrl.signal })
+    buscarCep(cepDigitos)
       .then((end) => {
+        if (!ativo) return
         setF((a) => ({
           ...a,
           logradouro: end.logradouro || a.logradouro,
@@ -206,15 +94,15 @@ export default function FormularioPreFicha() {
         setCepStatus({ carregando: false, msg: '' })
       })
       .catch((err) => {
-        if (err.name !== 'AbortError') setCepStatus({ carregando: false, msg: err.message })
+        if (ativo) setCepStatus({ carregando: false, msg: err.message })
       })
-    return () => ctrl.abort()
+    return () => { ativo = false }
   }, [cepDigitos])
 
   async function enviar(ev) {
     ev.preventDefault()
     setErroEnvio('')
-    const e = validar(f, idade)
+    const e = validar(f)
     setErros(e)
     const primeiro = Object.keys(e).find((k) => e[k])
     if (primeiro) {
@@ -224,22 +112,22 @@ export default function FormularioPreFicha() {
       return
     }
 
-    // Robôs costumam preencher campos escondidos: finge sucesso e não envia.
-    if (f.website) { setEnviado(true); return }
-
-    if (!supabaseConfigurado) {
-      setErroEnvio('Sistema ainda não configurado (variáveis do Supabase ausentes).')
-      return
-    }
-
     setEnviando(true)
-    const { error } = await supabase.from('pre_fichas').insert(montarRegistro(f))
-    setEnviando(false)
-    if (error) {
-      console.error(error)
-      setErroEnvio('Não foi possível enviar sua pré-ficha. Verifique sua conexão e tente novamente.')
+    try {
+      await api.post('/api/pre-fichas', f)
+    } catch (err) {
+      setEnviando(false)
+      if (err.dados?.erros) {
+        setErros(err.dados.erros)
+        setErroEnvio('Confira os campos destacados.')
+      } else if (err.status === 429) {
+        setErroEnvio('Muitos envios a partir desta rede. Aguarde alguns minutos e tente novamente.')
+      } else {
+        setErroEnvio('Não foi possível enviar sua pré-ficha. Verifique sua conexão e tente novamente.')
+      }
       return
     }
+    setEnviando(false)
     setEnviado(true)
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }

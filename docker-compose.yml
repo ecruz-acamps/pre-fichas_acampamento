@@ -1,0 +1,66 @@
+# Implantação completa em um servidor Linux:
+#   banco PostgreSQL + aplicação Node + Caddy (HTTPS automático)
+#
+#   cp .env.example .env    # e preencha
+#   docker compose up -d --build
+#
+name: pre-fichas
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-prefichas}
+      POSTGRES_USER: ${POSTGRES_USER:-prefichas}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD no .env}
+      TZ: America/Sao_Paulo
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    # Sem "ports": o banco NÃO fica exposto para fora do servidor.
+
+  app:
+    build:
+      context: .
+      args:
+        VITE_WHATSAPP_CONTATO: ${VITE_WHATSAPP_CONTATO:-5548996954410}
+    image: pre-fichas-app:latest
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-prefichas}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-prefichas}
+      COOKIE_SEGURO: ${COOKIE_SEGURO:-true}
+      PROXIES_CONFIAVEIS: "1"
+      SESSAO_HORAS: ${SESSAO_HORAS:-12}
+      LIMITE_ENVIOS_POR_HORA: ${LIMITE_ENVIOS_POR_HORA:-30}
+      VIACEP_URL: ${VIACEP_URL:-https://viacep.com.br/ws}
+    # Para usar um Nginx/Apache que já existe no servidor em vez do Caddy,
+    # remova o serviço "caddy" e descomente a linha abaixo:
+    # ports: ["127.0.0.1:3000:3000"]
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - app
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      DOMINIO: ${DOMINIO:?defina DOMINIO no .env}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  pgdata:
+  caddy_data:
+  caddy_config:

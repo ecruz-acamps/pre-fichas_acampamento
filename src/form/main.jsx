@@ -1,6 +1,9 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import FormularioPreFicha from './FormularioPreFicha.jsx'
+import '@fontsource/roboto/400.css'
+import '@fontsource/roboto/500.css'
+import '@fontsource/roboto/700.css'
 import '../styles.css'
 
 createRoot(document.getElementById('root')).render(

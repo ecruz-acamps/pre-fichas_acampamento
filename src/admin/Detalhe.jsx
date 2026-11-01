@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { ESTADOS_CIVIS, MODALIDADES, SEXOS, STATUS, rotuloDe } from '../lib/opcoes.js'
-import { calcularIdade, formatarData, formatarDataHora, linkWhatsApp, mascaraCep, simNao } from '../lib/util.js'
+import { api } from '../lib/api.js'
+import { ESTADOS_CIVIS, MODALIDADES, SEXOS, STATUS, rotuloDe } from '../../shared/opcoes.js'
+import { calcularIdade, formatarData, formatarDataHora, linkWhatsApp, mascaraCep, simNao } from '../../shared/util.js'
 
 function Item({ rotulo, children }) {
   const vazio = children === null || children === undefined || children === ''
@@ -16,6 +17,11 @@ export default function Detalhe({ ficha: f, posicao, onFechar, onSalvar }) {
   const [status, setStatus] = useState(f.status)
   const [obs, setObs] = useState(f.observacoes_internas || '')
   const [salvando, setSalvando] = useState(false)
+  const [historico, setHistorico] = useState([])
+
+  useEffect(() => {
+    api.get(`/api/admin/pre-fichas/${f.id}/historico`).then(setHistorico).catch(() => setHistorico([]))
+  }, [f.id, f.atualizado_em])
 
   useEffect(() => { setStatus(f.status); setObs(f.observacoes_internas || '') }, [f])
 
@@ -63,7 +69,11 @@ export default function Detalhe({ ficha: f, posicao, onFechar, onSalvar }) {
                 placeholder="Ex.: liguei em 10/11, retornar semana que vem" />
             </div>
             <div className="linha-acoes">
-              {f.atualizado_em && <small className="dica">Última alteração: {formatarDataHora(f.atualizado_em)}</small>}
+              {f.atualizado_em && (
+                <small className="dica">
+                  Última alteração: {formatarDataHora(f.atualizado_em)}{f.atualizado_por_nome ? ` por ${f.atualizado_por_nome}` : ''}
+                </small>
+              )}
               <button className="botao-principal pequeno" disabled={!alterado || salvando} onClick={salvar}>
                 {salvando ? 'Salvando…' : 'Salvar'}
               </button>
@@ -122,6 +132,23 @@ export default function Detalhe({ ficha: f, posicao, onFechar, onSalvar }) {
             <Item rotulo="Restrições médicas"><span className="texto-longo">{f.restricoes_medicas}</span></Item>
             <Item rotulo="Retiros que já participou"><span className="texto-longo">{f.retiros_anteriores}</span></Item>
           </dl>
+
+          <h3>Histórico</h3>
+          {historico.length ? (
+            <ol className="historico">
+              {historico.map((h) => (
+                <li key={h.id}>
+                  <small className="dica">{formatarDataHora(h.criado_em)} · {h.usuario || 'usuário removido'}</small>
+                  {h.status_novo && (
+                    <div>Status: {rotuloDe(STATUS, h.status_anterior)} → <strong>{rotuloDe(STATUS, h.status_novo)}</strong></div>
+                  )}
+                  {h.observacao && <div className="texto-longo">Observação: {h.observacao}</div>}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="dica">Nenhuma alteração registrada ainda.</p>
+          )}
         </div>
       </aside>
     </div>

@@ -1,5 +1,5 @@
-import { ESTADOS_CIVIS, MODALIDADES, SEXOS, STATUS, rotuloDe } from '../lib/opcoes.js'
-import { calcularIdade, formatarData, formatarDataHora, simNao } from '../lib/util.js'
+import { ESTADOS_CIVIS, MODALIDADES, SEXOS, STATUS, rotuloDe } from '../../shared/opcoes.js'
+import { calcularIdade, formatarData, formatarDataHora, simNao } from '../../shared/util.js'
 
 const COLUNAS = [
   ['Posição', (l, pos) => pos.get(l.id) ?? ''],
