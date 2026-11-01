@@ -307,6 +307,120 @@ describe('API', { skip: pular }, () => {
     })
   })
 
+
+  // ------------------------------------------------------------------ recusas
+  describe('recusas, fim da fila e auditoria', () => {
+    const fila = async () => (await pool.query(
+      `select nome_completo from fila_espera where modalidade = 'senior' order by posicao`)).rows.map((r) => r.nome_completo)
+    const recusar = (quem, id, comentario) => req(quem, 'POST', `/api/admin/pre-fichas/${id}/recusa`, { comentario })
+    const senior = { data_nascimento: '1980-01-01', estado_civil: 'casado', modalidade: 'senior', cidade: 'Palhoça', bairro: 'Pagani' }
+
+    before(async () => {
+      for (const nome of ['Recusa A', 'Recusa B', 'Recusa C']) await enviar({ ...senior, nome_completo: nome })
+    })
+
+    test('a inscrição gera o primeiro registro da trilha', async () => {
+      const id = await idPorNome('Recusa A')
+      const h = (await req('admin', 'GET', `/api/admin/pre-fichas/${id}/historico`)).json()
+      assert.equal(h.at(-1).tipo, 'inscricao')
+    })
+
+    test('recusa exige comentário', async () => {
+      const id = await idPorNome('Recusa A')
+      assert.equal((await recusar('equipe', id, '  ')).statusCode, 400)
+    })
+
+    test('1ª recusa: conta, registra e mantém a posição', async () => {
+      const id = await idPorNome('Recusa A')
+      await req('equipe', 'PATCH', `/api/admin/pre-fichas/${id}`, { status: 'em_contato' })
+      const r = await recusar('equipe', id, 'Não pode nesta data, trabalho.')
+      assert.equal(r.statusCode, 200)
+      assert.deepEqual([r.json().numero, r.json().movida], [1, false])
+      assert.equal(r.json().ficha.recusas_seguidas, 1)
+      assert.equal(r.json().ficha.status, 'aguardando')
+      assert.deepEqual(await fila(), ['Casal Sênior', 'Recusa A', 'Recusa B', 'Recusa C'])
+    })
+
+    test('2ª recusa seguida: vai para o fim da fila, com data anterior/nova, autor e motivo na trilha', async () => {
+      const id = await idPorNome('Recusa A')
+      const { rows: [antes] } = await pool.query('select created_at, entrada_fila_em from pre_fichas where id = $1', [id])
+      const r = await recusar('equipe', id, 'Disse que prefere no ano que vem.')
+      assert.deepEqual([r.json().numero, r.json().movida], [2, true])
+      assert.equal(r.json().ficha.recusas_seguidas, 0)
+      assert.deepEqual(await fila(), ['Casal Sênior', 'Recusa B', 'Recusa C', 'Recusa A'])
+
+      const { rows: [depois] } = await pool.query('select created_at, entrada_fila_em from pre_fichas where id = $1', [id])
+      assert.equal(depois.created_at.getTime(), antes.created_at.getTime(), 'inscrição original preservada')
+      assert.ok(depois.entrada_fila_em > antes.entrada_fila_em)
+
+      const h = (await req('admin', 'GET', `/api/admin/pre-fichas/${id}/historico`)).json()
+      const fim = h.find((x) => x.tipo === 'fim_da_fila')
+      assert.equal(fim.usuario, 'Equipe')
+      assert.match(fim.observacao, /^2ª recusa seguida: Disse que prefere/)
+      assert.equal(new Date(fim.detalhes.entrada_anterior).getTime(), antes.entrada_fila_em.getTime())
+      assert.equal(new Date(fim.detalhes.entrada_nova).getTime(), depois.entrada_fila_em.getTime())
+      assert.equal(h.filter((x) => x.tipo === 'recusa').length, 2)
+    })
+
+    test('aceitar (confirmado) zera as recusas seguidas', async () => {
+      const id = await idPorNome('Recusa B')
+      await recusar('equipe', id, 'Não pode agora.')
+      await req('equipe', 'PATCH', `/api/admin/pre-fichas/${id}`, { status: 'confirmado' })
+      await req('equipe', 'PATCH', `/api/admin/pre-fichas/${id}`, { status: 'aguardando' })
+      const r = await recusar('equipe', id, 'Desistiu de novo.')
+      assert.deepEqual([r.json().numero, r.json().movida], [1, false])
+    })
+
+    test('mover para o fim manualmente exige motivo e fica na trilha', async () => {
+      const id = await idPorNome('Recusa C')
+      assert.equal((await req('admin', 'POST', `/api/admin/pre-fichas/${id}/fim-da-fila`, {})).statusCode, 400)
+      const r = await req('admin', 'POST', `/api/admin/pre-fichas/${id}/fim-da-fila`, { motivo: 'Pediu para adiar.' })
+      assert.equal(r.statusCode, 200)
+      assert.equal((await fila()).at(-1), 'Recusa C')
+    })
+
+    test('coordenador não move nem registra recusa fora da sua área', async () => {
+      const id = await idPorNome('Recusa B') // Palhoça: fora do núcleo da coordenadora
+      assert.equal((await recusar('coord', id, 'x')).statusCode, 404)
+      assert.equal((await req('coord', 'POST', `/api/admin/pre-fichas/${id}/fim-da-fila`, { motivo: 'x' })).statusCode, 404)
+    })
+
+    test('limite configurável: com 3, a 2ª recusa não move; com 0, nunca move', async () => {
+      await req('admin', 'PUT', '/api/admin/marca', { nome: 'Acampamento Teste', recusasParaFimDaFila: 3 })
+      const id = await idPorNome('Recusa B') // já tem 1 recusa
+      assert.equal((await recusar('equipe', id, 'Segunda.')).json().movida, false)
+      assert.equal((await recusar('equipe', id, 'Terceira.')).json().movida, true)
+      await req('admin', 'PUT', '/api/admin/marca', { nome: 'Acampamento Teste', recusasParaFimDaFila: 0 })
+      for (let i = 0; i < 3; i++) assert.equal((await recusar('equipe', id, 'De novo.')).json().movida, false)
+      await req('admin', 'PUT', '/api/admin/marca', { nome: 'Acampamento Teste', recusasParaFimDaFila: 2 })
+    })
+
+    test('banco: não deixa adiantar a posição, audita mudança direta e a trilha não pode ser editada', async () => {
+      const id = await idPorNome('Recusa C')
+      await assert.rejects(pool.query(`update pre_fichas set entrada_fila_em = entrada_fila_em - interval '1 day' where id = $1`, [id]),
+        /só pode ser movida para o fim/)
+      await pool.query(`update pre_fichas set entrada_fila_em = entrada_fila_em + interval '1 minute' where id = $1`, [id])
+      const { rows: [ultimo] } = await pool.query(
+        `select tipo, observacao, usuario_id from pre_fichas_historico where pre_ficha_id = $1 order by id desc limit 1`, [id])
+      assert.deepEqual([ultimo.tipo, ultimo.usuario_id], ['fim_da_fila', null])
+      assert.match(ultimo.observacao, /diretamente no banco/)
+      await assert.rejects(pool.query(`update pre_fichas_historico set observacao = 'apagado' where pre_ficha_id = $1`, [id]),
+        /não pode ser alterado/)
+    })
+
+    test('tela de auditoria: filtra por tipo e respeita a área do coordenador', async () => {
+      const r = await req('equipe', 'GET', '/api/admin/auditoria?tipo=fim_da_fila')
+      assert.equal(r.statusCode, 200)
+      assert.ok(r.json().length >= 3)
+      assert.ok(r.json().every((e) => e.tipo === 'fim_da_fila' && e.nome_completo))
+      const hoje = new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' })
+      assert.ok((await req('equipe', 'GET', `/api/admin/auditoria?de=${hoje}&ate=${hoje}`)).json().length > 0)
+      const coord = (await req('coord', 'GET', '/api/admin/auditoria')).json()
+      assert.ok(coord.length > 0)
+      assert.ok(coord.every((e) => ['Maria Silva', 'Segundo Juvenil'].includes(e.nome_completo)))
+    })
+  })
+
   // ------------------------------------------------------------------ marca
   describe('marca (identidade do acampamento)', () => {
     const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a5c90000000049454e44ae426082', 'hex')

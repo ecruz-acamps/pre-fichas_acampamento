@@ -231,8 +231,34 @@ Dockerfile, docker-compose.yml implantação com Docker
 
 ## Regra da fila
 
-A posição é calculada **por modalidade**, ordenando pela data/hora de inscrição registrada pelo
-banco (precisão de microssegundos) e, em empate, pelo número da ficha. Entram na contagem as
-fichas com status **Aguardando** ou **Em contato**; ao registrar que a pessoa fez um
-acampamento, ela passa a **Já participou** e sai da fila. A view `fila_espera` traz a mesma posição
-para consultas direto no banco.
+A posição é calculada **por modalidade**, pela data/hora de **entrada na fila** e, em empate,
+pelo número da ficha. Entram na contagem as fichas **Aguardando** ou **Em contato**; ao registrar
+que a pessoa fez um acampamento, ela passa a **Já participou** e sai da fila.
+
+Cada ficha guarda duas datas:
+
+| Data | O que é |
+|---|---|
+| **Inscrição original** | quando a pré-ficha foi enviada. **Nunca muda.** |
+| **Na fila desde** | define a posição. Começa igual à inscrição e só muda quando a pessoa vai para o fim da fila. O banco **só permite adiar** essa data, nunca adiantar. |
+
+### Recusas e "fim da fila"
+
+- Quando a pessoa é chamada e diz não, use **Registrar recusa** na ficha (comentário obrigatório).
+- Na **2ª recusa seguida** ela vai **automaticamente para o fim da fila**: a data "na fila desde"
+  passa a ser o momento atual. O número de recusas é configurável em **Configurações → Regras da
+  fila** (0 = nunca mover automaticamente).
+- A contagem de recusas seguidas zera quando a pessoa aceita (status **Confirmado** ou registro
+  em um acampamento) e depois de ir para o fim da fila.
+- **Mover para o fim da fila…** faz o mesmo manualmente, com motivo obrigatório.
+
+### Trilha de auditoria
+
+Tudo fica registrado no histórico de cada ficha e na tela **Auditoria** (filtros por tipo de evento,
+período e texto; exportação CSV): inscrição, mudanças de status, observações, recusas,
+idas para o fim da fila (com data anterior → nova, quem fez e o motivo) e registros de acampamento.
+
+- O próprio **banco de dados** registra toda mudança da data na fila — mesmo que alguém altere
+  direto no banco, aparece como "alteração direta no banco".
+- Os registros **não podem ser editados** (o banco recusa).
+- O coordenador de núcleo vê a auditoria apenas da sua área.

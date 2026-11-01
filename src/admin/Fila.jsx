@@ -134,6 +134,13 @@ export default function Fila({ usuario, marca, nucleos }) {
     }
   }
 
+  // Recusa / fim da fila: atualiza a ficha e reordena pela entrada na fila
+  function filaAlterada(atualizada) {
+    setLinhas((ls) => ls.map((l) => (l.id === atualizada.id ? atualizada : l))
+      .sort((a, b) => new Date(a.entrada_fila_em) - new Date(b.entrada_fila_em) || a.id - b.id))
+    setSelecionada(atualizada)
+  }
+
   const nomeNucleo = (id) => nucleos.find((n) => n.id === id)?.nome
   const coordenador = usuario.papel === 'coordenador'
 
@@ -142,7 +149,7 @@ export default function Fila({ usuario, marca, nucleos }) {
       <div className="titulo-secao">
         <h1>Fila de espera</h1>
         <p className="subtitulo">
-          {contagemFila.todas} pessoa(s) aguardando · ordem por data e hora de inscrição
+          {contagemFila.todas} pessoa(s) aguardando · ordem de entrada na fila (data da inscrição, ou de quando foi para o fim da fila)
           {coordenador && nucleos.length > 0 && ` · ${nucleos.map((n) => n.nome).join(', ')}`}
         </p>
       </div>
@@ -192,7 +199,7 @@ export default function Fila({ usuario, marca, nucleos }) {
           <thead>
             <tr>
               <th title="Posição na fila da modalidade">Pos.</th>
-              <th>Inscrição</th>
+              <th title="Data que define a posição. Muda quando a pessoa vai para o fim da fila.">Na fila desde</th>
               <th>Nome</th>
               <th>Idade</th>
               <th>Modalidade</th>
@@ -207,10 +214,22 @@ export default function Fila({ usuario, marca, nucleos }) {
               return (
                 <tr key={l.id} onClick={() => setSelecionada(l)} className="clicavel">
                   <td className="posicao">{posicoes.get(l.id) ?? '—'}</td>
-                  <td className="nowrap">{formatarDataHora(l.created_at)}</td>
+                  <td className="nowrap">
+                    {formatarDataHora(l.entrada_fila_em ?? l.created_at)}
+                    {l.entrada_fila_em && l.entrada_fila_em !== l.created_at && (
+                      <small className="dica bloco" title={`Inscrição original: ${formatarDataHora(l.created_at)}`}>
+                        <span className="selo movida">fim da fila</span> inscrita {formatarDataHora(l.created_at).slice(0, 10)}
+                      </small>
+                    )}
+                  </td>
                   <td>
                     {l.nome_completo}
                     {duplicados.has(l.id) && <span className="selo alerta" title="Mesmo e-mail ou telefone de outra ficha">possível duplicado</span>}
+                    {l.recusas_seguidas > 0 && (
+                      <span className="selo recusa" title="Recusas seguidas ao ser chamada">
+                        {l.recusas_seguidas} recusa{l.recusas_seguidas > 1 ? 's' : ''}
+                      </span>
+                    )}
                   </td>
                   <td>{calcularIdade(l.data_nascimento)}</td>
                   <td>{rotuloDe(MODALIDADES, l.modalidade)}</td>
@@ -242,6 +261,7 @@ export default function Fila({ usuario, marca, nucleos }) {
           nomeNucleo={nomeNucleo}
           onFechar={() => setSelecionada(null)}
           onSalvar={(campos) => atualizar(selecionada.id, campos)}
+          onFilaAlterada={filaAlterada}
         />
       )}
     </>

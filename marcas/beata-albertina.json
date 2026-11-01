@@ -43,5 +43,6 @@
       "nome": "Marrom",
       "cor": "#7b4a1e"
     }
-  ]
+  ],
+  "recusasParaFimDaFila": 2
 }

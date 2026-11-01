@@ -334,3 +334,25 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
 .botoes-item { display: flex; flex-direction: column; gap: 2px; }
 .lista-tribos { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 8px; margin-bottom: 10px; }
 .item-tribo { display: flex; gap: 8px; align-items: center; }
+
+/* ---------- recusas e auditoria ---------- */
+.posicao-fila { border: 1px solid var(--borda); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
+.posicao-fila .movida { color: #a15c00; font-weight: 700; }
+.form-acao { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+.form-acao label { font-weight: 500; font-size: 0.92rem; }
+.alerta-aviso { background: #fff4e5; color: #8a4f00; border-radius: 8px; padding: 10px 12px; margin: 0; font-size: 0.9rem; }
+.selo.recusa { background: #fdecea; color: #a8322a; }
+.selo.movida { background: #fff4e5; color: #a15c00; margin: 0 4px 0 0; }
+.selo-evento { display: inline-block; border-radius: 999px; padding: 1px 8px; font-size: 0.78rem; background: #eee; color: #444; white-space: nowrap; }
+.evento-recusa .selo-evento, .selo-evento.evento-recusa { background: #fdecea; color: #a8322a; }
+.selo-evento.evento-fim_da_fila { background: #fff4e5; color: #8a4f00; }
+.selo-evento.evento-inscricao { background: #e8f5e9; color: #2e7d32; }
+.selo-evento.evento-acampamento { background: #f3e5f5; color: #6a1b9a; }
+.selo-evento.evento-status { background: #e3f2fd; color: #1565c0; }
+.historico li.evento-fim_da_fila { border-left-color: #f0a030; }
+.historico li.evento-recusa { border-left-color: #e57373; }
+.mudanca-data s { color: var(--texto-suave); }
+.tabela.auditoria td { vertical-align: top; }
+.campo-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem; }
+.campo-inline input { width: auto !important; }
+.numero-curto { max-width: 120px; }

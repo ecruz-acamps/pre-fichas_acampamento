@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api } from '../lib/api.js'
 import { CorTribo } from '../lib/marca.jsx'
+import { DescricaoEvento, SeloTipo, autorEvento } from './EventoAuditoria.jsx'
 import { ESTADOS_CIVIS, MODALIDADES, SEXOS, STATUS, rotuloDe } from '../../shared/opcoes.js'
 import { calcularIdade, formatarData, formatarDataHora, linkWhatsApp, mascaraCep, simNao } from '../../shared/util.js'
 
@@ -14,15 +15,19 @@ function Item({ rotulo, children }) {
   )
 }
 
-export default function Detalhe({ ficha: f, marca, posicao, nomeNucleo, onFechar, onSalvar }) {
+export default function Detalhe({ ficha: f, marca, posicao, nomeNucleo, onFechar, onSalvar, onFilaAlterada }) {
   const [status, setStatus] = useState(f.status)
   const [obs, setObs] = useState(f.observacoes_internas || '')
   const [salvando, setSalvando] = useState(false)
   const [historico, setHistorico] = useState([])
+  const [acao, setAcao] = useState(null) // 'recusa' | 'fim' | null
+  const [texto, setTexto] = useState('')
+  const [erroAcao, setErroAcao] = useState('')
+  const [enviandoAcao, setEnviandoAcao] = useState(false)
 
   useEffect(() => {
     api.get(`/api/admin/pre-fichas/${f.id}/historico`).then(setHistorico).catch(() => setHistorico([]))
-  }, [f.id, f.atualizado_em])
+  }, [f.id, f.atualizado_em, f.entrada_fila_em, f.recusas_seguidas])
 
   useEffect(() => { setStatus(f.status); setObs(f.observacoes_internas || '') }, [f])
 
@@ -35,6 +40,30 @@ export default function Detalhe({ ficha: f, marca, posicao, nomeNucleo, onFechar
   const alterado = status !== f.status || obs !== (f.observacoes_internas || '')
   const wa = linkWhatsApp(f.telefone)
   const endereco = [f.logradouro, f.numero, f.complemento].filter(Boolean).join(', ')
+
+  const limite = marca?.recusasParaFimDaFila ?? 2
+  const proximaRecusa = (f.recusas_seguidas ?? 0) + 1
+  const proximaMove = limite > 0 && proximaRecusa >= limite
+  const movida = f.entrada_fila_em && new Date(f.entrada_fila_em).getTime() !== new Date(f.created_at).getTime()
+
+  async function executarAcao(e) {
+    e.preventDefault()
+    setErroAcao('')
+    if (!texto.trim()) return setErroAcao(acao === 'recusa' ? 'Escreva um comentário sobre a recusa.' : 'Informe o motivo.')
+    if (acao === 'fim' && !confirm(`Mover ${f.nome_completo} para o fim da fila? A ação fica registrada e não pode ser desfeita.`)) return
+    setEnviandoAcao(true)
+    try {
+      const r = acao === 'recusa'
+        ? await api.post(`/api/admin/pre-fichas/${f.id}/recusa`, { comentario: texto })
+        : await api.post(`/api/admin/pre-fichas/${f.id}/fim-da-fila`, { motivo: texto })
+      setAcao(null); setTexto('')
+      onFilaAlterada(r.ficha)
+    } catch (err) {
+      setErroAcao(err.dados?.mensagem || 'Não foi possível registrar.')
+    } finally {
+      setEnviandoAcao(false)
+    }
+  }
 
   async function salvar() {
     setSalvando(true)
@@ -50,13 +79,56 @@ export default function Detalhe({ ficha: f, marca, posicao, nomeNucleo, onFechar
             <h2>{f.nome_completo}</h2>
             <p className="subtitulo">
               {rotuloDe(MODALIDADES, f.modalidade)}
-              {posicao ? ` · ${posicao}º na fila` : ''} · inscrito em {formatarDataHora(f.created_at)}
+              {posicao ? ` · ${posicao}º na fila` : ''}
             </p>
           </div>
           <button className="fechar" onClick={onFechar} aria-label="Fechar">×</button>
         </header>
 
         <div className="modal-corpo">
+          <section className="posicao-fila">
+            <dl className="grade">
+              <Item rotulo="Inscrição original">{formatarDataHora(f.created_at)}</Item>
+              <Item rotulo="Na fila desde (define a posição)">
+                <span className={movida ? 'movida' : ''}>{formatarDataHora(f.entrada_fila_em ?? f.created_at)}</span>
+                {movida && <small className="dica bloco">movida para o fim da fila — veja o histórico</small>}
+              </Item>
+              <Item rotulo="Recusas seguidas">
+                {f.recusas_seguidas ?? 0}{limite > 0 ? ` de ${limite}` : ''}
+              </Item>
+            </dl>
+            {f.status !== 'participou' && !acao && (
+              <div className="acoes-linha">
+                <button className="botao-secundario" onClick={() => { setAcao('recusa'); setTexto(''); setErroAcao('') }}>Registrar recusa</button>
+                <button className="link perigo" onClick={() => { setAcao('fim'); setTexto(''); setErroAcao('') }}>Mover para o fim da fila…</button>
+              </div>
+            )}
+            {acao && (
+              <form className="form-acao" onSubmit={executarAcao}>
+                <label htmlFor="acao-texto">
+                  {acao === 'recusa' ? 'A pessoa foi chamada e disse não. Comentário (obrigatório):' : 'Motivo para mover para o fim da fila (obrigatório):'}
+                </label>
+                <textarea id="acao-texto" rows={2} maxLength={1000} value={texto} autoFocus onChange={(e) => setTexto(e.target.value)}
+                  placeholder={acao === 'recusa' ? 'Ex.: liguei em 01/11, não pode por causa do trabalho' : 'Ex.: pediu para adiar a participação'} />
+                {acao === 'recusa' && (
+                  <p className={proximaMove ? 'alerta-aviso' : 'dica'}>
+                    {proximaMove
+                      ? `Esta será a ${proximaRecusa}ª recusa seguida: a pessoa irá para o FIM da fila (a data na fila passa a ser agora).`
+                      : `Esta será a ${proximaRecusa}ª recusa seguida.${limite > 0 ? ` Com ${limite} seguidas, a pessoa vai para o fim da fila.` : ''}`}
+                  </p>
+                )}
+                {acao === 'fim' && <p className="alerta-aviso">A data na fila passa a ser agora. A inscrição original continua registrada.</p>}
+                {erroAcao && <div className="alerta-erro">{erroAcao}</div>}
+                <div className="acoes-linha">
+                  <button className="botao-principal pequeno" disabled={enviandoAcao}>
+                    {enviandoAcao ? 'Registrando…' : acao === 'recusa' ? 'Registrar recusa' : 'Mover para o fim'}
+                  </button>
+                  <button type="button" className="link" onClick={() => setAcao(null)}>cancelar</button>
+                </div>
+              </form>
+            )}
+          </section>
+
           <section className="gestao">
             <div className="campo">
               <label htmlFor="det-status">Status</label>
@@ -157,16 +229,13 @@ export default function Detalhe({ ficha: f, marca, posicao, nomeNucleo, onFechar
             </details>
           )}
 
-          <h3>Histórico</h3>
+          <h3>Histórico (trilha de auditoria)</h3>
           {historico.length ? (
             <ol className="historico">
               {historico.map((h) => (
-                <li key={h.id}>
-                  <small className="dica">{formatarDataHora(h.criado_em)} · {h.usuario || 'usuário removido'}</small>
-                  {h.status_novo && (
-                    <div>Status: {rotuloDe(STATUS, h.status_anterior)} → <strong>{rotuloDe(STATUS, h.status_novo)}</strong></div>
-                  )}
-                  {h.observacao && <div className="texto-longo">Observação: {h.observacao}</div>}
+                <li key={h.id} className={`evento-${h.tipo}`}>
+                  <small className="dica"><SeloTipo tipo={h.tipo} /> {formatarDataHora(h.criado_em)} · {autorEvento(h)}</small>
+                  <DescricaoEvento e={h} />
                 </li>
               ))}
             </ol>

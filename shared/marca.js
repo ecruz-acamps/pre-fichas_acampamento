@@ -31,6 +31,8 @@ export const MARCA_PADRAO = {
     'Entendo que estou entrando em uma **lista de espera** e que o preenchimento dessa pré-ficha não significa que estarei automaticamente participando do próximo acampamento. Compreendo que quando chegar a minha vez de participar, alguém irá entrar em contato comigo por telefone.',
   ],
   tribos: TRIBOS_PADRAO,
+  // Recusas seguidas que levam a pessoa para o fim da fila (0 = não mover automaticamente)
+  recusasParaFimDaFila: 2,
 }
 
 const COR = /^#[0-9a-fA-F]{6}$/
@@ -63,6 +65,12 @@ export function validarMarca(entrada) {
   if (bruto.corPrimaria !== undefined) {
     if (!COR.test(bruto.corPrimaria)) e.corPrimaria = 'Cor inválida (formato #RRGGBB).'
     else m.corPrimaria = bruto.corPrimaria.toLowerCase()
+  }
+
+  if (bruto.recusasParaFimDaFila !== undefined) {
+    const n = Number(bruto.recusasParaFimDaFila)
+    if (!Number.isInteger(n) || n < 0 || n > 10) e.recusasParaFimDaFila = 'Use um número de 0 a 10.'
+    else m.recusasParaFimDaFila = n
   }
 
   if (bruto.termos !== undefined) {

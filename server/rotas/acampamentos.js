@@ -114,8 +114,8 @@ export default async function rotasAcampamentos(app) {
          do update set tribo = excluded.tribo, registrado_em = now(), registrado_por = excluded.registrado_por`,
         [id, fichaId, tribo, req.usuario.id])
       if (f.status !== 'participou') {
-        await db.query(`update pre_fichas set status = 'participou', atualizado_em = now(), atualizado_por = $1 where id = $2`,
-          [req.usuario.id, fichaId])
+        await db.query(`update pre_fichas set status = 'participou', recusas_seguidas = 0, atualizado_em = now(), atualizado_por = $1
+          where id = $2`, [req.usuario.id, fichaId])
       }
       if (!antes || antes.tribo !== tribo) {
         const nota = `${antes ? 'Tribo alterada' : 'Fez o'} ${nomeAcampamento(a)}${tribo ? ` — tribo ${tribo}` : ''}`

@@ -3,7 +3,9 @@ import { calcularIdade, formatarData, formatarDataHora, simNao } from '../../sha
 
 const COLUNAS = [
   ['Posição', (l, pos) => pos.get(l.id) ?? ''],
-  ['Data/hora inscrição', (l) => formatarDataHora(l.created_at)],
+  ['Na fila desde', (l) => formatarDataHora(l.entrada_fila_em ?? l.created_at)],
+  ['Inscrição original', (l) => formatarDataHora(l.created_at)],
+  ['Recusas seguidas', (l) => l.recusas_seguidas ?? 0],
   ['Status', (l) => rotuloDe(STATUS, l.status)],
   ['Modalidade', (l) => rotuloDe(MODALIDADES, l.modalidade)],
   ['Nome', (l) => l.nome_completo],

@@ -4,7 +4,7 @@ import { carregarMarca, TextoMarca } from '../lib/marca.jsx'
 import { ajustarCor, corTextoSobre } from '../../shared/marca.js'
 
 const CAMPOS_EXPORTADOS = ['nome', 'nomeCurto', 'corPrimaria', 'whatsapp', 'email', 'instagram', 'site',
-  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos']
+  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila']
 
 function Campo({ id, rotulo, dica, erro, children }) {
   return (
@@ -231,6 +231,15 @@ export default function Configuracoes({ marca, onSalvar }) {
               </div>
             ))}
             <button type="button" className="botao-secundario" onClick={() => setM({ ...m, termos: [...m.termos, ''] })}>+ Adicionar declaração</button>
+          </section>
+
+          <section>
+            <h2>Regras da fila</h2>
+            <Campo id="cfg-recusas" rotulo="Recusas seguidas que levam para o fim da fila" erro={erros.recusasParaFimDaFila}
+              dica="Quando a pessoa é chamada e diz não esse número de vezes seguidas, ela vai automaticamente para o fim da fila (com registro na auditoria). Use 0 para nunca mover automaticamente.">
+              <input id="cfg-recusas" type="number" min="0" max="10" className="numero-curto" value={m.recusasParaFimDaFila}
+                onChange={(e) => setM({ ...m, recusasParaFimDaFila: e.target.value === '' ? '' : Number(e.target.value) })} />
+            </Campo>
           </section>
 
           <section>
