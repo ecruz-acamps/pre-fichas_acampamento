@@ -18,6 +18,9 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
 | HTTPS | Caddy (certificado automático) — ou o seu Nginx |
 | Implantação | Docker Compose — ou systemd, sem Docker |
 
+> 📘 **Instalação passo a passo no Linux:** [`docs/INSTALACAO.md`](docs/INSTALACAO.md)
+> (preparar o servidor, domínio, HTTPS, vários acampamentos, backup, atualização e solução de problemas).
+
 ## Funcionalidades
 
 **Feito para vários acampamentos**
@@ -73,6 +76,8 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
 ---
 
 ## Instalação com Docker (recomendado)
+
+Resumo abaixo — o guia completo está em [`docs/INSTALACAO.md`](docs/INSTALACAO.md).
 
 Requisitos: um servidor Linux com [Docker Engine e o plugin Compose](https://docs.docker.com/engine/install/).
 Para HTTPS automático, um domínio apontando para o IP do servidor, com as portas 80 e 443 liberadas.
