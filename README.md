@@ -31,6 +31,9 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
   declarações obrigatórias e tribos — pelo painel (**Configurações**) ou por arquivo
   (`marcas/*.json`). Vale na hora, sem reiniciar. Veja [`marcas/README.md`](marcas/README.md).
 - Assistente de instalação: `./scripts/novo-acampamento.sh` coloca um acampamento no ar.
+- **Aviso de atualização**: o sistema compara a versão instalada com o GitHub e avisa o
+  administrador no painel quando há versão nova, com a lista do que mudou. Atualizar é um comando:
+  `sudo ./scripts/atualizar.sh` (faz backup, baixa, reconstrói e confere).
 - **Ativação por chave**: depois de instalado e configurado, o sistema pede uma chave de ativação
   (`XXX-0000`), fornecida pelo responsável pela implantação. Até ativar, o painel fica bloqueado
   e o formulário não recebe inscrições.
@@ -156,8 +159,8 @@ docker compose exec app node server/cli.js criar-coordenador pessoa@email.com "N
 docker compose exec app node server/cli.js marca aplicar marcas/beata-albertina.json
 docker compose exec app node server/cli.js marca exportar        # mostra a marca atual (JSON)
 
-# Atualizar para uma nova versão do código
-git pull && docker compose up -d --build
+# Atualizar para uma nova versão (o painel avisa quando existe)
+sudo ./scripts/atualizar.sh
 ```
 
 ---

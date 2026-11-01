@@ -16,6 +16,7 @@ limpeza.unref()
 
 async function encerrar(sinal) {
   app.log.info(`Recebido ${sinal}, encerrando…`)
+  app.verificadorAtualizacao.parar()
   await app.close()
   await pool.end()
   process.exit(0)
@@ -24,3 +25,7 @@ process.on('SIGTERM', () => encerrar('SIGTERM'))
 process.on('SIGINT', () => encerrar('SIGINT'))
 
 await app.listen({ port: config.porta, host: config.host })
+
+const instalada = app.verificadorAtualizacao.instalada
+app.log.info({ versao: instalada.versao, commit: instalada.commit?.slice(0, 7) ?? 'desconhecido' }, 'Versão instalada')
+if (config.atualizacao.ativo) app.verificadorAtualizacao.iniciar(config.atualizacao.horas)

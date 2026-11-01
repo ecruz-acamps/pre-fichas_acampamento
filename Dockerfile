@@ -21,6 +21,11 @@ COPY server ./server
 COPY shared ./shared
 COPY marcas ./marcas
 COPY --from=build /app/dist ./dist
+# Versão (commit do Git) desta imagem, para o aviso de atualização no painel
+ARG VERSAO_COMMIT=""
+ARG VERSAO_DATA=""
+ARG VERSAO_BRANCH=""
+RUN printf '{"commit":"%s","data":"%s","branch":"%s"}\n' "$VERSAO_COMMIT" "$VERSAO_DATA" "$VERSAO_BRANCH" > versao.json
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

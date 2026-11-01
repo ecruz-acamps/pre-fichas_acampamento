@@ -426,3 +426,23 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
   .painel-cabecalho { gap: 8px; }
   .titulo-secao h1 { font-size: 1.3rem; }
 }
+
+/* ---------- atualizações ---------- */
+.aviso-atualizacao { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: #fff4e5; border: 1px solid #f0c27a;
+  color: #6b3f00; border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; }
+.aviso-atualizacao > div { flex: 1 1 320px; }
+.aviso-atualizacao .sino { font-size: 1.3rem; }
+.aviso-atualizacao .botao-secundario { background: #fff; }
+.ponto-alerta { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #e53935; margin-left: 6px; vertical-align: super; }
+.cartoes-versao { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-bottom: 14px; }
+.cartoes-versao .cartao p { margin: 4px 0; }
+.cartoes-versao .versao { font-size: 1.2rem; font-weight: 500; }
+.situacao { display: inline-block; border-radius: 999px; padding: 3px 12px; font-size: 0.85rem; font-weight: 500; margin-top: 6px; }
+.situacao.ok { background: var(--ok-fundo); color: var(--ok); }
+.situacao.pendente { background: #fff4e5; color: #8a4f00; }
+.situacao.neutra { background: #eee; color: #555; }
+.novidades { margin-bottom: 14px; }
+.novidades ul { margin: 0; padding-left: 18px; }
+.novidades li { padding: 4px 0; }
+.como-atualizar pre { background: #1f1b16; color: #f3eee6; border-radius: 8px; padding: 12px 14px; overflow-x: auto; font-size: 0.92rem; }
+.rodape-painel { margin-top: 32px; text-align: center; color: var(--texto-suave); font-size: 0.8rem; }

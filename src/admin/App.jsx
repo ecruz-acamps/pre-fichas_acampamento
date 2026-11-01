@@ -12,6 +12,7 @@ import Auditoria from './Auditoria.jsx'
 import Nomes from './Nomes.jsx'
 import AlterarSenha from './AlterarSenha.jsx'
 import Ativacao from './Ativacao.jsx'
+import Atualizacoes, { AvisoAtualizacao } from './Atualizacoes.jsx'
 
 // Telas do painel e quem pode ver cada uma
 const TELAS = [
@@ -23,6 +24,7 @@ const TELAS = [
   { id: 'nucleos', rotulo: 'Núcleos', papeis: ['admin'] },
   { id: 'usuarios', rotulo: 'Usuários', papeis: ['admin'] },
   { id: 'configuracoes', rotulo: 'Configurações', papeis: ['admin'] },
+  { id: 'atualizacoes', rotulo: 'Atualizações', papeis: ['admin'] },
 ]
 
 export default function App() {
@@ -31,6 +33,7 @@ export default function App() {
   const [marca, setMarca] = useState(null)
   const [nucleos, setNucleos] = useState([])
   const [tela, setTela] = useState('fila')
+  const [atualizacao, setAtualizacao] = useState(null)
 
   const carregarUsuario = useCallback(async () => {
     try {
@@ -48,6 +51,15 @@ export default function App() {
   useEffect(() => {
     if (usuario && !usuario.trocar_senha && licencaAtivada) recarregarNucleos()
   }, [usuario, licencaAtivada, recarregarNucleos])
+
+  // Administrador: verifica se há versão nova no GitHub (repete a cada 30 min com o painel aberto)
+  useEffect(() => {
+    if (usuario?.papel !== 'admin' || usuario.trocar_senha || !licencaAtivada) return
+    const buscar = () => api.get('/api/admin/atualizacao').then(setAtualizacao).catch(() => {})
+    buscar()
+    const t = setInterval(buscar, 30 * 60 * 1000)
+    return () => clearInterval(t)
+  }, [usuario, licencaAtivada])
 
   useEffect(() => {
     const pendente = () => setLicencaAtivada(false)
@@ -105,9 +117,14 @@ export default function App() {
 
       <nav className="menu" aria-label="Seções do painel">
         {telas.map((t) => (
-          <button key={t.id} className={`aba ${atual === t.id ? 'ativa' : ''}`} onClick={() => setTela(t.id)}>{t.rotulo}</button>
+          <button key={t.id} className={`aba ${atual === t.id ? 'ativa' : ''}`} onClick={() => setTela(t.id)}>
+            {t.rotulo}
+            {t.id === 'atualizacoes' && atualizacao?.desatualizado && <span className="ponto-alerta" title="Atualização pendente" />}
+          </button>
         ))}
       </nav>
+
+      {atual !== 'atualizacoes' && <AvisoAtualizacao info={atualizacao} onVer={() => setTela('atualizacoes')} />}
 
       {atual === 'fila' && <Fila {...props} />}
       {atual === 'nomes' && <Nomes {...props} />}
@@ -117,7 +134,13 @@ export default function App() {
       {atual === 'nucleos' && <Nucleos {...props} onAlterar={recarregarNucleos} />}
       {atual === 'usuarios' && <Usuarios {...props} usuarioAtual={usuario} />}
       {atual === 'configuracoes' && <Configuracoes {...props} onSalvar={(m) => setMarca(m)} />}
+      {atual === 'atualizacoes' && <Atualizacoes info={atualizacao} onAtualizado={setAtualizacao} />}
       {atual === 'senha' && <AlterarSenha onConcluir={() => setTela('fila')} />}
+
+      <footer className="rodape-painel">
+        {marca?.nome} · Sistema de pré-fichas{atualizacao?.instalada?.versao ? ` · versão ${atualizacao.instalada.versao}` : ''}
+        {atualizacao?.instalada?.commit ? ` (${atualizacao.instalada.commit.slice(0, 7)})` : ''}
+      </footer>
     </div>
   )
 }

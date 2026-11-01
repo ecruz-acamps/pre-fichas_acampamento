@@ -382,18 +382,39 @@ restaurado não é garantia.
 
 ## 9. Atualizar para uma nova versão
 
+### Como você fica sabendo
+
+O sistema consulta o GitHub ao iniciar e a cada 6 horas. Quando há código novo, **o administrador
+vê um aviso no topo do painel** ("Nova versão do sistema disponível") e a aba **Atualizações**
+ganha um ponto vermelho. Nela aparecem a versão instalada, a mais recente, **a lista do que mudou**
+e o comando exato para atualizar esta instalação (com a pasta certa, pronto para copiar).
+
+> O servidor precisa acessar `api.github.com` para essa verificação. Para desligar, use
+> `ATUALIZACAO_VERIFICAR=false` no `.env`.
+
+### Como atualizar
+
 ```bash
 cd /opt/prefichas-sao-padre-pio
-sudo ./scripts/backup.sh                 # sempre faça um backup antes
-sudo git pull
-sudo docker compose up -d --build
-sudo docker compose ps                   # confira se está tudo "Up"
+sudo ./scripts/atualizar.sh
 ```
 
-As mudanças no banco (migrações) são aplicadas automaticamente quando a aplicação sobe — os dados
-existentes são preservados. Com vários acampamentos, repita em cada pasta.
+O script:
 
----
+1. mostra as novidades (ou avisa que já está na versão mais recente e não faz nada);
+2. faz um **backup automático** do banco;
+3. baixa o código novo do GitHub;
+4. reconstrói e reinicia a aplicação — as mudanças no banco (migrações) são aplicadas sozinhas,
+   preservando os dados;
+5. confere se a aplicação voltou a responder.
+
+Depois disso, o aviso no painel some sozinho (ou clique em **Verificar agora** na aba Atualizações).
+Com vários acampamentos no mesmo servidor, rode o script em cada pasta.
+
+Se alguém alterou arquivos dentro da pasta da instalação, o script **para sem mexer em nada** e
+avisa — veja com `git status` (normalmente basta desfazer a alteração com `git checkout -- .`).
+
+Sem Docker: `sudo MODO=local ./scripts/atualizar.sh`.
 
 ## 10. Comandos do dia a dia
 
@@ -466,7 +487,7 @@ sudo certbot --nginx -d app.seudominio.com.br
 
 Backup sem Docker: `sudo bash -c 'set -a; . /etc/pre-fichas.env; cd /opt/pre-fichas; MODO=local ./scripts/backup.sh'`.
 
-Atualizar: `cd /opt/pre-fichas && sudo git pull && sudo npm ci && sudo npm run build && sudo npm prune --omit=dev && sudo systemctl restart pre-fichas`.
+Atualizar (o painel avisa quando há versão nova): `cd /opt/pre-fichas && sudo MODO=local ./scripts/atualizar.sh`.
 
 Logs: `sudo journalctl -u pre-fichas -f`.
 

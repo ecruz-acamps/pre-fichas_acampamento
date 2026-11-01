@@ -75,6 +75,7 @@ umask 077
 cat > .env <<ENV
 # Gerado por scripts/novo-acampamento.sh em $(date '+%F %T')
 COMPOSE_PROJECT_NAME=${PROJETO}
+PASTA_INSTALACAO=$(pwd)
 MARCA_INICIAL=${MARCA}
 COMPOSE_PROFILES=${PERFIS}
 DOMINIO=${DOMINIO}
@@ -87,6 +88,12 @@ SESSAO_HORAS=12
 LIMITE_ENVIOS_POR_HORA=30
 ENV
 echo "✓ .env criado (projeto ${PROJETO}, porta local ${PORTA})"
+
+# Versão do código (aparece no painel e permite avisar quando houver atualização)
+VERSAO_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"
+VERSAO_DATA="$(git log -1 --format=%cI 2>/dev/null || true)"
+VERSAO_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+export VERSAO_COMMIT VERSAO_DATA VERSAO_BRANCH
 
 if [ "${SEM_BUILD:-0}" = 1 ]; then docker compose up -d; else docker compose up -d --build; fi
 

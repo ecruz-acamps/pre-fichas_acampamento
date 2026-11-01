@@ -2,6 +2,7 @@
 //   DATABASE_URL_TESTE=postgres://usuario:senha@localhost:5432/prefichas_teste npm test
 // ATENÇÃO: o banco de teste é APAGADO a cada execução. Nunca aponte para produção.
 import { after, before, describe, test } from 'node:test'
+import { createServer } from 'node:http'
 import assert from 'node:assert/strict'
 import { construirApp } from '../app.js'
 import { lerConfig } from '../config.js'
@@ -672,6 +673,81 @@ describe('API', { skip: pular }, () => {
       assert.equal((await req('aririu', 'GET', `/api/admin/pre-fichas/${centro}/historico`)).statusCode, 404)
       assert.ok(!(await req('aririu', 'GET', '/api/admin/pre-fichas')).json().some((f) => f.nome_completo === 'Pessoa Ponte'))
       assert.equal((await app.inject({ method: 'GET', url: '/api/admin/campistas' })).statusCode, 401)
+    })
+  })
+
+
+  // ------------------------------------------------------------------ atualização
+  describe('aviso de atualização (GitHub)', () => {
+    const SHA_A = 'a'.repeat(40), SHA_B = 'b'.repeat(40), SHA_C = 'c'.repeat(40)
+    let falso, url, ultimoCommit = SHA_A, fora = false
+    const appCom = (instalada, extra = {}) => construirApp({
+      pool, logger: false, chavesLicenca: chavesTeste, versaoInstalada: instalada,
+      config: { ...app.config, atualizacao: { ativo: true, repo: 'dono/repo', branch: 'main', token: null, apiUrl: url, horas: 6, ...extra } },
+    })
+
+    before(async () => {
+      // GitHub falso: último commit da main e comparação entre commits
+      falso = createServer((rq, rs) => {
+        const json = (code, obj) => { rs.writeHead(code, { 'content-type': 'application/json' }); rs.end(JSON.stringify(obj)) }
+        if (fora) return json(500, {})
+        if (rq.url === '/repos/dono/repo/commits/main') {
+          return json(200, { sha: ultimoCommit, commit: { message: 'Melhorias na fila\n\ndetalhes', committer: { date: '2026-11-10T12:00:00Z' } } })
+        }
+        if (rq.url === `/repos/dono/repo/compare/${SHA_A}...${SHA_C}`) {
+          return json(200, { status: 'ahead', ahead_by: 2, commits: [
+            { sha: SHA_B, commit: { message: 'Corrige filtro de bairro', committer: { date: '2026-11-09T10:00:00Z' } } },
+            { sha: SHA_C, commit: { message: 'Melhorias na fila', committer: { date: '2026-11-10T12:00:00Z' } } }] })
+        }
+        return json(404, {})
+      })
+      await new Promise((r) => falso.listen(0, '127.0.0.1', r))
+      url = `http://127.0.0.1:${falso.address().port}`
+    })
+    after(() => falso.close())
+
+    test('em dia: sem aviso', async () => {
+      const a = await appCom({ versao: '2.0.0', commit: SHA_A })
+      const r = (await a.inject({ method: 'GET', url: '/api/admin/atualizacao', headers: como('admin') })).json()
+      await a.close()
+      assert.deepEqual([r.desatualizado, r.commits_atras, r.instalada.commit], [false, 0, SHA_A])
+    })
+
+    test('nova versão no GitHub: avisa com a quantidade e a lista de novidades (mais nova primeiro)', async () => {
+      ultimoCommit = SHA_C
+      const a = await appCom({ versao: '2.0.0', commit: SHA_A })
+      const r = (await a.inject({ method: 'POST', url: '/api/admin/atualizacao/verificar', headers: como('admin') })).json()
+      await a.close()
+      assert.equal(r.desatualizado, true)
+      assert.equal(r.commits_atras, 2)
+      assert.deepEqual(r.novidades.map((n) => n.mensagem), ['Melhorias na fila', 'Corrige filtro de bairro'])
+      assert.equal(r.disponivel.mensagem, 'Melhorias na fila')
+    })
+
+    test('versão instalada desconhecida ou GitHub fora do ar: explica sem quebrar', async () => {
+      const a = await appCom({ versao: '2.0.0', commit: null })
+      const r = (await a.inject({ method: 'GET', url: '/api/admin/atualizacao', headers: como('admin') })).json()
+      await a.close()
+      assert.equal(r.desatualizado, null)
+      assert.match(r.erro, /atualizar\.sh/)
+      fora = true
+      const b = await appCom({ versao: '2.0.0', commit: SHA_A })
+      const r2 = (await b.inject({ method: 'GET', url: '/api/admin/atualizacao', headers: como('admin') })).json()
+      await b.close()
+      fora = false
+      assert.match(r2.erro, /api\.github\.com/)
+      const c = await appCom({ versao: '2.0.0', commit: SHA_A }, { repo: 'dono/inexistente' })
+      const r3 = (await c.inject({ method: 'GET', url: '/api/admin/atualizacao', headers: como('admin') })).json()
+      await c.close()
+      assert.match(r3.erro, /ATUALIZACAO_TOKEN/)
+    })
+
+    test('só o administrador vê o aviso', async () => {
+      const a = await appCom({ versao: '2.0.0', commit: SHA_A })
+      assert.equal((await a.inject({ method: 'GET', url: '/api/admin/atualizacao', headers: como('equipe') })).statusCode, 403)
+      assert.equal((await a.inject({ method: 'GET', url: '/api/admin/atualizacao', headers: como('coord') })).statusCode, 403)
+      assert.equal((await a.inject({ method: 'GET', url: '/api/admin/atualizacao' })).statusCode, 401)
+      await a.close()
     })
   })
 
