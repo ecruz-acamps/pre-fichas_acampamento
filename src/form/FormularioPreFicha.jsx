@@ -136,6 +136,8 @@ export default function FormularioPreFicha({ marca }) {
       if (err.dados?.erros) {
         setErros(err.dados.erros)
         setErroEnvio('Confira os campos destacados.')
+      } else if (err.status === 503) {
+        setErroEnvio('As inscrições ainda não estão disponíveis. Tente novamente mais tarde.')
       } else if (err.status === 429) {
         setErroEnvio('Muitos envios a partir desta rede. Aguarde alguns minutos e tente novamente.')
       } else {

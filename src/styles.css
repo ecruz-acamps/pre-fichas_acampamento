@@ -381,3 +381,90 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
 .selo-evento.evento-conjuge { background: #fce4ec; color: #ad1457; }
 .filtros select.filtro-ativo { border-color: var(--cor); background: var(--cor-clara); }
 .link.inline { display: inline; margin: 0; font-size: inherit; }
+
+/* ---------- ativação ---------- */
+.ativacao { text-align: center; }
+.serial { display: flex; align-items: center; justify-content: center; gap: 10px; margin: 18px 0 8px; }
+.serial input { width: 110px !important; text-align: center; font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 1.6rem !important; letter-spacing: 0.25em; text-transform: uppercase; padding: 10px 6px !important; }
+.serial input:last-child { width: 140px !important; }
+.serial span { font-size: 1.6rem; color: var(--texto-suave); }
+
+/* ---------- nomes (A–Z) e divisão de cidade ---------- */
+.indice-letras { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 14px; }
+.indice-letras a { min-width: 30px; text-align: center; padding: 4px 6px; border-radius: 6px; background: #fff;
+  border: 1px solid var(--borda); color: var(--cor); text-decoration: none; font-weight: 500; font-size: 0.88rem; }
+.indice-letras a.vazia { color: #c9c1b7; pointer-events: none; }
+.grupo-letra { margin-bottom: 14px; scroll-margin-top: 12px; }
+.grupo-letra h2.letra { font-size: 1.1rem; color: var(--cor); margin: 0 0 6px; }
+.col-nome { width: 30%; }
+.selo-tipo { border-radius: 999px; padding: 2px 10px; font-size: 0.78rem; white-space: nowrap; }
+.selo-tipo.campista { background: #f3e5f5; color: #6a1b9a; }
+.selo-tipo.preficha { background: #e3f2fd; color: #1565c0; }
+.acamp-tribo { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; white-space: nowrap; }
+.dividir-cidade .linha-form.tres-col { grid-template-columns: 90px 1fr auto; }
+.tabela-divisao td { padding: 6px 10px; }
+.tabela-divisao select { min-height: 36px; padding: 4px 8px; }
+.tabela-divisao tr.sem-nucleo td { background: #fff8e1; }
+.resumo-divisao .chip.sem { background: #fff4e5; color: #8a4f00; }
+.vazio { color: var(--texto-suave); text-align: center; }
+.grupo-letra .tabela { table-layout: fixed; }
+.grupo-letra .tabela td:nth-child(1) { width: 24%; }
+.grupo-letra .tabela td:nth-child(2) { width: 10%; }
+.grupo-letra .tabela td:nth-child(3) { width: 15%; }
+.grupo-letra .tabela td:nth-child(4) { width: 17%; }
+.grupo-letra .tabela td:nth-child(5) { width: 14%; }
+@media (max-width: 760px) { .grupo-letra .tabela { table-layout: auto; } }
+
+.faixa-consulta { background: #eef1f6; color: #4a5568; font-size: 0.85rem; padding: 8px 20px; border-bottom: 1px solid var(--borda); }
+.gestao.somente-leitura p { margin: 0 0 6px; }
+
+/* ---------- filtros no celular: largura total, um por linha ---------- */
+@media (max-width: 560px) {
+  .filtros > input, .filtros > select { flex: 1 1 100% !important; width: 100% !important; }
+  .filtros > .botao-secundario { flex: 1 1 auto; }
+  .painel-cabecalho { gap: 8px; }
+  .titulo-secao h1 { font-size: 1.3rem; }
+}
+
+/* ---------- atualizações ---------- */
+.aviso-atualizacao { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; background: #fff4e5; border: 1px solid #f0c27a;
+  color: #6b3f00; border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; }
+.aviso-atualizacao > div { flex: 1 1 320px; }
+.aviso-atualizacao .sino { font-size: 1.3rem; }
+.aviso-atualizacao .botao-secundario { background: #fff; }
+.ponto-alerta { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #e53935; margin-left: 6px; vertical-align: super; }
+.cartoes-versao { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px; margin-bottom: 14px; }
+.cartoes-versao .cartao p { margin: 4px 0; }
+.cartoes-versao .versao { font-size: 1.2rem; font-weight: 500; }
+.situacao { display: inline-block; border-radius: 999px; padding: 3px 12px; font-size: 0.85rem; font-weight: 500; margin-top: 6px; }
+.situacao.ok { background: var(--ok-fundo); color: var(--ok); }
+.situacao.pendente { background: #fff4e5; color: #8a4f00; }
+.situacao.neutra { background: #eee; color: #555; }
+.novidades { margin-bottom: 14px; }
+.novidades ul { margin: 0; padding-left: 18px; }
+.novidades li { padding: 4px 0; }
+.como-atualizar pre { background: #1f1b16; color: #f3eee6; border-radius: 8px; padding: 12px 14px; overflow-x: auto; font-size: 0.92rem; }
+.rodape-painel { margin-top: 32px; text-align: center; color: var(--texto-suave); font-size: 0.8rem; }
+
+/* ---------- botão e janela de atualização ---------- */
+.botao-atualizacao { background: #e8590c; color: #fff; border: 0; border-radius: 999px; padding: 8px 16px; font: inherit;
+  font-size: 0.9rem; font-weight: 500; cursor: pointer; box-shadow: 0 0 0 0 rgba(232, 89, 12, 0.5); animation: pulso 2s infinite; }
+.botao-atualizacao:hover { background: #c94d0a; }
+@keyframes pulso { 0% { box-shadow: 0 0 0 0 rgba(232, 89, 12, 0.45); } 70% { box-shadow: 0 0 0 10px rgba(232, 89, 12, 0); } 100% { box-shadow: 0 0 0 0 rgba(232, 89, 12, 0); } }
+.modal-fundo.centro-tela { justify-content: center; align-items: center; padding: 16px; }
+.dialogo-atualizacao { width: min(560px, 100%); max-height: 90vh; overflow-y: auto; }
+.dialogo-atualizacao h2 { margin-top: 0; }
+.dialogo-atualizacao h3 { font-size: 0.95rem; color: var(--cor); margin: 16px 0 6px; }
+.lista-novidades { margin: 0 0 12px; padding-left: 20px; }
+.lista-novidades li { padding: 3px 0; }
+.etapas-atualizacao { list-style: none; padding: 0; margin: 12px 0; }
+.etapas-atualizacao li { padding: 6px 0 6px 28px; position: relative; }
+.etapas-atualizacao li.feita::before { content: '✓'; position: absolute; left: 4px; color: var(--ok); font-weight: 700; }
+.etapas-atualizacao li.atual::before { content: ''; position: absolute; left: 4px; top: 10px; width: 12px; height: 12px; border-radius: 50%;
+  border: 2px solid var(--cor); border-top-color: transparent; animation: girar 0.9s linear infinite; }
+@keyframes girar { to { transform: rotate(360deg); } }
+.barra-progresso { height: 6px; background: var(--cor-clara); border-radius: 999px; overflow: hidden; }
+.barra-progresso span { display: block; height: 100%; width: 40%; background: var(--cor); border-radius: 999px; animation: deslizar 1.6s ease-in-out infinite; }
+@keyframes deslizar { 0% { margin-left: -40%; } 100% { margin-left: 100%; } }
+.log-atualizacao { background: #1f1b16; color: #f3eee6; border-radius: 8px; padding: 10px 12px; font-size: 0.8rem; max-height: 200px; overflow: auto; white-space: pre-wrap; }

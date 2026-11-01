@@ -2,11 +2,16 @@
 //   DATABASE_URL_TESTE=postgres://usuario:senha@localhost:5432/prefichas_teste npm test
 // ATENÇÃO: o banco de teste é APAGADO a cada execução. Nunca aponte para produção.
 import { after, before, describe, test } from 'node:test'
+import { createServer } from 'node:http'
+import { mkdtempSync, writeFileSync, existsSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import { construirApp } from '../app.js'
 import { lerConfig } from '../config.js'
 import { criarPool, migrar } from '../db.js'
 import { invalidarMarca } from '../marca.js'
+import { esquecerLicenca, gerarHashChave } from '../licenca.js'
 import { gerarHash } from '../senha.js'
 
 const URL_TESTE = process.env.DATABASE_URL_TESTE
@@ -24,7 +29,7 @@ const FICHA = {
 }
 
 describe('API', { skip: pular }, () => {
-  let app, pool
+  let app, pool, chavesTeste
   const H = { 'x-requested-with': 'fetch' }
   const sessoes = {}
 
@@ -43,10 +48,13 @@ describe('API', { skip: pular }, () => {
     await pool.query('drop schema public cascade; create schema public')
     await migrar(pool, { info: () => {} })
     invalidarMarca()
+    esquecerLicenca()
+    // Chave fictícia só para os testes (as chaves reais nunca aparecem no repositório)
+    chavesTeste = [await gerarHashChave('TST-0001', 'teste')]
     const config = {
       ...lerConfig({ DATABASE_URL: URL_TESTE }), cookieSeguro: false, limiteEnviosPorHora: 1000, limiteLoginPorMinuto: 1000,
     }
-    app = await construirApp({ pool, config, logger: false })
+    app = await construirApp({ pool, config, logger: false, chavesLicenca: chavesTeste })
     await pool.query(
       `insert into usuarios (email, nome, papel, senha_hash, trocar_senha) values
         ('admin@x.com', 'Admin', 'admin', $1, false),
@@ -59,6 +67,58 @@ describe('API', { skip: pular }, () => {
   after(async () => {
     await app?.close()
     await pool?.end()
+  })
+
+
+  // ------------------------------------------------------------------ licença
+  describe('ativação com chave', () => {
+    const ativar = (quem, chave) => req(quem, 'POST', '/api/admin/licenca/ativar', { chave })
+
+    test('antes de ativar: formulário fechado e painel bloqueado (login continua funcionando)', async () => {
+      assert.equal((await app.inject({ method: 'GET', url: '/api/licenca' })).json().ativada, false)
+      const envio = await enviar({ nome_completo: 'Antes da Ativação' })
+      assert.equal(envio.statusCode, 503)
+      assert.equal(envio.json().licencaPendente, true)
+      const fila = await req('admin', 'GET', '/api/admin/pre-fichas')
+      assert.equal(fila.statusCode, 403)
+      assert.equal(fila.json().licencaPendente, true)
+      assert.equal((await req('admin', 'GET', '/api/auth/eu')).json().licencaAtivada, false)
+      assert.equal((await app.inject({ method: 'GET', url: '/api/admin/pre-fichas' })).statusCode, 401)
+    })
+
+    test('só administrador ativa; formato e chave errados são recusados', async () => {
+      assert.equal((await ativar('equipe', 'TST-0001')).statusCode, 403)
+      const formato = await ativar('admin', 'AB-12')
+      assert.equal(formato.statusCode, 400)
+      assert.match(formato.json().mensagem, /XXX-0000/)
+      const errada = await ativar('admin', 'TST-0002')
+      assert.equal(errada.statusCode, 400)
+      assert.match(errada.json().mensagem, /inválida/)
+    })
+
+    test('excesso de tentativas de ativação é bloqueado', async () => {
+      const app2 = await construirApp({ pool, config: { ...app.config }, logger: false, chavesLicenca: chavesTeste })
+      const codigos = []
+      for (let i = 0; i < 6; i++) {
+        codigos.push((await app2.inject({ method: 'POST', url: '/api/admin/licenca/ativar', headers: como('admin'), payload: { chave: 'ZZZ-9999' } })).statusCode)
+      }
+      await app2.close()
+      assert.deepEqual(codigos, [400, 400, 400, 400, 400, 429])
+    })
+
+    test('chave correta (aceita minúsculas e sem traço) ativa o sistema de vez', async () => {
+      const r = await ativar('admin', 'tst 0001')
+      assert.equal(r.statusCode, 200)
+      assert.equal((await app.inject({ method: 'GET', url: '/api/licenca' })).json().ativada, true)
+      assert.equal((await req('admin', 'GET', '/api/auth/eu')).json().licencaAtivada, true)
+      assert.equal((await req('admin', 'GET', '/api/admin/pre-fichas')).statusCode, 200)
+      const s = (await req('admin', 'GET', '/api/admin/licenca')).json()
+      assert.deepEqual([s.ativada, s.origem, s.ativada_por], [true, 'painel', 'Admin'])
+      assert.equal((await ativar('admin', 'ZZZ-0000')).json().jaAtivada, true)
+      const { rows: [l] } = await pool.query('select * from licenca')
+      assert.equal(l.chave_id, 'teste')
+      assert.ok(!JSON.stringify(l).includes('0001'), 'a chave não é gravada no banco')
+    })
   })
 
   // ------------------------------------------------------------------ envio
@@ -529,6 +589,202 @@ describe('API', { skip: pular }, () => {
       const off = await req('equipe', 'POST', `/api/admin/pre-fichas/${id}/preferencias`, { conjuge_nome: 'Outro', acampamento_numero: 52, modalidade: 'senior' })
       assert.equal(off.statusCode, 400)
       await req('admin', 'PUT', '/api/admin/marca', { nome: 'Acampamento Teste', edicoesPreferenciaConjuge: 2 })
+    })
+  })
+
+
+  // ------------------------------------------------------------------ divisão / campistas
+  describe('Palhoça dividida em núcleos por bairro e lista de campistas', () => {
+    const palhoca = { cidade: 'Palhoça', data_nascimento: '2001-01-01', modalidade: 'juvenil' }
+    const nucleos = {}
+    let coordAririu
+
+    before(async () => {
+      for (const nome of ['Palhoça Centro', 'Ponte do Imaruim', 'Aririu', 'São Sebastião']) {
+        nucleos[nome] = (await req('admin', 'POST', '/api/admin/nucleos', { nome, areas: [] })).json().id
+      }
+      for (const [nome, bairro] of [['Pessoa Centro', 'Centro'], ['Pessoa Ponte', 'Ponte do Imaruim'],
+        ['Pessoa Aririu', 'Aririu'], ['Pessoa Aririu 2', 'ARIRIU'], ['Pessoa Bela Vista', 'Bela Vista'], ['Pessoa Sem Bairro', '']]) {
+        await enviar({ ...palhoca, nome_completo: nome, bairro })
+      }
+      await pool.query(`insert into usuarios (email, nome, papel, senha_hash, trocar_senha) values ('aririu@x.com', 'Coord Aririu', 'coordenador', $1, false)`,
+        [await gerarHash(SENHA)])
+      sessoes.aririu = (await login('aririu@x.com')).cookie
+      const { rows: [u] } = await pool.query(`select id from usuarios where email = 'aririu@x.com'`)
+      coordAririu = u.id
+    })
+
+    test('a ferramenta lista os bairros de Palhoça com quantidade de fichas (grafias diferentes juntas)', async () => {
+      const r = await req('admin', 'GET', '/api/admin/nucleos/divisao?uf=SC&cidade=palhoca')
+      assert.equal(r.statusCode, 200)
+      const aririu = r.json().bairros.find((b) => b.bairro.toLowerCase() === 'aririu')
+      assert.equal(aririu.fichas, 2)
+      assert.equal(r.json().sem_bairro, 1)
+      assert.ok(r.json().cidade_inteira.some((n) => n.nome === 'Núcleo Sul'), 'mostra o núcleo que tinha a cidade inteira')
+      assert.equal((await req('coord', 'GET', '/api/admin/nucleos/divisao?uf=SC&cidade=Palhoça')).statusCode, 403)
+    })
+
+    test('salvar a divisão: cada bairro em um núcleo; a "cidade inteira" antiga é substituída', async () => {
+      const atribuicoes = [
+        { bairro: 'Centro', nucleo_id: nucleos['Palhoça Centro'] },
+        { bairro: 'Pagani', nucleo_id: nucleos['Palhoça Centro'] },
+        { bairro: 'Ponte do Imaruim', nucleo_id: nucleos['Ponte do Imaruim'] },
+        { bairro: 'Aririu', nucleo_id: nucleos.Aririu },
+        { bairro: 'Bela Vista', nucleo_id: nucleos['São Sebastião'] },
+        { bairro: 'Bairro Sem Núcleo', nucleo_id: null },
+      ]
+      assert.equal((await req('admin', 'PUT', '/api/admin/nucleos/divisao', { uf: 'SC', cidade: 'Palhoça', atribuicoes: [{ bairro: 'X', nucleo_id: 999999 }] })).statusCode, 400)
+      const r = await req('admin', 'PUT', '/api/admin/nucleos/divisao', { uf: 'SC', cidade: 'Palhoça', atribuicoes })
+      assert.equal(r.statusCode, 200)
+      assert.equal(r.json().inseridas, 5)
+      const d = (await req('admin', 'GET', '/api/admin/nucleos/divisao?uf=SC&cidade=Palhoça')).json()
+      assert.equal(d.cidade_inteira.length, 0)
+      assert.equal(d.bairros.find((b) => b.bairro === 'Bela Vista').nucleo_id, nucleos['São Sebastião'])
+      const sul = (await req('admin', 'GET', '/api/admin/nucleos')).json().find((n) => n.nome === 'Núcleo Sul')
+      assert.equal(sul.areas.length, 0)
+    })
+
+    test('o coordenador do Aririu vê só as pré-fichas do Aririu', async () => {
+      await req('admin', 'PATCH', `/api/admin/usuarios/${coordAririu}`, { nucleos: [nucleos.Aririu] })
+      const fichas = (await req('aririu', 'GET', '/api/admin/pre-fichas')).json().map((f) => f.nome_completo).sort()
+      assert.deepEqual(fichas, ['Pessoa Aririu', 'Pessoa Aririu 2'])
+    })
+
+    test('campistas: todos os núcleos, com dados completos; alterar só no próprio núcleo', async () => {
+      const a = (await req('equipe', 'POST', '/api/admin/acampamentos', { numero: 60, modalidade: 'juvenil' })).json().id
+      for (const nome of ['Pessoa Aririu', 'Pessoa Ponte']) {
+        await req('equipe', 'PUT', `/api/admin/acampamentos/${a}/participantes/${await idPorNome(nome)}`, { tribo: 'Roxo' })
+      }
+      const r = await req('aririu', 'GET', '/api/admin/campistas')
+      assert.equal(r.statusCode, 200)
+      const nomes = r.json().map((c) => c.nome_completo)
+      assert.ok(nomes.includes('Pessoa Aririu') && nomes.includes('Pessoa Ponte'))
+      assert.ok(nomes.includes('Maria Silva'), 'inclui campistas de outras cidades')
+      const ponte = r.json().find((c) => c.nome_completo === 'Pessoa Ponte')
+      assert.equal(ponte.da_minha_area, false)
+      assert.equal(ponte.participacoes[0].tribo, 'Roxo')
+      assert.ok(ponte.telefone && ponte.email && ponte.data_nascimento, 'campistas não são restritos: dados completos')
+      assert.equal(ponte.ip_origem, undefined)
+      assert.equal(r.json().find((c) => c.nome_completo === 'Pessoa Aririu').da_minha_area, true)
+
+      // ver o histórico de um campista de outro núcleo: pode; alterar: não
+      assert.equal((await req('aririu', 'GET', `/api/admin/pre-fichas/${ponte.id}/historico`)).statusCode, 200)
+      assert.equal((await req('aririu', 'PATCH', `/api/admin/pre-fichas/${ponte.id}`, { observacoes_internas: 'x' })).statusCode, 404)
+      assert.equal((await req('aririu', 'POST', `/api/admin/pre-fichas/${ponte.id}/recusa`, { comentario: 'x' })).statusCode, 404)
+      // pré-ficha (não campista) de outro núcleo continua restrita
+      const centro = await idPorNome('Pessoa Centro')
+      assert.equal((await req('aririu', 'GET', `/api/admin/pre-fichas/${centro}/historico`)).statusCode, 404)
+      assert.ok(!(await req('aririu', 'GET', '/api/admin/pre-fichas')).json().some((f) => f.nome_completo === 'Pessoa Ponte'))
+      assert.equal((await app.inject({ method: 'GET', url: '/api/admin/campistas' })).statusCode, 401)
+    })
+  })
+
+
+  // ------------------------------------------------------------------ atualização
+  describe('aviso de atualização (GitHub)', () => {
+    const SHA_A = 'a'.repeat(40), SHA_B = 'b'.repeat(40), SHA_C = 'c'.repeat(40)
+    let falso, url, ultimoCommit = SHA_A, fora = false
+    const appCom = (instalada, extra = {}) => construirApp({
+      pool, logger: false, chavesLicenca: chavesTeste, versaoInstalada: instalada,
+      config: { ...app.config, atualizacao: { ativo: true, repo: 'dono/repo', branch: 'main', token: null, apiUrl: url, horas: 6, ...extra } },
+    })
+
+    before(async () => {
+      // GitHub falso: último commit da main e comparação entre commits
+      falso = createServer((rq, rs) => {
+        const json = (code, obj) => { rs.writeHead(code, { 'content-type': 'application/json' }); rs.end(JSON.stringify(obj)) }
+        if (fora) return json(500, {})
+        if (rq.url === '/repos/dono/repo/commits/main') {
+          return json(200, { sha: ultimoCommit, commit: { message: 'Melhorias na fila\n\ndetalhes', committer: { date: '2026-11-10T12:00:00Z' } } })
+        }
+        if (rq.url === `/repos/dono/repo/compare/${SHA_A}...${SHA_C}`) {
+          return json(200, { status: 'ahead', ahead_by: 2, commits: [
+            { sha: SHA_B, commit: { message: 'Corrige filtro de bairro', committer: { date: '2026-11-09T10:00:00Z' } } },
+            { sha: SHA_C, commit: { message: 'Melhorias na fila', committer: { date: '2026-11-10T12:00:00Z' } } }] })
+        }
+        return json(404, {})
+      })
+      await new Promise((r) => falso.listen(0, '127.0.0.1', r))
+      url = `http://127.0.0.1:${falso.address().port}`
+    })
+    after(() => falso.close())
+
+    test('em dia: sem aviso', async () => {
+      const a = await appCom({ versao: '2.0.0', commit: SHA_A })
+      const r = (await a.inject({ method: 'GET', url: '/api/admin/atualizacao', headers: como('admin') })).json()
+      await a.close()
+      assert.deepEqual([r.desatualizado, r.commits_atras, r.instalada.commit], [false, 0, SHA_A])
+    })
+
+    test('nova versão no GitHub: avisa com a quantidade e a lista de novidades (mais nova primeiro)', async () => {
+      ultimoCommit = SHA_C
+      const a = await appCom({ versao: '2.0.0', commit: SHA_A })
+      const r = (await a.inject({ method: 'POST', url: '/api/admin/atualizacao/verificar', headers: como('admin') })).json()
+      await a.close()
+      assert.equal(r.desatualizado, true)
+      assert.equal(r.commits_atras, 2)
+      assert.deepEqual(r.novidades.map((n) => n.mensagem), ['Melhorias na fila', 'Corrige filtro de bairro'])
+      assert.equal(r.disponivel.mensagem, 'Melhorias na fila')
+    })
+
+    test('versão instalada desconhecida ou GitHub fora do ar: explica sem quebrar', async () => {
+      const a = await appCom({ versao: '2.0.0', commit: null })
+      const r = (await a.inject({ method: 'GET', url: '/api/admin/atualizacao', headers: como('admin') })).json()
+      await a.close()
+      assert.equal(r.desatualizado, null)
+      assert.match(r.erro, /atualizar\.sh/)
+      fora = true
+      const b = await appCom({ versao: '2.0.0', commit: SHA_A })
+      const r2 = (await b.inject({ method: 'GET', url: '/api/admin/atualizacao', headers: como('admin') })).json()
+      await b.close()
+      fora = false
+      assert.match(r2.erro, /api\.github\.com/)
+      const c = await appCom({ versao: '2.0.0', commit: SHA_A }, { repo: 'dono/inexistente' })
+      const r3 = (await c.inject({ method: 'GET', url: '/api/admin/atualizacao', headers: como('admin') })).json()
+      await c.close()
+      assert.match(r3.erro, /ATUALIZACAO_TOKEN/)
+    })
+
+    test('botão "Atualizar agora": sem atualizador instalado explica como ativar', async () => {
+      const pasta = mkdtempSync(join(tmpdir(), 'atualizador-'))
+      const a = await appCom({ versao: '2.0.0', commit: SHA_A }, { pastaControle: pasta })
+      const r = await a.inject({ method: 'POST', url: '/api/admin/atualizacao/executar', headers: como('admin') })
+      const info = (await a.inject({ method: 'GET', url: '/api/admin/atualizacao', headers: como('admin') })).json()
+      await a.close()
+      assert.equal(r.statusCode, 409)
+      assert.match(r.json().mensagem, /instalar-atualizador\.sh/)
+      assert.equal(info.atualizador.instalado, false)
+      assert.equal(existsSync(join(pasta, 'solicitar')), false)
+    })
+
+    test('botão "Atualizar agora": grava o pedido, mostra o andamento e não deixa pedir duas vezes', async () => {
+      const pasta = mkdtempSync(join(tmpdir(), 'atualizador-'))
+      writeFileSync(join(pasta, 'atualizador.json'), JSON.stringify({ instalado_em: 'x', modo: 'docker' }))
+      const a = await appCom({ versao: '2.0.0', commit: SHA_A }, { pastaControle: pasta })
+      assert.equal((await a.inject({ method: 'POST', url: '/api/admin/atualizacao/executar', headers: como('equipe') })).statusCode, 403)
+      const r = await a.inject({ method: 'POST', url: '/api/admin/atualizacao/executar', headers: como('admin') })
+      assert.equal(r.statusCode, 200)
+      assert.ok(existsSync(join(pasta, 'solicitar')), 'pedido gravado para o atualizador do servidor')
+      assert.equal(JSON.parse(readFileSync(join(pasta, 'pedido.json'), 'utf8')).usuario, 'Admin')
+      const dup = await a.inject({ method: 'POST', url: '/api/admin/atualizacao/executar', headers: como('admin') })
+      assert.equal(dup.statusCode, 409)
+      assert.equal(dup.json().emAndamento, true)
+
+      // o atualizador do servidor escreve o andamento; o painel lê
+      writeFileSync(join(pasta, 'estado.json'), JSON.stringify({ etapa: 'executando', sucesso: null }))
+      writeFileSync(join(pasta, 'log.txt'), '→ Fazendo backup antes de atualizar…\n→ Baixando o código novo…\n')
+      const p = (await a.inject({ method: 'GET', url: '/api/admin/atualizacao/progresso', headers: como('admin') })).json()
+      await a.close()
+      assert.equal(p.estado.etapa, 'executando')
+      assert.deepEqual(p.log, ['→ Fazendo backup antes de atualizar…', '→ Baixando o código novo…'])
+    })
+
+    test('só o administrador vê o aviso', async () => {
+      const a = await appCom({ versao: '2.0.0', commit: SHA_A })
+      assert.equal((await a.inject({ method: 'GET', url: '/api/admin/atualizacao', headers: como('equipe') })).statusCode, 403)
+      assert.equal((await a.inject({ method: 'GET', url: '/api/admin/atualizacao', headers: como('coord') })).statusCode, 403)
+      assert.equal((await a.inject({ method: 'GET', url: '/api/admin/atualizacao' })).statusCode, 401)
+      await a.close()
     })
   })
 

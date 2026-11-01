@@ -11,8 +11,7 @@ export default function Login({ marca, onEntrar }) {
     e.preventDefault()
     setErro(''); setCarregando(true)
     try {
-      const { usuario } = await api.post('/api/auth/login', { email, senha })
-      onEntrar(usuario)
+      onEntrar(await api.post('/api/auth/login', { email, senha }))
     } catch (err) {
       setCarregando(false)
       setErro(err.status === 429

@@ -31,6 +31,8 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
+# Pedido de atualização pelo painel (scripts/instalar-atualizador.sh)
+ReadWritePaths=-/opt/pre-fichas/atualizacao
 
 [Install]
 WantedBy=multi-user.target

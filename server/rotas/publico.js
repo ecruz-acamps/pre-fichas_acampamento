@@ -1,5 +1,6 @@
 import { montarRegistro, normalizarEntrada, validar } from '../../shared/validacao.js'
 import { carregarMarca, lerLogo, temaCss } from '../marca.js'
+import { licencaAtivada } from '../licenca.js'
 
 const COLUNAS = Object.keys(montarRegistro(normalizarEntrada({ data_nascimento: '2000-01-01' })))
 
@@ -35,6 +36,9 @@ export default async function rotasPublicas(app) {
   app.post('/api/pre-fichas', {
     config: { rateLimit: { max: config.limiteEnviosPorHora, timeWindow: '1 hour' } },
   }, async (req, reply) => {
+    if (!(await licencaAtivada(pool))) {
+      return reply.code(503).send({ mensagem: 'As inscrições ainda não estão disponíveis.', licencaPendente: true })
+    }
     const f = normalizarEntrada(req.body)
 
     // Campo invisível preenchido = robô. Responde como sucesso e descarta.

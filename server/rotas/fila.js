@@ -77,7 +77,7 @@ export default async function rotasFila(app) {
 
   app.get('/api/admin/pre-fichas/:id/historico', autenticado, async (req, reply) => {
     const id = Number(req.params.id)
-    if (!(await podeVerFicha(pool, req.usuario, id))) return reply.code(404).send({ mensagem: 'Pré-ficha não encontrada.' })
+    if (!(await podeVerFicha(pool, req.usuario, id, { leitura: true }))) return reply.code(404).send({ mensagem: 'Pré-ficha não encontrada.' })
     const { rows } = await pool.query(`${SQL_HISTORICO} where h.pre_ficha_id = $1 order by h.criado_em desc, h.id desc`, [id])
     return rows
   })
@@ -162,6 +162,22 @@ export default async function rotasFila(app) {
     if (!ok) return reply.code(404).send({ mensagem: 'Pré-ficha não encontrada.' })
     const { rows: [ficha] } = await pool.query(SQL_FICHAS('p.id = $1'), [id])
     return { ficha: limparFicha(ficha) }
+  })
+
+  // Todos os campistas (quem já fez algum acampamento), de TODOS os núcleos, com a ficha
+  // completa — campistas não são restritos ao núcleo. `da_minha_area` indica se o
+  // coordenador também pode ALTERAR a ficha (só as do seu núcleo).
+  app.get('/api/admin/campistas', autenticado, async (req) => {
+    const escopo = await nucleosDoUsuario(pool, req.usuario)
+    const { rows } = await pool.query(
+      SQL_FICHAS('exists (select 1 from participacoes pa where pa.pre_ficha_id = p.id)'))
+    const { rows: ns } = await pool.query('select id, nome from nucleos')
+    const nomes = new Map(ns.map((n) => [n.id, n.nome]))
+    return rows.map((f) => ({
+      ...limparFicha(f),
+      nucleos_nomes: f.nucleos.map((id) => nomes.get(id) ?? ''),
+      da_minha_area: escopo === null || f.nucleos.some((n) => escopo.includes(n)),
+    }))
   })
 
   // Trilha de auditoria geral (respeita a área do coordenador)

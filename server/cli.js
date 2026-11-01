@@ -14,6 +14,7 @@ import { lerConfig } from './config.js'
 import { criarPool, migrar } from './db.js'
 import { gerarHash, gerarSenhaTemporaria } from './senha.js'
 import { carregarMarca, conferirImagem, salvarLogo, salvarMarca } from './marca.js'
+import { ativarLicenca, gerarHashChave, situacaoLicenca } from './licenca.js'
 
 const TIPO_POR_EXTENSAO = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' }
 
@@ -43,7 +44,24 @@ const AJUDA = `Uso:
   node server/cli.js marca aplicar <arquivo.json>    aplica nome, cores, textos e tribos
                                                      (e a logo, se o arquivo indicar "logo")
   node server/cli.js marca exportar [arquivo.json]   salva a marca atual em um arquivo
-  node server/cli.js marca logo <imagem>             troca só a logo (PNG, JPG, WEBP ou SVG)`
+  node server/cli.js marca logo <imagem>             troca só a logo (PNG, JPG, WEBP ou SVG)
+
+  node server/cli.js licenca ativar <CHAVE>          ativa o sistema com a chave de ativação
+  node server/cli.js licenca status                  mostra se o sistema está ativado`
+
+// Gerar o hash de uma chave nova não precisa de banco de dados.
+// Cole a linha gerada em CHAVES_LICENCA (server/licenca.js). A chave em si nunca deve ser publicada.
+if (comando === 'licenca' && args[0] === 'gerar-hash') {
+  if (!args[1]) { console.error('Informe a chave: node server/cli.js licenca gerar-hash XXX-0000'); process.exit(1) }
+  try {
+    const { sal, hash } = await gerarHashChave(args[1])
+    console.log(`  { id: 'k${Date.now().toString(36)}', sal: '${sal}', hash: '${hash}' },`)
+    process.exit(0)
+  } catch (e) {
+    console.error(e.message)
+    process.exit(1)
+  }
+}
 
 const pool = criarPool(lerConfig().databaseUrl)
 const silencioso = { info: () => {} }
@@ -102,6 +120,23 @@ try {
       } else if (acao === 'logo') {
         if (!arquivo) throw new Error(AJUDA)
         await aplicarLogo(pool, arquivo)
+      } else {
+        throw new Error(AJUDA)
+      }
+      break
+    }
+    case 'licenca': {
+      const [acao, chave] = args
+      if (acao === 'ativar') {
+        if (!chave) throw new Error('Informe a chave: node server/cli.js licenca ativar XXX-0000')
+        const r = await ativarLicenca(pool, { chave, origem: 'cli' })
+        if (!r.ok) throw new Error(r.mensagem)
+        console.log('✓ Sistema ativado.')
+      } else if (acao === 'status') {
+        const s = await situacaoLicenca(pool)
+        console.log(s.ativada
+          ? `Ativado em ${new Date(s.ativada_em).toLocaleString('pt-BR')} (${s.origem}${s.ativada_por ? `, por ${s.ativada_por}` : ''}).`
+          : 'Ainda NÃO ativado.')
       } else {
         throw new Error(AJUDA)
       }

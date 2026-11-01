@@ -28,6 +28,21 @@ export function lerConfig(env = process.env) {
     pastaSite: env.PASTA_SITE || new URL('../dist', import.meta.url).pathname,
     // Arquivo de marca aplicado na primeira inicialização (ex.: marcas/sao-padre-pio.json)
     marcaInicial: env.MARCA_INICIAL || null,
+    // Aviso de atualização: compara a versão instalada com o GitHub
+    atualizacao: {
+      ativo: bool(env.ATUALIZACAO_VERIFICAR, true),
+      repo: env.ATUALIZACAO_REPO || 'ecruz-acamps/pre-fichas_acampamento',
+      branch: env.ATUALIZACAO_BRANCH || 'main',
+      token: env.ATUALIZACAO_TOKEN || null, // só se o repositório for privado
+      apiUrl: env.ATUALIZACAO_API_URL || 'https://api.github.com',
+      horas: int(env.ATUALIZACAO_INTERVALO_HORAS, 6),
+      // Pasta da instalação no servidor (Docker: vem do .env; sem Docker: a pasta do próprio sistema)
+      pasta: env.PASTA_INSTALACAO || (new URL('..', import.meta.url).pathname.replace(/\/$/, '') === '/app'
+        ? null : new URL('..', import.meta.url).pathname.replace(/\/$/, '')),
+      docker: new URL('..', import.meta.url).pathname.replace(/\/$/, '') === '/app',
+      // Pasta de comunicação com o atualizador do servidor (botão "Atualizar agora")
+      pastaControle: env.ATUALIZACAO_PASTA_CONTROLE || new URL('../atualizacao', import.meta.url).pathname,
+    },
     logNivel: env.LOG_NIVEL || (producao ? 'info' : 'debug'),
   }
   if (!config.databaseUrl) {

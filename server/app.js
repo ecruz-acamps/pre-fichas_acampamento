@@ -6,6 +6,10 @@ import rateLimit from '@fastify/rate-limit'
 import estaticos from '@fastify/static'
 import { COOKIE, buscarSessao } from './sessao.js'
 import { carregarMarca, criarRenderizadorHtml } from './marca.js'
+import { CHAVES_LICENCA, licencaAtivada } from './licenca.js'
+import rotasLicenca from './rotas/licenca.js'
+import rotasAtualizacao from './rotas/atualizacao.js'
+import { criarVerificador, lerVersaoInstalada } from './versao.js'
 import rotasPublicas from './rotas/publico.js'
 import rotasAuth from './rotas/auth.js'
 import rotasFila from './rotas/fila.js'
@@ -15,7 +19,7 @@ import rotasAcampamentos from './rotas/acampamentos.js'
 import rotasMarca from './rotas/marca.js'
 import rotasPreferencias from './rotas/preferencias.js'
 
-export async function construirApp({ pool, config, logger = true }) {
+export async function construirApp({ pool, config, logger = true, chavesLicenca = CHAVES_LICENCA, versaoInstalada = lerVersaoInstalada() }) {
   const app = Fastify({
     logger: logger && {
       level: config.logNivel,
@@ -28,6 +32,8 @@ export async function construirApp({ pool, config, logger = true }) {
 
   app.decorate('pool', pool)
   app.decorate('config', config)
+  app.decorate('chavesLicenca', chavesLicenca)
+  app.decorate('verificadorAtualizacao', criarVerificador(config.atualizacao, versaoInstalada, app.log))
   app.decorateRequest('usuario', null)
 
   await app.register(cookie)
@@ -70,6 +76,14 @@ export async function construirApp({ pool, config, logger = true }) {
     }
   })
 
+  // Sistema ainda não ativado: o painel só permite a ativação (e login/troca de senha).
+  app.addHook('onRequest', async (req, reply) => {
+    if (!req.url.startsWith('/api/admin') || req.url.startsWith('/api/admin/licenca') || !req.usuario) return
+    if (!(await licencaAtivada(pool))) {
+      return reply.code(403).send({ mensagem: 'O sistema precisa ser ativado com a chave de ativação.', licencaPendente: true })
+    }
+  })
+
   app.decorate('exigirLogin', async (req, reply) => {
     if (!req.usuario) return reply.code(401).send({ mensagem: 'Faça login para continuar.' })
     if (req.usuario.trocar_senha) return reply.code(403).send({ mensagem: 'Defina uma nova senha.', trocarSenha: true })
@@ -96,6 +110,8 @@ export async function construirApp({ pool, config, logger = true }) {
   await app.register(rotasAcampamentos)
   await app.register(rotasMarca)
   await app.register(rotasPreferencias)
+  await app.register(rotasLicenca)
+  await app.register(rotasAtualizacao)
 
   // ---- Site (arquivos gerados pelo `npm run build`) ----
   if (existsSync(config.pastaSite)) {

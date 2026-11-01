@@ -1,6 +1,7 @@
-// Quais fichas cada usuário pode ver.
-//   admin / equipe -> todas (retorna null)
-//   coordenador    -> só as das cidades/bairros dos seus núcleos (lista de ids de núcleo)
+// Quais fichas cada usuário pode ver e alterar.
+//   admin / equipe -> todas (escopo null)
+//   coordenador    -> ALTERAR e ver pré-fichas: só as das cidades/bairros dos seus núcleos;
+//                     VER campistas (quem já fez o acampamento): todos, de qualquer núcleo.
 
 export async function nucleosDoUsuario(pool, usuario) {
   if (usuario.papel !== 'coordenador') return null
@@ -13,8 +14,17 @@ export const filtroEscopo = (n) =>
   `($${n}::bigint[] is null or exists (
      select 1 from ficha_nucleos fn where fn.pre_ficha_id = p.id and fn.nucleo_id = any($${n}::bigint[])))`
 
-export async function podeVerFicha(pool, usuario, fichaId) {
+/** Leitura: o escopo do núcleo OU qualquer campista (campistas não são restritos). */
+export const filtroLeitura = (n) =>
+  `(${filtroEscopo(n)} or exists (select 1 from participacoes pa where pa.pre_ficha_id = p.id))`
+
+/**
+ * Pode alterar a ficha (status, recusa, fim da fila)? Só dentro do escopo do núcleo.
+ * Com { leitura: true }, também aceita qualquer campista (somente consulta).
+ */
+export async function podeVerFicha(pool, usuario, fichaId, { leitura = false } = {}) {
   const escopo = await nucleosDoUsuario(pool, usuario)
-  const { rows } = await pool.query(`select 1 from pre_fichas p where p.id = $1 and ${filtroEscopo(2)}`, [fichaId, escopo])
+  const filtro = leitura ? filtroLeitura(2) : filtroEscopo(2)
+  const { rows } = await pool.query(`select 1 from pre_fichas p where p.id = $1 and ${filtro}`, [fichaId, escopo])
   return rows.length > 0
 }

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api.js'
 import { UFS } from '../../shared/opcoes.js'
 import { chaveLocal } from '../../shared/util.js'
+import DividirCidade from './DividirCidade.jsx'
 
 const chaveArea = (a) => `${a.uf}|${chaveLocal(a.cidade)}|${chaveLocal(a.bairro) ?? ''}`
 
@@ -101,6 +102,7 @@ function EditorNucleo({ inicial, localidades, onSalvo, onCancelar }) {
 export default function Nucleos({ nucleos, onAlterar }) {
   const [localidades, setLocalidades] = useState([])
   const [editando, setEditando] = useState(null) // null | {} (novo) | núcleo
+  const [dividindo, setDividindo] = useState(false)
   const [erro, setErro] = useState('')
 
   const carregarLocalidades = () => api.get('/api/admin/localidades').then(setLocalidades).catch(() => {})
@@ -118,6 +120,13 @@ export default function Nucleos({ nucleos, onAlterar }) {
     }
   }
 
+  if (dividindo) {
+    return (
+      <DividirCidade nucleos={nucleos} localidades={localidades} onCancelar={() => setDividindo(false)}
+        onNucleoCriado={onAlterar} onSalvo={() => { onAlterar(); return carregarLocalidades() }} />
+    )
+  }
+
   if (editando) {
     return (
       <EditorNucleo inicial={editando} localidades={localidades} onCancelar={() => setEditando(null)}
@@ -132,7 +141,10 @@ export default function Nucleos({ nucleos, onAlterar }) {
           <h1>Núcleos</h1>
           <p className="subtitulo">Cada núcleo reúne cidades e bairros. O coordenador de núcleo só vê as pré-fichas da sua área (associe em Usuários).</p>
         </div>
-        <button className="botao-principal pequeno" onClick={() => setEditando({})}>+ Novo núcleo</button>
+        <div className="acoes-linha">
+          <button className="botao-secundario" onClick={() => setDividindo(true)}>Dividir cidade por bairros</button>
+          <button className="botao-principal pequeno" onClick={() => setEditando({})}>+ Novo núcleo</button>
+        </div>
       </div>
 
       {semNucleo > 0 && (

@@ -17,7 +17,7 @@ function Item({ rotulo, children }) {
   )
 }
 
-export default function Detalhe({ ficha: f, marca, usuario, todas = [], posicao, nomeNucleo, onFechar, onSalvar, onFilaAlterada, onFichaAtualizada }) {
+export default function Detalhe({ ficha: f, marca, usuario, todas = [], posicao, nomeNucleo, onFechar, onSalvar, onFilaAlterada, onFichaAtualizada, somenteLeitura = false }) {
   const [status, setStatus] = useState(f.status)
   const [obs, setObs] = useState(f.observacoes_internas || '')
   const [salvando, setSalvando] = useState(false)
@@ -76,6 +76,9 @@ export default function Detalhe({ ficha: f, marca, usuario, todas = [], posicao,
   return (
     <div className="modal-fundo" onClick={onFechar}>
       <aside className="modal" role="dialog" aria-modal="true" aria-label={f.nome_completo} onClick={(e) => e.stopPropagation()}>
+        {somenteLeitura && (
+          <div className="faixa-consulta">Campista de outro núcleo — modo consulta (alterações só pelo núcleo dele, equipe ou administrador)</div>
+        )}
         <header className="modal-topo">
           <div>
             <h2>{f.nome_completo}</h2>
@@ -99,7 +102,7 @@ export default function Detalhe({ ficha: f, marca, usuario, todas = [], posicao,
                 {f.recusas_seguidas ?? 0}{limite > 0 ? ` de ${limite}` : ''}
               </Item>
             </dl>
-            {f.status !== 'participou' && !acao && (
+            {f.status !== 'participou' && !acao && !somenteLeitura && (
               <div className="acoes-linha">
                 <button className="botao-secundario" onClick={() => { setAcao('recusa'); setTexto(''); setErroAcao('') }}>Registrar recusa</button>
                 <button className="link perigo" onClick={() => { setAcao('fim'); setTexto(''); setErroAcao('') }}>Mover para o fim da fila…</button>
@@ -132,8 +135,14 @@ export default function Detalhe({ ficha: f, marca, usuario, todas = [], posicao,
           </section>
 
           <ConjugePreferencia ficha={f} todas={todas} marca={marca}
-            podeGerir={['admin', 'equipe'].includes(usuario?.papel)} onFichaAtualizada={onFichaAtualizada} />
+            podeGerir={!somenteLeitura && ['admin', 'equipe'].includes(usuario?.papel)} onFichaAtualizada={onFichaAtualizada} />
 
+          {somenteLeitura ? (
+            <section className="gestao somente-leitura">
+              <p><strong>Status:</strong> {rotuloDe(STATUS, f.status)}</p>
+              {f.observacoes_internas && <p className="texto-longo"><strong>Observações internas:</strong> {f.observacoes_internas}</p>}
+            </section>
+          ) : (
           <section className="gestao">
             <div className="campo">
               <label htmlFor="det-status">Status</label>
@@ -157,6 +166,7 @@ export default function Detalhe({ ficha: f, marca, usuario, todas = [], posicao,
               </button>
             </div>
           </section>
+          )}
 
           {f.participacoes?.length > 0 && (
             <>
