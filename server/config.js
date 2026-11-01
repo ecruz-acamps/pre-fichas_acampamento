@@ -40,6 +40,8 @@ export function lerConfig(env = process.env) {
       pasta: env.PASTA_INSTALACAO || (new URL('..', import.meta.url).pathname.replace(/\/$/, '') === '/app'
         ? null : new URL('..', import.meta.url).pathname.replace(/\/$/, '')),
       docker: new URL('..', import.meta.url).pathname.replace(/\/$/, '') === '/app',
+      // Pasta de comunicação com o atualizador do servidor (botão "Atualizar agora")
+      pastaControle: env.ATUALIZACAO_PASTA_CONTROLE || new URL('../atualizacao', import.meta.url).pathname,
     },
     logNivel: env.LOG_NIVEL || (producao ? 'info' : 'debug'),
   }

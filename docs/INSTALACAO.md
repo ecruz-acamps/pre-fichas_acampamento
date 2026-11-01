@@ -179,6 +179,7 @@ O assistente:
 3. espera a aplicação responder e cria as tabelas do banco automaticamente;
 4. aplica a marca do acampamento;
 5. cria o **primeiro administrador** e mostra uma **senha temporária**;
+1. ativa a **atualização pelo painel** (serviço do systemd que executa o botão "Atualizar agora");
 6. pede a **chave de ativação** (`XXX-0000`). Se você ainda não tiver a chave, aperte ENTER:
    o painel vai pedi-la no primeiro acesso.
 
@@ -382,39 +383,45 @@ restaurado não é garantia.
 
 ## 9. Atualizar para uma nova versão
 
-### Como você fica sabendo
+### Pelo painel (um clique)
 
-O sistema consulta o GitHub ao iniciar e a cada 6 horas. Quando há código novo, **o administrador
-vê um aviso no topo do painel** ("Nova versão do sistema disponível") e a aba **Atualizações**
-ganha um ponto vermelho. Nela aparecem a versão instalada, a mais recente, **a lista do que mudou**
-e o comando exato para atualizar esta instalação (com a pasta certa, pronto para copiar).
+O sistema consulta o GitHub ao iniciar e a cada 6 horas. Quando há versão nova, aparece para o
+**administrador** o botão **"⬆ Atualização disponível"** no topo do painel. Ao clicar:
 
-> O servidor precisa acessar `api.github.com` para essa verificação. Para desligar, use
+1. abre uma janela com **o que há de novo**;
+2. em **Atualizar agora**, o servidor faz um **backup automático**, baixa o código novo, reconstrói
+   e reinicia o sistema — a janela mostra cada etapa;
+3. ao terminar, o painel recarrega sozinho e o botão some.
+
+Os dados são mantidos (as mudanças no banco são aplicadas automaticamente). O sistema fica fora do
+ar por alguns instantes no final. Se algo der errado, a janela mostra o motivo e o sistema continua
+na versão anterior. No rodapé do painel, **verificar atualizações** abre a mesma janela a qualquer momento.
+
+**Como funciona por baixo (segurança):** o site não tem poder sobre o servidor. Ao clicar, ele só
+deixa um *pedido* na pasta `atualizacao/`; quem atualiza é um serviço do próprio servidor
+(`prefichas-atualizador-<nome>`, instalado pelo assistente). O máximo que alguém conseguiria pedir
+pelo site é "atualize para a versão oficial do GitHub".
+
+> O assistente `novo-acampamento.sh` já ativa isso. Em instalações antigas (ou se o botão disser que a
+> atualização pelo painel não está ativada), rode uma vez, na pasta da instalação:
+> `sudo ./scripts/instalar-atualizador.sh` (sem Docker: `sudo MODO=local ./scripts/instalar-atualizador.sh`).
+>
+> O servidor precisa acessar `api.github.com` e `github.com`. Para desligar a verificação, use
 > `ATUALIZACAO_VERIFICAR=false` no `.env`.
 
-### Como atualizar
+### Pelo terminal (alternativa)
 
 ```bash
 cd /opt/prefichas-sao-padre-pio
 sudo ./scripts/atualizar.sh
 ```
 
-O script:
+Faz exatamente o mesmo: mostra as novidades, faz backup, baixa, reconstrói e confere. Se alguém
+alterou arquivos dentro da pasta da instalação, o script **para sem mexer em nada** e avisa — veja
+com `git status` (normalmente basta desfazer com `git checkout -- .`). Sem Docker:
+`sudo MODO=local ./scripts/atualizar.sh`.
 
-1. mostra as novidades (ou avisa que já está na versão mais recente e não faz nada);
-2. faz um **backup automático** do banco;
-3. baixa o código novo do GitHub;
-4. reconstrói e reinicia a aplicação — as mudanças no banco (migrações) são aplicadas sozinhas,
-   preservando os dados;
-5. confere se a aplicação voltou a responder.
-
-Depois disso, o aviso no painel some sozinho (ou clique em **Verificar agora** na aba Atualizações).
-Com vários acampamentos no mesmo servidor, rode o script em cada pasta.
-
-Se alguém alterou arquivos dentro da pasta da instalação, o script **para sem mexer em nada** e
-avisa — veja com `git status` (normalmente basta desfazer a alteração com `git checkout -- .`).
-
-Sem Docker: `sudo MODO=local ./scripts/atualizar.sh`.
+Para acompanhar uma atualização feita pelo painel: `cat atualizacao/log.txt` na pasta da instalação.
 
 ## 10. Comandos do dia a dia
 
@@ -487,7 +494,9 @@ sudo certbot --nginx -d app.seudominio.com.br
 
 Backup sem Docker: `sudo bash -c 'set -a; . /etc/pre-fichas.env; cd /opt/pre-fichas; MODO=local ./scripts/backup.sh'`.
 
-Atualizar (o painel avisa quando há versão nova): `cd /opt/pre-fichas && sudo MODO=local ./scripts/atualizar.sh`.
+Atualização pelo painel: rode uma vez `cd /opt/pre-fichas && sudo MODO=local ./scripts/instalar-atualizador.sh`
+(o serviço `deploy/pre-fichas.service` já permite gravar na pasta `atualizacao/`). Pelo terminal:
+`sudo MODO=local ./scripts/atualizar.sh`.
 
 Logs: `sudo journalctl -u pre-fichas -f`.
 

@@ -108,6 +108,10 @@ echo
 docker compose exec -T app node server/cli.js criar-admin "$ADMIN" "$NOME_ADMIN"
 echo
 
+# Atualização pelo painel (botão "Atualizar agora")
+./scripts/instalar-atualizador.sh || echo "⚠ Não foi possível ativar a atualização pelo painel (use ./scripts/atualizar.sh)."
+echo
+
 # Ativação: depois de instalado e configurado, o sistema pede a chave
 ATIVADO=0
 for tentativa in 1 2 3; do

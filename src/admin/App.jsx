@@ -12,7 +12,7 @@ import Auditoria from './Auditoria.jsx'
 import Nomes from './Nomes.jsx'
 import AlterarSenha from './AlterarSenha.jsx'
 import Ativacao from './Ativacao.jsx'
-import Atualizacoes, { AvisoAtualizacao } from './Atualizacoes.jsx'
+import { BotaoAtualizacao, DialogoAtualizacao } from './Atualizacoes.jsx'
 
 // Telas do painel e quem pode ver cada uma
 const TELAS = [
@@ -24,7 +24,6 @@ const TELAS = [
   { id: 'nucleos', rotulo: 'Núcleos', papeis: ['admin'] },
   { id: 'usuarios', rotulo: 'Usuários', papeis: ['admin'] },
   { id: 'configuracoes', rotulo: 'Configurações', papeis: ['admin'] },
-  { id: 'atualizacoes', rotulo: 'Atualizações', papeis: ['admin'] },
 ]
 
 export default function App() {
@@ -34,6 +33,7 @@ export default function App() {
   const [nucleos, setNucleos] = useState([])
   const [tela, setTela] = useState('fila')
   const [atualizacao, setAtualizacao] = useState(null)
+  const [dialogoAtualizacao, setDialogoAtualizacao] = useState(false)
 
   const carregarUsuario = useCallback(async () => {
     try {
@@ -106,6 +106,7 @@ export default function App() {
           </div>
         </div>
         <div className="painel-usuario">
+          {usuario.papel === 'admin' && <BotaoAtualizacao info={atualizacao} onAbrir={() => setDialogoAtualizacao(true)} />}
           <span title={usuario.email}>
             {usuario.nome}
             <small> · {usuario.papel === 'coordenador' ? 'coordenador(a)' : usuario.papel}</small>
@@ -119,12 +120,10 @@ export default function App() {
         {telas.map((t) => (
           <button key={t.id} className={`aba ${atual === t.id ? 'ativa' : ''}`} onClick={() => setTela(t.id)}>
             {t.rotulo}
-            {t.id === 'atualizacoes' && atualizacao?.desatualizado && <span className="ponto-alerta" title="Atualização pendente" />}
           </button>
         ))}
       </nav>
 
-      {atual !== 'atualizacoes' && <AvisoAtualizacao info={atualizacao} onVer={() => setTela('atualizacoes')} />}
 
       {atual === 'fila' && <Fila {...props} />}
       {atual === 'nomes' && <Nomes {...props} />}
@@ -134,13 +133,17 @@ export default function App() {
       {atual === 'nucleos' && <Nucleos {...props} onAlterar={recarregarNucleos} />}
       {atual === 'usuarios' && <Usuarios {...props} usuarioAtual={usuario} />}
       {atual === 'configuracoes' && <Configuracoes {...props} onSalvar={(m) => setMarca(m)} />}
-      {atual === 'atualizacoes' && <Atualizacoes info={atualizacao} onAtualizado={setAtualizacao} />}
       {atual === 'senha' && <AlterarSenha onConcluir={() => setTela('fila')} />}
 
       <footer className="rodape-painel">
         {marca?.nome} · Sistema de pré-fichas{atualizacao?.instalada?.versao ? ` · versão ${atualizacao.instalada.versao}` : ''}
         {atualizacao?.instalada?.commit ? ` (${atualizacao.instalada.commit.slice(0, 7)})` : ''}
+        {usuario.papel === 'admin' && <> · <button className="link inline" onClick={() => setDialogoAtualizacao(true)}>verificar atualizações</button></>}
       </footer>
+
+      {dialogoAtualizacao && (
+        <DialogoAtualizacao info={atualizacao} onInfo={setAtualizacao} onFechar={() => setDialogoAtualizacao(false)} />
+      )}
     </div>
   )
 }

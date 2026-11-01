@@ -58,6 +58,8 @@ services:
     volumes:
       # Arquivos de marca e logos (marcas/*.json, *.png) ficam acessíveis ao container
       - ./marcas:/app/marcas:ro
+      # Pasta onde o painel deixa o pedido de atualização para o atualizador do servidor
+      - ./atualizacao:/app/atualizacao
     # Porta só no próprio servidor (para um proxy compartilhado, se houver vários acampamentos)
     ports:
       - "127.0.0.1:${PORTA_LOCAL:-3000}:3000"

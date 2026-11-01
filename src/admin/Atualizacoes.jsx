@@ -1,122 +1,182 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api.js'
 import { formatarDataHora } from '../../shared/util.js'
 
 const curto = (sha) => (sha ? sha.slice(0, 7) : '—')
 
-/** Aviso fixo no topo do painel (só administradores) quando há versão nova. */
-export function AvisoAtualizacao({ info, onVer }) {
+/** O único ponto de entrada: aparece no topo só quando há versão nova (administradores). */
+export function BotaoAtualizacao({ info, onAbrir }) {
   if (!info?.desatualizado) return null
-  const n = info.commits_atras
   return (
-    <div className="aviso-atualizacao" role="status">
-      <span className="sino" aria-hidden="true">🔔</span>
-      <div>
-        <strong>Nova versão do sistema disponível{n ? ` — ${n} ${n > 1 ? 'atualizações' : 'atualização'}` : ''}.</strong>
-        <span> Ela precisa ser instalada no servidor{info.disponivel?.mensagem ? `: “${info.disponivel.mensagem}”` : ''}.</span>
-      </div>
-      <button className="botao-secundario" onClick={onVer}>Ver o que mudou e como atualizar</button>
-    </div>
+    <button className="botao-atualizacao" onClick={onAbrir} title="Há uma versão nova do sistema">
+      <span aria-hidden="true">⬆</span> Atualização disponível
+    </button>
   )
 }
 
-export default function Atualizacoes({ info, onAtualizado }) {
-  const [verificando, setVerificando] = useState(false)
-  const [erro, setErro] = useState('')
-  const [copiado, setCopiado] = useState(false)
+/** Etapas mostradas durante a atualização, a partir do log do atualizador. */
+function etapasDoLog(log) {
+  return log.filter((l) => /^[→✓✗]/.test(l)).map((l) => l.replace(/…$/, ''))
+}
 
-  async function verificar() {
-    setErro(''); setVerificando(true)
-    try {
-      onAtualizado(await api.post('/api/admin/atualizacao/verificar'))
-    } catch (e) {
-      setErro(e.status === 429 ? 'Aguarde um minuto para verificar de novo.' : 'Não foi possível verificar agora.')
-    } finally {
-      setVerificando(false)
+const pausa = (ms) => new Promise((r) => setTimeout(r, ms))
+
+export function DialogoAtualizacao({ info, onFechar, onInfo }) {
+  const [fase, setFase] = useState('confirmar') // confirmar | executando | reiniciando | concluido | erro
+  const [progresso, setProgresso] = useState(null)
+  const [erro, setErro] = useState('')
+  const [verificando, setVerificando] = useState(false)
+  const ativo = useRef(true)
+  useEffect(() => () => { ativo.current = false }, [])
+
+  const instalado = info?.atualizador?.instalado
+  const emAndamento = ['solicitado', 'executando'].includes(info?.atualizador?.estado?.etapa)
+
+  // Se abrir no meio de uma atualização (ex.: outra aba), já acompanha
+  useEffect(() => { if (emAndamento) acompanhar() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function acompanhar() {
+    setFase('executando')
+    const inicio = Date.now()
+    let caiu = false
+    while (ativo.current) {
+      await pausa(2000)
+      let p
+      try {
+        p = await api.get('/api/admin/atualizacao/progresso')
+      } catch {
+        caiu = true
+        setFase('reiniciando') // o sistema está sendo reiniciado com a versão nova
+        continue
+      }
+      if (!ativo.current) return
+      setProgresso(p)
+      const etapa = p.estado?.etapa
+      if (etapa === 'concluido') {
+        if (p.estado.sucesso) {
+          setFase('concluido')
+          try { onInfo(await api.post('/api/admin/atualizacao/verificar')) } catch { /* segue */ }
+          await pausa(2500)
+          window.location.reload()
+        } else {
+          setFase('erro')
+        }
+        return
+      }
+      if (caiu) setFase('executando')
+      if (etapa === 'solicitado' && Date.now() - inicio > 60_000) {
+        setErro('O servidor ainda não começou a atualização. Verifique se o atualizador está ativo (sudo ./scripts/instalar-atualizador.sh).')
+      }
     }
   }
 
-  const pasta = info?.pasta || '/opt/prefichas-<acampamento>'
-  const comando = `cd ${pasta}\nsudo ${info?.docker === false ? 'MODO=local ' : ''}./scripts/atualizar.sh`
-  async function copiar() {
-    try { await navigator.clipboard.writeText(comando); setCopiado(true); setTimeout(() => setCopiado(false), 2000) } catch { /* sem permissão */ }
+  async function atualizar() {
+    setErro('')
+    try {
+      await api.post('/api/admin/atualizacao/executar')
+      acompanhar()
+    } catch (e) {
+      if (e.dados?.emAndamento) return acompanhar()
+      setErro(e.dados?.mensagem || 'Não foi possível iniciar a atualização.')
+    }
   }
 
-  if (!info) return <p className="carregando">Carregando…</p>
-  const { instalada, disponivel } = info
+  async function verificar() {
+    setVerificando(true)
+    try { onInfo(await api.post('/api/admin/atualizacao/verificar')) } catch { /* mantém */ } finally { setVerificando(false) }
+  }
 
-  let situacao
-  if (!info.ativo) situacao = <span className="situacao neutra">Verificação desligada (ATUALIZACAO_VERIFICAR=false)</span>
-  else if (info.erro) situacao = <span className="situacao neutra">Não foi possível comparar</span>
-  else if (info.desatualizado) situacao = <span className="situacao pendente">Atualização pendente</span>
-  else if (info.desatualizado === false) situacao = <span className="situacao ok">Sistema em dia</span>
-  else situacao = <span className="situacao neutra">Verificando…</span>
+  const etapas = etapasDoLog(progresso?.log ?? [])
+  const fechavel = !['executando', 'reiniciando', 'concluido'].includes(fase)
 
   return (
-    <>
-      <div className="titulo-secao com-acoes">
-        <div>
-          <h1>Atualizações do sistema</h1>
-          <p className="subtitulo">
-            O sistema consulta o GitHub ({info.repo ?? '—'}, branch {info.branch ?? '—'}) ao iniciar e a cada poucas horas.
-            {info.verificado_em && ` Última verificação: ${formatarDataHora(info.verificado_em)}.`}
-          </p>
-        </div>
-        <button className="botao-secundario" onClick={verificar} disabled={verificando || !info.ativo}>
-          {verificando ? 'Verificando…' : 'Verificar agora'}
-        </button>
-      </div>
-
-      {erro && <div className="alerta-erro">{erro}</div>}
-      {info.erro && <div className="alerta-aviso">{info.erro}</div>}
-
-      <div className="cartoes-versao">
-        <div className="cartao">
-          <small className="dica">Instalada neste servidor</small>
-          <p className="versao">Versão {instalada?.versao ?? '—'} <code>{curto(instalada?.commit)}</code></p>
-          {instalada?.data && <p className="dica">de {formatarDataHora(instalada.data)}</p>}
-          <div>{situacao}</div>
-        </div>
-        <div className="cartao">
-          <small className="dica">Mais recente no GitHub</small>
-          <p className="versao"><code>{curto(disponivel?.commit)}</code></p>
-          {disponivel?.data && <p className="dica">de {formatarDataHora(disponivel.data)}</p>}
-          {disponivel?.mensagem && <p>“{disponivel.mensagem}”</p>}
-        </div>
-      </div>
-
-      {info.desatualizado && (
-        <>
-          {info.novidades?.length > 0 && (
-            <section className="cartao novidades">
-              <h2>O que mudou ({info.commits_atras})</h2>
-              <ul>
-                {info.novidades.map((n) => (
-                  <li key={n.commit}>
-                    <span>{n.mensagem}</span>
-                    <small className="dica"> · {n.data ? formatarDataHora(n.data) : ''} · <code>{curto(n.commit)}</code></small>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-
-          <section className="cartao como-atualizar">
-            <h2>Como atualizar</h2>
-            <p>
-              A atualização é feita no servidor por quem administra a máquina (acesso SSH). Ela leva poucos minutos,
-              faz um <strong>backup automático antes</strong> e mantém todos os dados.
-            </p>
-            <pre>{comando}</pre>
-            <button className="botao-secundario" onClick={copiar}>{copiado ? 'Copiado!' : 'Copiar comandos'}</button>
+    <div className="modal-fundo centro-tela" onClick={() => fechavel && onFechar()}>
+      <div className="dialogo-atualizacao cartao" role="dialog" aria-modal="true" aria-label="Atualização do sistema" onClick={(e) => e.stopPropagation()}>
+        {fase === 'confirmar' && (
+          <>
+            <h2>{info?.desatualizado ? 'Atualização disponível' : 'Atualizações do sistema'}</h2>
             <p className="dica">
-              {info?.pasta ? '' : <>Troque <code>&lt;acampamento&gt;</code> pela pasta desta instalação. </>}
-              Com vários acampamentos no mesmo servidor, cada um é atualizado na sua pasta.
-              Depois da atualização, este aviso some sozinho.
+              Instalada: versão {info?.instalada?.versao ?? '—'} <code>{curto(info?.instalada?.commit)}</code>
+              {info?.disponivel?.commit && <> · Mais recente: <code>{curto(info.disponivel.commit)}</code></>}
+              {info?.verificado_em && <> · verificado em {formatarDataHora(info.verificado_em)}</>}
             </p>
-          </section>
-        </>
-      )}
-    </>
+            {info?.erro && <div className="alerta-aviso">{info.erro}</div>}
+
+            {info?.desatualizado ? (
+              <>
+                {info.novidades?.length > 0 && (
+                  <>
+                    <h3>O que há de novo ({info.commits_atras})</h3>
+                    <ul className="lista-novidades">
+                      {info.novidades.map((n) => <li key={n.commit}>{n.mensagem}</li>)}
+                    </ul>
+                  </>
+                )}
+                {instalado ? (
+                  <p className="dica">
+                    Leva alguns minutos. Antes de começar é feito um <strong>backup automático</strong> e todos os dados
+                    são mantidos. O sistema fica fora do ar por alguns instantes no final.
+                  </p>
+                ) : (
+                  <div className="alerta-aviso">
+                    A atualização pelo painel ainda não foi ativada neste servidor. Peça a quem administra a máquina para
+                    rodar uma única vez, na pasta da instalação: <code>sudo ./scripts/instalar-atualizador.sh</code>
+                    {' '}— ou atualizar pelo terminal com <code>sudo ./scripts/atualizar.sh</code>.
+                  </div>
+                )}
+                {erro && <div className="alerta-erro">{erro}</div>}
+                <div className="linha-acoes">
+                  <button className="botao-secundario" onClick={onFechar}>Agora não</button>
+                  <button className="botao-principal pequeno" onClick={atualizar} disabled={!instalado}>Atualizar agora</button>
+                </div>
+              </>
+            ) : (
+              <>
+                {info?.desatualizado === false && <div className="alerta-ok">O sistema está na versão mais recente.</div>}
+                <div className="linha-acoes">
+                  <button className="botao-secundario" onClick={verificar} disabled={verificando}>{verificando ? 'Verificando…' : 'Verificar agora'}</button>
+                  <button className="botao-principal pequeno" onClick={onFechar}>Fechar</button>
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {['executando', 'reiniciando'].includes(fase) && (
+          <>
+            <h2>Atualizando o sistema…</h2>
+            <p className="dica">Não feche esta janela. Isso leva alguns minutos.</p>
+            <ol className="etapas-atualizacao">
+              {(etapas.length ? etapas : ['→ Aguardando o servidor iniciar a atualização']).map((e, i, todas) => (
+                <li key={i} className={i === todas.length - 1 && fase === 'executando' ? 'atual' : 'feita'}>{e.replace(/^[→✓✗]\s*/, '')}</li>
+              ))}
+              {fase === 'reiniciando' && <li className="atual">Reiniciando o sistema com a versão nova</li>}
+            </ol>
+            <div className="barra-progresso"><span /></div>
+            {erro && <div className="alerta-aviso">{erro}</div>}
+          </>
+        )}
+
+        {fase === 'concluido' && (
+          <>
+            <h2>✓ Sistema atualizado</h2>
+            <p>{progresso?.estado?.mensagem}</p>
+            <p className="dica">Recarregando o painel…</p>
+          </>
+        )}
+
+        {fase === 'erro' && (
+          <>
+            <h2>A atualização não foi concluída</h2>
+            <div className="alerta-erro">{progresso?.estado?.mensagem || 'Ocorreu um erro.'}</div>
+            <p className="dica">O sistema continua funcionando na versão anterior. Detalhes técnicos:</p>
+            <pre className="log-atualizacao">{(progresso?.log ?? []).join('\n')}</pre>
+            <div className="linha-acoes">
+              <button className="botao-principal pequeno" onClick={onFechar}>Fechar</button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
   )
 }

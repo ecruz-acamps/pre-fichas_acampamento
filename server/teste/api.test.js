@@ -3,6 +3,9 @@
 // ATENÇÃO: o banco de teste é APAGADO a cada execução. Nunca aponte para produção.
 import { after, before, describe, test } from 'node:test'
 import { createServer } from 'node:http'
+import { mkdtempSync, writeFileSync, existsSync, readFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import assert from 'node:assert/strict'
 import { construirApp } from '../app.js'
 import { lerConfig } from '../config.js'
@@ -740,6 +743,40 @@ describe('API', { skip: pular }, () => {
       const r3 = (await c.inject({ method: 'GET', url: '/api/admin/atualizacao', headers: como('admin') })).json()
       await c.close()
       assert.match(r3.erro, /ATUALIZACAO_TOKEN/)
+    })
+
+    test('botão "Atualizar agora": sem atualizador instalado explica como ativar', async () => {
+      const pasta = mkdtempSync(join(tmpdir(), 'atualizador-'))
+      const a = await appCom({ versao: '2.0.0', commit: SHA_A }, { pastaControle: pasta })
+      const r = await a.inject({ method: 'POST', url: '/api/admin/atualizacao/executar', headers: como('admin') })
+      const info = (await a.inject({ method: 'GET', url: '/api/admin/atualizacao', headers: como('admin') })).json()
+      await a.close()
+      assert.equal(r.statusCode, 409)
+      assert.match(r.json().mensagem, /instalar-atualizador\.sh/)
+      assert.equal(info.atualizador.instalado, false)
+      assert.equal(existsSync(join(pasta, 'solicitar')), false)
+    })
+
+    test('botão "Atualizar agora": grava o pedido, mostra o andamento e não deixa pedir duas vezes', async () => {
+      const pasta = mkdtempSync(join(tmpdir(), 'atualizador-'))
+      writeFileSync(join(pasta, 'atualizador.json'), JSON.stringify({ instalado_em: 'x', modo: 'docker' }))
+      const a = await appCom({ versao: '2.0.0', commit: SHA_A }, { pastaControle: pasta })
+      assert.equal((await a.inject({ method: 'POST', url: '/api/admin/atualizacao/executar', headers: como('equipe') })).statusCode, 403)
+      const r = await a.inject({ method: 'POST', url: '/api/admin/atualizacao/executar', headers: como('admin') })
+      assert.equal(r.statusCode, 200)
+      assert.ok(existsSync(join(pasta, 'solicitar')), 'pedido gravado para o atualizador do servidor')
+      assert.equal(JSON.parse(readFileSync(join(pasta, 'pedido.json'), 'utf8')).usuario, 'Admin')
+      const dup = await a.inject({ method: 'POST', url: '/api/admin/atualizacao/executar', headers: como('admin') })
+      assert.equal(dup.statusCode, 409)
+      assert.equal(dup.json().emAndamento, true)
+
+      // o atualizador do servidor escreve o andamento; o painel lê
+      writeFileSync(join(pasta, 'estado.json'), JSON.stringify({ etapa: 'executando', sucesso: null }))
+      writeFileSync(join(pasta, 'log.txt'), '→ Fazendo backup antes de atualizar…\n→ Baixando o código novo…\n')
+      const p = (await a.inject({ method: 'GET', url: '/api/admin/atualizacao/progresso', headers: como('admin') })).json()
+      await a.close()
+      assert.equal(p.estado.etapa, 'executando')
+      assert.deepEqual(p.log, ['→ Fazendo backup antes de atualizar…', '→ Baixando o código novo…'])
     })
 
     test('só o administrador vê o aviso', async () => {
