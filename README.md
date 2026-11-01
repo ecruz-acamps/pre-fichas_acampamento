@@ -58,8 +58,9 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
   Imaruim, Aririu e São Sebastião), uma tela lista os bairros da cidade (com quantas pré-fichas há
   em cada um) e você escolhe o núcleo de cada bairro.
 - **Nomes (A–Z)**: lista alfabética com as pré-fichas do núcleo do coordenador e **todos os
-  campistas** (quem já fez o acampamento) de todos os núcleos. Campistas de outros núcleos aparecem
-  só com nome, cidade/bairro, núcleo, acampamento e tribo — sem contatos.
+  campistas** (quem já fez o acampamento) de todos os núcleos, com a ficha completa — campistas não
+  são restritos ao núcleo. Campistas de outros núcleos abrem em modo consulta (alterações ficam com
+  o núcleo deles, a equipe ou o administrador).
 
 **Acampamentos realizados**
 - Cadastre cada edição (**número + modalidade**, ex.: 45º Juvenil, com datas).
@@ -73,7 +74,7 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
 |---|---|
 | Administrador | tudo: usuários, núcleos, configurações da marca, acampamentos, fila |
 | Equipe | ver toda a fila, atualizar status, registrar acampamentos e tribos |
-| Coordenador de núcleo | ver e atualizar só a fila das cidades/bairros dos seus núcleos |
+| Coordenador de núcleo | ver e atualizar as pré-fichas das cidades/bairros dos seus núcleos; consultar todos os campistas |
 
 **Segurança**
 - As regras valem no servidor (o navegador só orienta), inclusive o que cada papel enxerga.

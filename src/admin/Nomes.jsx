@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api.js'
 import { CorTribo } from '../lib/marca.jsx'
 import { MODALIDADES, STATUS, rotuloDe } from '../../shared/opcoes.js'
+import { linkWhatsApp } from '../../shared/util.js'
 import { calcularPosicoes, useFichas } from './Fila.jsx'
 import Detalhe from './Detalhe.jsx'
 import { baixarCsv } from './csv.js'
@@ -31,26 +32,27 @@ export default function Nomes({ usuario, marca, nucleos }) {
   useEffect(() => { api.get('/api/admin/campistas').then(setCampistas).catch(() => setCampistas([])) }, [fichas])
 
   const posicoes = useMemo(() => calcularPosicoes(fichas), [fichas])
-  const nomeNucleo = (id) => nucleos.find((n) => n.id === id)?.nome
+  const nomesNucleos = useMemo(() => {
+    const m = new Map(nucleos.map((n) => [n.id, n.nome]))
+    for (const c of campistas) (c.nucleos ?? []).forEach((id, i) => { if (!m.has(id) && c.nucleos_nomes?.[i]) m.set(id, c.nucleos_nomes[i]) })
+    return m
+  }, [nucleos, campistas])
+  const nomeNucleo = (id) => nomesNucleos.get(id)
 
   // Une as duas fontes por pessoa
   const pessoas = useMemo(() => {
     const mapa = new Map()
-    for (const f of fichas) {
-      mapa.set(f.id, {
-        id: f.id, nome: f.nome_completo, cidade: f.cidade, uf: f.uf, bairro: f.bairro,
-        nucleos: (f.nucleos ?? []).map(nomeNucleo).filter(Boolean), status: f.status, modalidade: f.modalidade,
-        participacoes: f.participacoes ?? [], acessivel: true,
-      })
-    }
+    const pessoa = (f, extra) => ({
+      id: f.id, nome: f.nome_completo, cidade: f.cidade, uf: f.uf, bairro: f.bairro, telefone: f.telefone, email: f.email,
+      status: f.status, modalidade: f.modalidade, participacoes: f.participacoes ?? [], ficha: f, ...extra,
+    })
+    // Pré-fichas que o usuário pode ver (coordenador: só do seu núcleo) — pode alterar
+    for (const f of fichas) mapa.set(f.id, pessoa(f, { editavel: true, preficha: true }))
+    // Campistas de todos os núcleos — ficha completa; altera só se for do seu núcleo
     for (const c of campistas) {
-      const ja = mapa.get(c.id)
-      if (ja) { ja.participacoes = c.participacoes ?? ja.participacoes; ja.nucleos = c.nucleos_nomes; continue }
-      mapa.set(c.id, {
-        id: c.id, nome: c.nome_completo, cidade: c.cidade, uf: c.uf, bairro: c.bairro, nucleos: c.nucleos_nomes,
-        status: 'participou', modalidade: c.modalidade, participacoes: c.participacoes ?? [], acessivel: false,
-      })
+      if (!mapa.has(c.id)) mapa.set(c.id, pessoa(c, { editavel: c.da_minha_area, preficha: false }))
     }
+    for (const p of mapa.values()) p.nucleos = (p.ficha.nucleos ?? []).map(nomeNucleo).filter(Boolean)
     return [...mapa.values()]
       .map((p) => ({ ...p, campista: p.participacoes.length > 0, letra: inicial(p.nome) }))
       .sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR', { sensitivity: 'base' }))
@@ -59,7 +61,7 @@ export default function Nomes({ usuario, marca, nucleos }) {
   const visiveis = useMemo(() => {
     const t = normalizar(busca.trim())
     return pessoas.filter((p) => {
-      if (tipo === 'prefichas' && (p.campista || !p.acessivel)) return false
+      if (tipo === 'prefichas' && (p.campista || !p.preficha)) return false
       if (tipo === 'campistas' && !p.campista) return false
       return !t || [p.nome, p.cidade, p.bairro, ...p.nucleos].some((v) => normalizar(v).includes(t))
     })
@@ -73,22 +75,27 @@ export default function Nomes({ usuario, marca, nucleos }) {
 
   const total = {
     todos: pessoas.length,
-    prefichas: pessoas.filter((p) => p.acessivel && !p.campista).length,
+    prefichas: pessoas.filter((p) => p.preficha && !p.campista).length,
     campistas: pessoas.filter((p) => p.campista).length,
   }
 
   function exportar() {
     baixarCsv(`nomes-${tipo}-${new Date().toISOString().slice(0, 10)}.csv`,
-      ['Nome', 'Tipo', 'Cidade', 'Bairro', 'Núcleo', 'Situação / acampamentos'],
-      visiveis.map((p) => [p.nome, p.campista ? 'Campista' : 'Pré-ficha', `${p.cidade}/${p.uf}`, p.bairro ?? '',
+      ['Nome', 'Tipo', 'Telefone', 'E-mail', 'Cidade', 'Bairro', 'Núcleo', 'Situação / acampamentos'],
+      visiveis.map((p) => [p.nome, p.campista ? 'Campista' : 'Pré-ficha', p.telefone, p.email, `${p.cidade}/${p.uf}`, p.bairro ?? '',
         p.nucleos.join(', '), p.campista ? acampamentosTexto(p.participacoes) : rotuloDe(STATUS, p.status)]))
   }
 
   async function atualizar(id, campos) {
     const f = await api.patch(`/api/admin/pre-fichas/${id}`, campos)
     setLinhas((ls) => ls.map((l) => (l.id === id ? f : l)))
-    setSelecionada(f)
+    setSelecionada((s) => ({ ...s, ficha: f, status: f.status }))
     return true
+  }
+  const reabrir = async (id) => {
+    const l = await recarregar()
+    const f = l?.find((x) => x.id === id)
+    if (f) setSelecionada((s) => ({ ...s, ficha: f }))
   }
 
   const abaRotulos = [
@@ -103,7 +110,7 @@ export default function Nomes({ usuario, marca, nucleos }) {
         <h1>Nomes (A–Z)</h1>
         <p className="subtitulo">
           {coordenador
-            ? `Pré-fichas apenas do seu núcleo${nucleos.length ? ` (${nucleos.map((n) => n.nome).join(', ')})` : ''} e todos os campistas, em ordem alfabética. Campistas de outros núcleos aparecem sem contatos.`
+            ? `Pré-fichas apenas do seu núcleo${nucleos.length ? ` (${nucleos.map((n) => n.nome).join(', ')})` : ''} e todos os campistas de todos os núcleos (ficha completa), em ordem alfabética. Campistas de outros núcleos abrem em modo consulta.`
             : 'Pré-fichas e campistas, em ordem alfabética.'}
         </p>
       </div>
@@ -135,10 +142,12 @@ export default function Nomes({ usuario, marca, nucleos }) {
             <table className="tabela">
               <tbody>
                 {porLetra.get(l).map((p) => (
-                  <tr key={p.id} className={p.acessivel ? 'clicavel' : ''}
-                    onClick={() => p.acessivel && setSelecionada(fichas.find((f) => f.id === p.id))}>
+                  <tr key={p.id} className="clicavel" onClick={() => setSelecionada(p)}>
                     <td className="col-nome"><strong>{p.nome}</strong></td>
                     <td><span className={`selo-tipo ${p.campista ? 'campista' : 'preficha'}`}>{p.campista ? 'Campista' : 'Pré-ficha'}</span></td>
+                    <td className="nowrap" onClick={(e) => e.stopPropagation()}>
+                      {linkWhatsApp(p.telefone) ? <a href={linkWhatsApp(p.telefone)} target="_blank" rel="noreferrer">{p.telefone}</a> : p.telefone}
+                    </td>
                     <td>{p.cidade}/{p.uf}{p.bairro && <small className="dica bloco">{p.bairro}</small>}</td>
                     <td>{p.nucleos.length ? p.nucleos.join(', ') : <span className="dica">sem núcleo</span>}</td>
                     <td>
@@ -159,12 +168,13 @@ export default function Nomes({ usuario, marca, nucleos }) {
 
       {selecionada && (
         <Detalhe
-          ficha={selecionada} marca={marca} usuario={usuario} todas={fichas}
+          ficha={selecionada.ficha} marca={marca} usuario={usuario} todas={fichas}
+          somenteLeitura={!selecionada.editavel}
           posicao={posicoes.get(selecionada.id)} nomeNucleo={nomeNucleo}
           onFechar={() => setSelecionada(null)}
           onSalvar={(campos) => atualizar(selecionada.id, campos)}
-          onFilaAlterada={async (f) => { const l = await recarregar(); setSelecionada(l?.find((x) => x.id === f.id) ?? f) }}
-          onFichaAtualizada={async (f) => { const l = await recarregar(); setSelecionada(l?.find((x) => x.id === f.id) ?? f) }}
+          onFilaAlterada={(f) => reabrir(f.id)}
+          onFichaAtualizada={(f) => reabrir(f.id)}
         />
       )}
     </>

@@ -409,8 +409,12 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
 .resumo-divisao .chip.sem { background: #fff4e5; color: #8a4f00; }
 .vazio { color: var(--texto-suave); text-align: center; }
 .grupo-letra .tabela { table-layout: fixed; }
-.grupo-letra .tabela td:nth-child(1) { width: 28%; }
-.grupo-letra .tabela td:nth-child(2) { width: 12%; }
-.grupo-letra .tabela td:nth-child(3) { width: 20%; }
-.grupo-letra .tabela td:nth-child(4) { width: 16%; }
+.grupo-letra .tabela td:nth-child(1) { width: 24%; }
+.grupo-letra .tabela td:nth-child(2) { width: 10%; }
+.grupo-letra .tabela td:nth-child(3) { width: 15%; }
+.grupo-letra .tabela td:nth-child(4) { width: 17%; }
+.grupo-letra .tabela td:nth-child(5) { width: 14%; }
 @media (max-width: 760px) { .grupo-letra .tabela { table-layout: auto; } }
+
+.faixa-consulta { background: #eef1f6; color: #4a5568; font-size: 0.85rem; padding: 8px 20px; border-bottom: 1px solid var(--borda); }
+.gestao.somente-leitura p { margin: 0 0 6px; }

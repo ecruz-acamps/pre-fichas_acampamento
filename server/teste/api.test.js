@@ -646,7 +646,7 @@ describe('API', { skip: pular }, () => {
       assert.deepEqual(fichas, ['Pessoa Aririu', 'Pessoa Aririu 2'])
     })
 
-    test('campistas: todos os núcleos; de fora da área sem telefone/e-mail', async () => {
+    test('campistas: todos os núcleos, com dados completos; alterar só no próprio núcleo', async () => {
       const a = (await req('equipe', 'POST', '/api/admin/acampamentos', { numero: 60, modalidade: 'juvenil' })).json().id
       for (const nome of ['Pessoa Aririu', 'Pessoa Ponte']) {
         await req('equipe', 'PUT', `/api/admin/acampamentos/${a}/participantes/${await idPorNome(nome)}`, { tribo: 'Roxo' })
@@ -657,11 +657,20 @@ describe('API', { skip: pular }, () => {
       assert.ok(nomes.includes('Pessoa Aririu') && nomes.includes('Pessoa Ponte'))
       assert.ok(nomes.includes('Maria Silva'), 'inclui campistas de outras cidades')
       const ponte = r.json().find((c) => c.nome_completo === 'Pessoa Ponte')
-      assert.deepEqual([ponte.da_minha_area, ponte.nucleos_nomes, ponte.participacoes[0].tribo], [false, ['Ponte do Imaruim'], 'Roxo'])
+      assert.equal(ponte.da_minha_area, false)
+      assert.equal(ponte.participacoes[0].tribo, 'Roxo')
+      assert.ok(ponte.telefone && ponte.email && ponte.data_nascimento, 'campistas não são restritos: dados completos')
+      assert.equal(ponte.ip_origem, undefined)
       assert.equal(r.json().find((c) => c.nome_completo === 'Pessoa Aririu').da_minha_area, true)
-      for (const c of r.json()) {
-        assert.equal(c.telefone, undefined); assert.equal(c.email, undefined); assert.equal(c.data_nascimento, undefined)
-      }
+
+      // ver o histórico de um campista de outro núcleo: pode; alterar: não
+      assert.equal((await req('aririu', 'GET', `/api/admin/pre-fichas/${ponte.id}/historico`)).statusCode, 200)
+      assert.equal((await req('aririu', 'PATCH', `/api/admin/pre-fichas/${ponte.id}`, { observacoes_internas: 'x' })).statusCode, 404)
+      assert.equal((await req('aririu', 'POST', `/api/admin/pre-fichas/${ponte.id}/recusa`, { comentario: 'x' })).statusCode, 404)
+      // pré-ficha (não campista) de outro núcleo continua restrita
+      const centro = await idPorNome('Pessoa Centro')
+      assert.equal((await req('aririu', 'GET', `/api/admin/pre-fichas/${centro}/historico`)).statusCode, 404)
+      assert.ok(!(await req('aririu', 'GET', '/api/admin/pre-fichas')).json().some((f) => f.nome_completo === 'Pessoa Ponte'))
       assert.equal((await app.inject({ method: 'GET', url: '/api/admin/campistas' })).statusCode, 401)
     })
   })

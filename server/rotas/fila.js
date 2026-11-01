@@ -77,7 +77,7 @@ export default async function rotasFila(app) {
 
   app.get('/api/admin/pre-fichas/:id/historico', autenticado, async (req, reply) => {
     const id = Number(req.params.id)
-    if (!(await podeVerFicha(pool, req.usuario, id))) return reply.code(404).send({ mensagem: 'Pré-ficha não encontrada.' })
+    if (!(await podeVerFicha(pool, req.usuario, id, { leitura: true }))) return reply.code(404).send({ mensagem: 'Pré-ficha não encontrada.' })
     const { rows } = await pool.query(`${SQL_HISTORICO} where h.pre_ficha_id = $1 order by h.criado_em desc, h.id desc`, [id])
     return rows
   })
@@ -164,23 +164,20 @@ export default async function rotasFila(app) {
     return { ficha: limparFicha(ficha) }
   })
 
-  // Todos os campistas (quem já fez algum acampamento), de TODOS os núcleos.
-  // Para o coordenador, quem é de outro núcleo aparece só com dados básicos
-  // (nome, cidade/bairro, núcleo, acampamentos e tribo) — sem contatos.
+  // Todos os campistas (quem já fez algum acampamento), de TODOS os núcleos, com a ficha
+  // completa — campistas não são restritos ao núcleo. `da_minha_area` indica se o
+  // coordenador também pode ALTERAR a ficha (só as do seu núcleo).
   app.get('/api/admin/campistas', autenticado, async (req) => {
     const escopo = await nucleosDoUsuario(pool, req.usuario)
     const { rows } = await pool.query(
-      `select p.id, p.nome_completo, p.cidade, p.uf, p.bairro, p.sexo, p.modalidade,
-              ${filtroEscopo(1)} as da_minha_area,
-              coalesce((select array_agg(n.nome order by n.nome) from ficha_nucleos fn join nucleos n on n.id = fn.nucleo_id
-                         where fn.pre_ficha_id = p.id), '{}') as nucleos_nomes,
-              (select json_agg(json_build_object('numero', a.numero, 'modalidade', a.modalidade,
-                        'data_inicio', a.data_inicio, 'tribo', pa.tribo) order by a.data_inicio nulls last, a.numero)
-                 from participacoes pa join acampamentos a on a.id = pa.acampamento_id
-                where pa.pre_ficha_id = p.id) as participacoes
-         from pre_fichas p
-        where exists (select 1 from participacoes pa where pa.pre_ficha_id = p.id)`, [escopo])
-    return rows
+      SQL_FICHAS('exists (select 1 from participacoes pa where pa.pre_ficha_id = p.id)'))
+    const { rows: ns } = await pool.query('select id, nome from nucleos')
+    const nomes = new Map(ns.map((n) => [n.id, n.nome]))
+    return rows.map((f) => ({
+      ...limparFicha(f),
+      nucleos_nomes: f.nucleos.map((id) => nomes.get(id) ?? ''),
+      da_minha_area: escopo === null || f.nucleos.some((n) => escopo.includes(n)),
+    }))
   })
 
   // Trilha de auditoria geral (respeita a área do coordenador)
