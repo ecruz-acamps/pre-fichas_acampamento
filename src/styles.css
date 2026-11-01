@@ -418,3 +418,11 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
 
 .faixa-consulta { background: #eef1f6; color: #4a5568; font-size: 0.85rem; padding: 8px 20px; border-bottom: 1px solid var(--borda); }
 .gestao.somente-leitura p { margin: 0 0 6px; }
+
+/* ---------- filtros no celular: largura total, um por linha ---------- */
+@media (max-width: 560px) {
+  .filtros > input, .filtros > select { flex: 1 1 100% !important; width: 100% !important; }
+  .filtros > .botao-secundario { flex: 1 1 auto; }
+  .painel-cabecalho { gap: 8px; }
+  .titulo-secao h1 { font-size: 1.3rem; }
+}
