@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api.js'
 import { CorTribo } from '../lib/marca.jsx'
 import { DescricaoEvento, SeloTipo, autorEvento } from './EventoAuditoria.jsx'
+import ConjugePreferencia from './ConjugePreferencia.jsx'
+import { SeloPreferencia } from './Preferencia.jsx'
 import { ESTADOS_CIVIS, MODALIDADES, SEXOS, STATUS, rotuloDe } from '../../shared/opcoes.js'
 import { calcularIdade, formatarData, formatarDataHora, linkWhatsApp, mascaraCep, simNao } from '../../shared/util.js'
 
@@ -15,7 +17,7 @@ function Item({ rotulo, children }) {
   )
 }
 
-export default function Detalhe({ ficha: f, marca, posicao, nomeNucleo, onFechar, onSalvar, onFilaAlterada }) {
+export default function Detalhe({ ficha: f, marca, usuario, todas = [], posicao, nomeNucleo, onFechar, onSalvar, onFilaAlterada, onFichaAtualizada }) {
   const [status, setStatus] = useState(f.status)
   const [obs, setObs] = useState(f.observacoes_internas || '')
   const [salvando, setSalvando] = useState(false)
@@ -27,7 +29,7 @@ export default function Detalhe({ ficha: f, marca, posicao, nomeNucleo, onFechar
 
   useEffect(() => {
     api.get(`/api/admin/pre-fichas/${f.id}/historico`).then(setHistorico).catch(() => setHistorico([]))
-  }, [f.id, f.atualizado_em, f.entrada_fila_em, f.recusas_seguidas])
+  }, [f.id, f.atualizado_em, f.entrada_fila_em, f.recusas_seguidas, f.conjuge_id, f.preferencias?.length])
 
   useEffect(() => { setStatus(f.status); setObs(f.observacoes_internas || '') }, [f])
 
@@ -79,7 +81,7 @@ export default function Detalhe({ ficha: f, marca, posicao, nomeNucleo, onFechar
             <h2>{f.nome_completo}</h2>
             <p className="subtitulo">
               {rotuloDe(MODALIDADES, f.modalidade)}
-              {posicao ? ` · ${posicao}º na fila` : ''}
+              {posicao ? ` · ${posicao}º na fila` : ''} <SeloPreferencia ficha={f} />
             </p>
           </div>
           <button className="fechar" onClick={onFechar} aria-label="Fechar">×</button>
@@ -128,6 +130,9 @@ export default function Detalhe({ ficha: f, marca, posicao, nomeNucleo, onFechar
               </form>
             )}
           </section>
+
+          <ConjugePreferencia ficha={f} todas={todas} marca={marca}
+            podeGerir={['admin', 'equipe'].includes(usuario?.papel)} onFichaAtualizada={onFichaAtualizada} />
 
           <section className="gestao">
             <div className="campo">

@@ -7,7 +7,7 @@ import {
 import {
   calcularIdade, mascaraCep, mascaraTelefone, modalidadesCompativeis, somenteDigitos,
 } from '../../shared/util.js'
-import { INICIAL, validar } from '../../shared/validacao.js'
+import { INICIAL, temConjuge, validar } from '../../shared/validacao.js'
 
 import { TextoMarca } from '../lib/marca.jsx'
 
@@ -214,6 +214,38 @@ export default function FormularioPreFicha({ marca }) {
                   onChange={(e) => set('responsavel_telefone')(mascaraTelefone(e.target.value))} />
               </Campo>
             </div>
+          </div>
+        )}
+        {temConjuge(f) && (
+          <div className="destaque">
+            <p>Sobre o seu cônjuge (opcional — ajuda a equipe a identificar o casal):</p>
+            <div className="linha">
+              <Campo id="conjuge_nome" rotulo="Nome do cônjuge" erro={erros.conjuge_nome}>
+                <input id="conjuge_nome" value={f.conjuge_nome} onChange={set('conjuge_nome')} maxLength={150} />
+              </Campo>
+              <Campo id="conjuge_telefone" rotulo="Telefone do cônjuge" erro={erros.conjuge_telefone}>
+                <input id="conjuge_telefone" type="tel" inputMode="numeric" placeholder="(48) 99999-9999"
+                  value={f.conjuge_telefone} onChange={(e) => set('conjuge_telefone')(mascaraTelefone(e.target.value))} />
+              </Campo>
+            </div>
+            <fieldset className="campo sim-nao" id="conjuge_fez_acampamento">
+              <legend>Seu cônjuge já fez este acampamento?</legend>
+              <div className="opcoes-inline">
+                <label className={`pilula ${f.conjuge_fez_acampamento === true ? 'ativa' : ''}`}>
+                  <input type="radio" name="conjuge_fez" checked={f.conjuge_fez_acampamento === true} onChange={() => set('conjuge_fez_acampamento')(true)} /> Sim
+                </label>
+                <label className={`pilula ${f.conjuge_fez_acampamento === false ? 'ativa' : ''}`}>
+                  <input type="radio" name="conjuge_fez" checked={f.conjuge_fez_acampamento === false} onChange={() => set('conjuge_fez_acampamento')(false)} /> Não
+                </label>
+              </div>
+            </fieldset>
+            {f.conjuge_fez_acampamento && (
+              <Campo id="conjuge_acampamento_numero" rotulo="Qual acampamento? (número, se souber)" erro={erros.conjuge_acampamento_numero}
+                dica="Ex.: 24 (para o 24º acampamento).">
+                <input id="conjuge_acampamento_numero" inputMode="numeric" maxLength={6} value={f.conjuge_acampamento_numero}
+                  onChange={(e) => set('conjuge_acampamento_numero')(e.target.value.replace(/\D/g, ''))} />
+              </Campo>
+            )}
           </div>
         )}
       </section>

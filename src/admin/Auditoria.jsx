@@ -12,6 +12,7 @@ const normalizar = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '
 const ATALHOS = [
   { rotulo: 'Movimentações na fila (recusas e fim da fila)', tipos: 'recusa,fim_da_fila' },
   { rotulo: 'Só "fim da fila"', tipos: 'fim_da_fila' },
+  { rotulo: 'Preferências e vínculos de cônjuge', tipos: 'preferencia,conjuge' },
   { rotulo: 'Todos os eventos', tipos: '' },
 ]
 

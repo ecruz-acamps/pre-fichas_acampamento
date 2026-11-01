@@ -33,6 +33,8 @@ export const MARCA_PADRAO = {
   tribos: TRIBOS_PADRAO,
   // Recusas seguidas que levam a pessoa para o fim da fila (0 = não mover automaticamente)
   recusasParaFimDaFila: 2,
+  // Quantas edições seguintes o cônjuge de quem fez o acampamento tem preferência (0 = desligado)
+  edicoesPreferenciaConjuge: 2,
 }
 
 const COR = /^#[0-9a-fA-F]{6}$/
@@ -71,6 +73,12 @@ export function validarMarca(entrada) {
     const n = Number(bruto.recusasParaFimDaFila)
     if (!Number.isInteger(n) || n < 0 || n > 10) e.recusasParaFimDaFila = 'Use um número de 0 a 10.'
     else m.recusasParaFimDaFila = n
+  }
+
+  if (bruto.edicoesPreferenciaConjuge !== undefined) {
+    const n = Number(bruto.edicoesPreferenciaConjuge)
+    if (!Number.isInteger(n) || n < 0 || n > 10) e.edicoesPreferenciaConjuge = 'Use um número de 0 a 10.'
+    else m.edicoesPreferenciaConjuge = n
   }
 
   if (bruto.termos !== undefined) {

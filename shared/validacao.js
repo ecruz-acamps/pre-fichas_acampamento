@@ -9,6 +9,7 @@ import { calcularIdade, modalidadesCompativeis, somenteDigitos } from './util.js
 export const INICIAL = {
   nome_completo: '', data_nascimento: '', estado_civil: '', sexo: '', profissao: '',
   telefone: '', responsavel_nome: '', responsavel_telefone: '',
+  conjuge_nome: '', conjuge_telefone: '', conjuge_fez_acampamento: null, conjuge_acampamento_numero: '',
   religiao: '', religiao_outra: '',
   batizado: null, primeira_eucaristia: null, crismado: null,
   paroquia: '', participa_pastoral: null, pastoral_qual: '',
@@ -20,9 +21,13 @@ export const INICIAL = {
   website: '', // honeypot anti-robô (fica escondido)
 }
 
+/** Casado(a) ou em união estável: o formulário pergunta sobre o cônjuge. */
+export const temConjuge = (f) => f.estado_civil === 'casado' || f.estado_civil === 'uniao_estavel'
+
 /** Tamanho máximo de cada campo de texto. */
 export const MAXIMO = {
   nome_completo: 150, profissao: 120, telefone: 20, responsavel_nome: 150, responsavel_telefone: 20,
+  conjuge_nome: 150, conjuge_telefone: 20, conjuge_acampamento_numero: 6,
   religiao_outra: 70, paroquia: 150, pastoral_qual: 150,
   email: 200, instagram: 100, facebook: 150,
   cep: 9, logradouro: 200, numero: 20, complemento: 100, bairro: 100, cidade: 100,
@@ -86,6 +91,13 @@ export function validar(f, quantidadeTermos = 0) {
       e.responsavel_telefone = 'Informe o telefone com DDD.'
   }
 
+  if (temConjuge(f)) {
+    if (f.conjuge_telefone.trim() && somenteDigitos(f.conjuge_telefone).length < 10)
+      e.conjuge_telefone = 'Informe o telefone com DDD.'
+    const n = f.conjuge_acampamento_numero.trim()
+    if (f.conjuge_fez_acampamento && n && !/^\d{1,6}$/.test(n)) e.conjuge_acampamento_numero = 'Informe só o número (ex.: 24).'
+  }
+
   obrig('religiao'); umDe('religiao', RELIGIOES)
   if (f.religiao === 'Outra') obrig('religiao_outra', 'Qual religião?')
   obrig('batizado', 'Selecione uma opção.')
@@ -134,6 +146,11 @@ export function montarRegistro(f, termos = []) {
     telefone: f.telefone.trim(),
     responsavel_nome: menor ? t(f.responsavel_nome) : null,
     responsavel_telefone: menor ? t(f.responsavel_telefone) : null,
+    conjuge_nome: temConjuge(f) ? t(f.conjuge_nome) : null,
+    conjuge_telefone: temConjuge(f) ? t(f.conjuge_telefone) : null,
+    conjuge_fez_acampamento: temConjuge(f) ? f.conjuge_fez_acampamento : null,
+    conjuge_acampamento_numero: temConjuge(f) && f.conjuge_fez_acampamento && /^\d{1,6}$/.test(f.conjuge_acampamento_numero.trim())
+      ? Number(f.conjuge_acampamento_numero.trim()) : null,
     religiao: f.religiao === 'Outra' ? `Outra: ${f.religiao_outra.trim()}` : f.religiao,
     batizado: f.batizado,
     primeira_eucaristia: f.primeira_eucaristia,

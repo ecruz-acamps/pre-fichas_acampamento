@@ -3,6 +3,7 @@ import { api } from '../lib/api.js'
 import { MODALIDADES, STATUS, STATUS_NA_FILA, rotuloDe } from '../../shared/opcoes.js'
 import { calcularIdade, chaveLocal, formatarDataHora, linkWhatsApp, melhorGrafia, somenteDigitos } from '../../shared/util.js'
 import Detalhe from './Detalhe.jsx'
+import { SeloPreferencia, declarouSemValidar, preferenciaAtiva } from './Preferencia.jsx'
 import { exportarCsv } from './csv.js'
 
 /** Posição na fila: por modalidade, ordem de chegada, contando só quem ainda está na fila. */
@@ -48,7 +49,9 @@ export function useFichas() {
   const recarregar = useCallback(async () => {
     setCarregando(true); setErro('')
     try {
-      setLinhas(await api.get('/api/admin/pre-fichas'))
+      const lista = await api.get('/api/admin/pre-fichas')
+      setLinhas(lista)
+      return lista
     } catch (e) {
       console.error(e)
       setErro('Não foi possível carregar as pré-fichas. Tente novamente.')
@@ -86,6 +89,7 @@ export default function Fila({ usuario, marca, nucleos }) {
   const [cidade, setCidade] = useState('')
   const [bairro, setBairro] = useState('')
   const [busca, setBusca] = useState('')
+  const [preferencia, setPreferencia] = useState('')
   const [selecionada, setSelecionada] = useState(null)
 
   const posicoes = useMemo(() => calcularPosicoes(linhas), [linhas])
@@ -115,11 +119,16 @@ export default function Fila({ usuario, marca, nucleos }) {
       if (modalidade !== 'todas' && l.modalidade !== modalidade) return false
       if (filtroStatus === 'fila' && !STATUS_NA_FILA.includes(l.status)) return false
       if (filtroStatus !== 'fila' && filtroStatus !== 'todos' && l.status !== filtroStatus) return false
+      if (preferencia === 'ativa' && !preferenciaAtiva(l)) return false
+      if (preferencia === 'validar' && !declarouSemValidar(l)) return false
+      if (preferencia === 'sem' && preferenciaAtiva(l)) return false
       if (!termo) return true
       return [l.nome_completo, l.email, l.cidade, l.bairro, l.paroquia].some((v) => normalizar(v).includes(termo)) ||
         (termoDigitos.length >= 4 && somenteDigitos(l.telefone).includes(termoDigitos))
     })
-  }, [porLugar, modalidade, filtroStatus, busca])
+  }, [porLugar, modalidade, filtroStatus, busca, preferencia])
+
+  const comPreferencia = useMemo(() => porLugar.filter((l) => STATUS_NA_FILA.includes(l.status) && preferenciaAtiva(l)).length, [porLugar])
 
   async function atualizar(id, campos) {
     try {
@@ -150,6 +159,7 @@ export default function Fila({ usuario, marca, nucleos }) {
         <h1>Fila de espera</h1>
         <p className="subtitulo">
           {contagemFila.todas} pessoa(s) aguardando · ordem de entrada na fila (data da inscrição, ou de quando foi para o fim da fila)
+          {comPreferencia > 0 && <> · <button className="link inline" onClick={() => setPreferencia('ativa')}>★ {comPreferencia} com preferência</button></>}
           {coordenador && nucleos.length > 0 && ` · ${nucleos.map((n) => n.nome).join(', ')}`}
         </p>
       </div>
@@ -173,6 +183,13 @@ export default function Fila({ usuario, marca, nucleos }) {
           <option value="fila">Na fila (aguardando + em contato)</option>
           <option value="todos">Todos os status</option>
           {STATUS.map((s) => <option key={s.valor} value={s.valor}>{s.rotulo}</option>)}
+        </select>
+        <select value={preferencia} onChange={(e) => setPreferencia(e.target.value)} aria-label="Preferência"
+          className={preferencia ? 'filtro-ativo' : ''}>
+          <option value="">Preferência: todas as fichas</option>
+          <option value="ativa">★ Com preferência ativa (cônjuge)</option>
+          <option value="validar">Declarou que o cônjuge fez — a validar</option>
+          <option value="sem">Sem preferência</option>
         </select>
       </div>
       <div className="filtros">
@@ -225,6 +242,7 @@ export default function Fila({ usuario, marca, nucleos }) {
                   <td>
                     {l.nome_completo}
                     {duplicados.has(l.id) && <span className="selo alerta" title="Mesmo e-mail ou telefone de outra ficha">possível duplicado</span>}
+                    <SeloPreferencia ficha={l} />
                     {l.recusas_seguidas > 0 && (
                       <span className="selo recusa" title="Recusas seguidas ao ser chamada">
                         {l.recusas_seguidas} recusa{l.recusas_seguidas > 1 ? 's' : ''}
@@ -262,6 +280,12 @@ export default function Fila({ usuario, marca, nucleos }) {
           onFechar={() => setSelecionada(null)}
           onSalvar={(campos) => atualizar(selecionada.id, campos)}
           onFilaAlterada={filaAlterada}
+          usuario={usuario}
+          todas={linhas}
+          onFichaAtualizada={async (f) => {
+            const lista = await recarregar()
+            setSelecionada(lista?.find((x) => x.id === f.id) ?? f)
+          }}
         />
       )}
     </>

@@ -4,7 +4,7 @@ import { carregarMarca, TextoMarca } from '../lib/marca.jsx'
 import { ajustarCor, corTextoSobre } from '../../shared/marca.js'
 
 const CAMPOS_EXPORTADOS = ['nome', 'nomeCurto', 'corPrimaria', 'whatsapp', 'email', 'instagram', 'site',
-  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila']
+  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila', 'edicoesPreferenciaConjuge']
 
 function Campo({ id, rotulo, dica, erro, children }) {
   return (
@@ -239,6 +239,11 @@ export default function Configuracoes({ marca, onSalvar }) {
               dica="Quando a pessoa é chamada e diz não esse número de vezes seguidas, ela vai automaticamente para o fim da fila (com registro na auditoria). Use 0 para nunca mover automaticamente.">
               <input id="cfg-recusas" type="number" min="0" max="10" className="numero-curto" value={m.recusasParaFimDaFila}
                 onChange={(e) => setM({ ...m, recusasParaFimDaFila: e.target.value === '' ? '' : Number(e.target.value) })} />
+            </Campo>
+            <Campo id="cfg-pref" rotulo="Edições de preferência para o cônjuge" erro={erros.edicoesPreferenciaConjuge}
+              dica="Quem fez o acampamento N dá ao cônjuge preferência nas próximas edições da mesma modalidade. Ex.: 2 → fez o 24º, o cônjuge tem preferência no 25º e no 26º. Use 0 para desligar.">
+              <input id="cfg-pref" type="number" min="0" max="10" className="numero-curto" value={m.edicoesPreferenciaConjuge}
+                onChange={(e) => setM({ ...m, edicoesPreferenciaConjuge: e.target.value === '' ? '' : Number(e.target.value) })} />
             </Campo>
           </section>
 

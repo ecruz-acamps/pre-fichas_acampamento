@@ -421,6 +421,117 @@ describe('API', { skip: pular }, () => {
     })
   })
 
+
+  // ------------------------------------------------------------------ cônjuge
+  describe('cônjuge e preferência', () => {
+    const casal = { data_nascimento: '1975-01-01', estado_civil: 'casado', modalidade: 'senior', cidade: 'Biguaçu', bairro: 'Centro' }
+    const ficha = async (nome) => (await req('equipe', 'GET', '/api/admin/pre-fichas')).json().find((f) => f.nome_completo === nome)
+    let acamp50, maridoId, esposaId
+
+    before(async () => {
+      await enviar({ ...casal, nome_completo: 'Marido Silva', telefone: '(48) 97777-1111' })
+      await enviar({ ...casal, nome_completo: 'Esposa Silva', telefone: '(48) 97777-2222',
+        conjuge_nome: 'Marido Silva', conjuge_telefone: '(48) 97777-1111', conjuge_fez_acampamento: false })
+      await enviar({ ...casal, nome_completo: 'Viúva Antiga', estado_civil: 'viuvo', conjuge_nome: 'Não deve gravar' })
+      maridoId = await idPorNome('Marido Silva')
+      esposaId = await idPorNome('Esposa Silva')
+    })
+
+    test('formulário grava o que foi declarado sobre o cônjuge (só para casados)', async () => {
+      const { rows: [e] } = await pool.query('select conjuge_nome, conjuge_telefone, conjuge_fez_acampamento from pre_fichas where id = $1', [esposaId])
+      assert.deepEqual(e, { conjuge_nome: 'Marido Silva', conjuge_telefone: '(48) 97777-1111', conjuge_fez_acampamento: false })
+      const { rows: [v] } = await pool.query(`select conjuge_nome from pre_fichas where nome_completo = 'Viúva Antiga'`)
+      assert.equal(v.conjuge_nome, null)
+      const r = await enviar({ ...casal, nome_completo: 'Numero Errado', conjuge_fez_acampamento: true, conjuge_acampamento_numero: 'vinte' })
+      assert.equal(r.statusCode, 400)
+    })
+
+    test('vincular cônjuges (mão dupla, na trilha); coordenador não pode', async () => {
+      assert.equal((await req('coord', 'PUT', `/api/admin/pre-fichas/${esposaId}/conjuge`, { conjuge_id: maridoId })).statusCode, 403)
+      const r = await req('equipe', 'PUT', `/api/admin/pre-fichas/${esposaId}/conjuge`, { conjuge_id: maridoId })
+      assert.equal(r.statusCode, 200)
+      assert.equal(r.json().ficha.conjuge_vinculado_nome, 'Marido Silva')
+      assert.equal((await ficha('Marido Silva')).conjuge_id, esposaId)
+      const h = (await req('equipe', 'GET', `/api/admin/pre-fichas/${maridoId}/historico`)).json()
+      assert.equal(h[0].tipo, 'conjuge')
+    })
+
+    test('quando o marido faz o 50º Sênior, a esposa ganha preferência para o 51º e 52º', async () => {
+      acamp50 = (await req('equipe', 'POST', '/api/admin/acampamentos', { numero: 50, modalidade: 'senior' })).json().id
+      await req('equipe', 'PUT', `/api/admin/acampamentos/${acamp50}/participantes/${maridoId}`, { tribo: 'Azul' })
+      const [pref] = (await ficha('Esposa Silva')).preferencias
+      assert.deepEqual([pref.situacao, pref.origem, pref.valida_de, pref.valida_ate, pref.conjuge_nome],
+        ['ativa', 'automatica', 51, 52, 'Marido Silva'])
+      const h = (await req('equipe', 'GET', `/api/admin/pre-fichas/${esposaId}/historico`)).json()
+      assert.match(h[0].observacao, /cônjuge Marido Silva fez o 50º Sênior — válida para o 51º e 52º Sênior/)
+    })
+
+    test('a preferência vale no 51º e expira quando o 52º é cadastrado', async () => {
+      await req('equipe', 'POST', '/api/admin/acampamentos', { numero: 51, modalidade: 'senior' })
+      assert.equal((await ficha('Esposa Silva')).preferencias[0].situacao, 'ativa')
+      const a52 = (await req('equipe', 'POST', '/api/admin/acampamentos', { numero: 52, modalidade: 'senior' })).json().id
+      assert.equal((await ficha('Esposa Silva')).preferencias[0].situacao, 'expirada')
+      await req('equipe', 'DELETE', `/api/admin/acampamentos/${a52}`)
+      assert.equal((await ficha('Esposa Silva')).preferencias[0].situacao, 'ativa')
+    })
+
+    test('se a esposa faz uma das edições cobertas, a preferência fica como "usada"', async () => {
+      const a51 = (await req('equipe', 'GET', '/api/admin/acampamentos')).json().find((a) => a.numero === 51 && a.modalidade === 'senior').id
+      await req('equipe', 'PUT', `/api/admin/acampamentos/${a51}/participantes/${esposaId}`, { tribo: 'Verde' })
+      assert.equal((await ficha('Esposa Silva')).preferencias[0].situacao, 'usada')
+      await req('equipe', 'DELETE', `/api/admin/acampamentos/${a51}/participantes/${esposaId}`)
+      assert.equal((await ficha('Esposa Silva')).preferencias[0].situacao, 'ativa')
+    })
+
+    test('desfazer o registro do marido revoga a preferência automática', async () => {
+      await req('equipe', 'DELETE', `/api/admin/acampamentos/${acamp50}/participantes/${maridoId}`)
+      const [pref] = (await ficha('Esposa Silva')).preferencias
+      assert.equal(pref.situacao, 'revogada')
+      assert.match(pref.motivo_revogacao, /registro do cônjuge no 50º Sênior foi removido/)
+    })
+
+    test('vincular depois que o cônjuge já fez o acampamento também gera a preferência', async () => {
+      await req('equipe', 'PUT', `/api/admin/pre-fichas/${esposaId}/conjuge`, { conjuge_id: null })
+      assert.equal((await ficha('Marido Silva')).conjuge_id, null)
+      await req('equipe', 'PUT', `/api/admin/acampamentos/${acamp50}/participantes/${maridoId}`, { tribo: 'Azul' })
+      assert.equal((await ficha('Esposa Silva')).preferencias.filter((p) => p.situacao === 'ativa').length, 0)
+      await req('equipe', 'PUT', `/api/admin/pre-fichas/${esposaId}/conjuge`, { conjuge_id: maridoId })
+      assert.equal((await ficha('Esposa Silva')).preferencias.filter((p) => p.situacao === 'ativa').length, 1)
+    })
+
+    test('preferência manual (cônjuge fez antes do sistema): validações, expiração e revogação com motivo', async () => {
+      const id = await idPorNome('Viúva Antiga')
+      const url = `/api/admin/pre-fichas/${id}/preferencias`
+      assert.equal((await req('equipe', 'POST', url, { acampamento_numero: 51, modalidade: 'senior' })).statusCode, 400) // sem nome
+      assert.equal((await req('coord', 'POST', url, { conjuge_nome: 'X', acampamento_numero: 51, modalidade: 'senior' })).statusCode, 403)
+      const expirada = await req('equipe', 'POST', url, { conjuge_nome: 'José', acampamento_numero: 45, modalidade: 'senior' })
+      assert.equal(expirada.statusCode, 400)
+      assert.match(expirada.json().mensagem, /Já expirou/)
+      const r = await req('equipe', 'POST', url, { conjuge_nome: 'José Antigo', acampamento_numero: 51, modalidade: 'senior', observacao: 'Confirmado com a coordenação.' })
+      assert.equal(r.statusCode, 201)
+      const pref = r.json().ficha.preferencias[0]
+      assert.deepEqual([pref.situacao, pref.origem, pref.valida_ate], ['ativa', 'manual', 53])
+      assert.equal((await req('equipe', 'POST', url, { conjuge_nome: 'José Antigo', acampamento_numero: 51, modalidade: 'senior' })).statusCode, 400)
+
+      assert.equal((await req('equipe', 'POST', `/api/admin/preferencias/${pref.id}/revogar`, {})).statusCode, 400)
+      const rev = await req('admin', 'POST', `/api/admin/preferencias/${pref.id}/revogar`, { motivo: 'Lançada por engano.' })
+      assert.equal(rev.json().ficha.preferencias[0].situacao, 'revogada')
+      const aud = (await req('admin', 'GET', `/api/admin/auditoria?tipo=preferencia&ficha=${id}`)).json()
+      assert.equal(aud.length, 2)
+    })
+
+    test('número de edições configurável', async () => {
+      await req('admin', 'PUT', '/api/admin/marca', { nome: 'Acampamento Teste', edicoesPreferenciaConjuge: 3 })
+      const id = await idPorNome('Viúva Antiga')
+      const r = await req('equipe', 'POST', `/api/admin/pre-fichas/${id}/preferencias`, { conjuge_nome: 'José', acampamento_numero: 51, modalidade: 'senior' })
+      assert.equal(r.json().ficha.preferencias[0].valida_ate, 54)
+      await req('admin', 'PUT', '/api/admin/marca', { nome: 'Acampamento Teste', edicoesPreferenciaConjuge: 0 })
+      const off = await req('equipe', 'POST', `/api/admin/pre-fichas/${id}/preferencias`, { conjuge_nome: 'Outro', acampamento_numero: 52, modalidade: 'senior' })
+      assert.equal(off.statusCode, 400)
+      await req('admin', 'PUT', '/api/admin/marca', { nome: 'Acampamento Teste', edicoesPreferenciaConjuge: 2 })
+    })
+  })
+
   // ------------------------------------------------------------------ marca
   describe('marca (identidade do acampamento)', () => {
     const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a5c90000000049454e44ae426082', 'hex')

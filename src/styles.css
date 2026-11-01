@@ -356,3 +356,28 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
 .campo-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 0.9rem; }
 .campo-inline input { width: auto !important; }
 .numero-curto { max-width: 120px; }
+
+/* ---------- cônjuge e preferência ---------- */
+.selo.preferencia { background: #fff3c4; color: #7a5a00; font-weight: 500; }
+.selo.a-validar { background: #eef1f6; color: #4a5568; border: 1px dashed #a0aec0; }
+.bloco-conjuge { border: 1px solid var(--borda); border-radius: 10px; padding: 10px 14px; margin-bottom: 14px; }
+.bloco-conjuge h3 { margin: 0 0 8px !important; }
+.bloco-conjuge .declarado { margin: 0 0 8px; font-size: 0.92rem; }
+.bloco-conjuge .vinculo p { margin: 0 0 8px; }
+.bloco-conjuge .vinculo .link { margin-left: 8px; display: inline; }
+.bloco-conjuge input[type='search'] { margin-bottom: 6px; }
+.sugestoes-conjuge { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; margin-bottom: 8px; }
+.resultado-busca { display: block; width: 100%; text-align: left; background: #fff; border: 1px solid var(--borda); border-radius: 8px; padding: 8px 10px; margin-bottom: 4px; cursor: pointer; font: inherit; }
+.resultado-busca:hover { background: var(--fundo-linha); }
+.lista-preferencias { list-style: none; padding: 0; margin: 8px 0; }
+.lista-preferencias li { padding: 6px 0; border-bottom: 1px solid var(--borda); font-size: 0.92rem; }
+.lista-preferencias li .link { display: inline; margin-left: 8px; }
+.lista-preferencias li.pref-expirada, .lista-preferencias li.pref-revogada { color: var(--texto-suave); }
+.selo-pref { border-radius: 999px; padding: 1px 8px; font-size: 0.75rem; font-weight: 500; }
+.selo-pref.ativa { background: #fff3c4; color: #7a5a00; }
+.selo-pref.usada { background: #e8f5e9; color: #2e7d32; }
+.selo-pref.expirada, .selo-pref.revogada { background: #eee; color: #666; }
+.selo-evento.evento-preferencia { background: #fff3c4; color: #7a5a00; }
+.selo-evento.evento-conjuge { background: #fce4ec; color: #ad1457; }
+.filtros select.filtro-ativo { border-color: var(--cor); background: var(--cor-clara); }
+.link.inline { display: inline; margin: 0; font-size: inherit; }

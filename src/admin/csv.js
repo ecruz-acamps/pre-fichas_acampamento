@@ -6,6 +6,13 @@ const COLUNAS = [
   ['Na fila desde', (l) => formatarDataHora(l.entrada_fila_em ?? l.created_at)],
   ['Inscrição original', (l) => formatarDataHora(l.created_at)],
   ['Recusas seguidas', (l) => l.recusas_seguidas ?? 0],
+  ['Preferência (cônjuge)', (l) => {
+    const p = (l.preferencias ?? []).find((x) => x.situacao === 'ativa')
+    return p ? `Ativa até o ${p.valida_ate}º ${rotuloDe(MODALIDADES, p.modalidade)} (cônjuge ${p.conjuge_nome} fez o ${p.acampamento_numero}º)` : ''
+  }],
+  ['Cônjuge vinculado', (l) => l.conjuge_vinculado_nome ?? ''],
+  ['Cônjuge (declarado)', (l) => [l.conjuge_nome, l.conjuge_telefone,
+    l.conjuge_fez_acampamento ? `já fez${l.conjuge_acampamento_numero ? ` o ${l.conjuge_acampamento_numero}º` : ''}` : ''].filter(Boolean).join(' · ')],
   ['Status', (l) => rotuloDe(STATUS, l.status)],
   ['Modalidade', (l) => rotuloDe(MODALIDADES, l.modalidade)],
   ['Nome', (l) => l.nome_completo],

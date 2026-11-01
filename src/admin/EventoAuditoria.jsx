@@ -8,6 +8,8 @@ export const TIPOS_EVENTO = [
   { valor: 'recusa', rotulo: 'Recusa', icone: '✋' },
   { valor: 'fim_da_fila', rotulo: 'Fim da fila', icone: '⏬' },
   { valor: 'acampamento', rotulo: 'Acampamento', icone: '⛺' },
+  { valor: 'preferencia', rotulo: 'Preferência', icone: '★' },
+  { valor: 'conjuge', rotulo: 'Cônjuge', icone: '💍' },
 ]
 
 /** Descrição legível de um evento da trilha de auditoria. */
@@ -42,7 +44,7 @@ export function DescricaoEvento({ e }) {
       return (
         <>
           {e.status_novo && <div>Status: {rotuloDe(STATUS, e.status_anterior)} → <strong>{rotuloDe(STATUS, e.status_novo)}</strong></div>}
-          {e.observacao && <div className="texto-longo">{e.tipo === 'acampamento' ? e.observacao : `Observação: ${e.observacao}`}</div>}
+          {e.observacao && <div className="texto-longo">{['acampamento', 'preferencia', 'conjuge'].includes(e.tipo) ? e.observacao : `Observação: ${e.observacao}`}</div>}
         </>
       )
   }

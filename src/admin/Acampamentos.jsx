@@ -4,6 +4,7 @@ import { CorTribo } from '../lib/marca.jsx'
 import { MODALIDADES, STATUS, rotuloDe } from '../../shared/opcoes.js'
 import { calcularIdade, formatarData } from '../../shared/util.js'
 import { calcularPosicoes, useFichas } from './Fila.jsx'
+import { SeloPreferencia, preferenciaAtiva } from './Preferencia.jsx'
 import { baixarCsv } from './csv.js'
 
 const nomeAcampamento = (a) => `${a.numero}º ${rotuloDe(MODALIDADES, a.modalidade)}`
@@ -96,6 +97,11 @@ function DetalheAcampamento({ acampamento: base, marca, onVoltar, onAlterado }) 
   }, [a])
 
   // Candidatos: quem ainda não foi registrado nesta edição. Confirmados primeiro, depois a ordem da fila.
+  // Preferência só conta nas edições que ela cobre (ex.: cônjuge fez o 24º → 25º e 26º)
+  const temPref = (f) => {
+    const p = preferenciaAtiva(f)
+    return Boolean(p && a && p.modalidade === a.modalidade && a.numero >= p.valida_de && a.numero <= p.valida_ate)
+  }
   const candidatos = useMemo(() => {
     if (!a) return []
     const termo = normalizar(busca.trim())
@@ -104,7 +110,9 @@ function DetalheAcampamento({ acampamento: base, marca, onVoltar, onAlterado }) 
       .filter((f) => !participantesIds.has(f.id))
       .filter((f) => todasModalidades || f.modalidade === a.modalidade)
       .filter((f) => !termo || [f.nome_completo, f.cidade, f.bairro, f.telefone].some((v) => normalizar(v).includes(termo)))
-      .sort((x, y) => peso[x.status] - peso[y.status] || (posicoes.get(x.id) ?? 1e9) - (posicoes.get(y.id) ?? 1e9))
+      // Preferência ativa (cônjuge) nesta modalidade vem primeiro, depois status e ordem da fila
+      .sort((x, y) => Number(temPref(y)) - Number(temPref(x)) ||
+        peso[x.status] - peso[y.status] || (posicoes.get(x.id) ?? 1e9) - (posicoes.get(y.id) ?? 1e9))
       .slice(0, 200)
   }, [a, fichas, participantesIds, todasModalidades, busca, posicoes])
 
@@ -204,7 +212,7 @@ function DetalheAcampamento({ acampamento: base, marca, onVoltar, onAlterado }) 
 
         <section>
           <h2 className="subtitulo-secao">Registrar quem fez</h2>
-          <p className="dica">Escolha a tribo da pessoa para marcar que ela fez o {nomeAcampamento(a)}. Ela sai da fila de espera.</p>
+          <p className="dica">Escolha a tribo da pessoa para marcar que ela fez o {nomeAcampamento(a)}. Ela sai da fila de espera. Quem tem ★ preferência (cônjuge) aparece primeiro.</p>
           <div className="filtros">
             <input type="search" placeholder="Buscar por nome, cidade, bairro ou telefone" value={busca} onChange={(e) => setBusca(e.target.value)} />
             <label className="check-inline">
@@ -218,7 +226,7 @@ function DetalheAcampamento({ acampamento: base, marca, onVoltar, onAlterado }) 
                 {candidatos.map((f) => (
                   <tr key={f.id}>
                     <td className="posicao">{posicoes.get(f.id) ?? '—'}</td>
-                    <td>{f.nome_completo}<small className="dica bloco">{f.cidade}/{f.uf}{f.bairro ? ` · ${f.bairro}` : ''}</small></td>
+                    <td>{f.nome_completo} <SeloPreferencia ficha={f} /><small className="dica bloco">{f.cidade}/{f.uf}{f.bairro ? ` · ${f.bairro}` : ''}</small></td>
                     <td><span className={`selo-status status-${f.status}`}>{rotuloDe(STATUS, f.status)}</span></td>
                     <td><SeletorTribo marca={marca} valor="" onChange={(t) => t && registrar(f.id, t)} /></td>
                   </tr>

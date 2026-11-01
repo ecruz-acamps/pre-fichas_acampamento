@@ -6,7 +6,7 @@ import { carregarMarca } from '../marca.js'
 const STATUS_VALIDOS = STATUS.map((s) => s.valor)
 // Status que significam "a pessoa aceitou": zeram a contagem de recusas seguidas
 const STATUS_ACEITE = ['confirmado', 'participou']
-const TIPOS_AUDITORIA = ['inscricao', 'status', 'observacao', 'recusa', 'fim_da_fila', 'acampamento']
+const TIPOS_AUDITORIA = ['inscricao', 'status', 'observacao', 'recusa', 'fim_da_fila', 'acampamento', 'preferencia', 'conjuge']
 const DATA = /^\d{4}-\d{2}-\d{2}$/
 
 const SQL_HISTORICO = `
@@ -42,7 +42,16 @@ export const SQL_FICHAS = (where) => `
                 'acampamento_id', a.id, 'numero', a.numero, 'modalidade', a.modalidade,
                 'data_inicio', a.data_inicio, 'tribo', pa.tribo) order by a.data_inicio nulls last, a.numero)
                 from participacoes pa join acampamentos a on a.id = pa.acampamento_id
-               where pa.pre_ficha_id = p.id), '[]') as participacoes
+               where pa.pre_ficha_id = p.id), '[]') as participacoes,
+    coalesce((select json_agg(json_build_object(
+                'id', ps.id, 'origem', ps.origem, 'modalidade', ps.modalidade, 'acampamento_numero', ps.acampamento_numero,
+                'valida_de', ps.valida_de, 'valida_ate', ps.valida_ate, 'situacao', ps.situacao,
+                'conjuge_ficha_id', ps.conjuge_ficha_id, 'conjuge_nome', coalesce(c.nome_completo, ps.conjuge_nome),
+                'observacao', ps.observacao, 'criado_em', ps.criado_em, 'motivo_revogacao', ps.motivo_revogacao)
+                order by ps.criado_em desc)
+                from preferencias_situacao ps left join pre_fichas c on c.id = ps.conjuge_ficha_id
+               where ps.pre_ficha_id = p.id), '[]') as preferencias,
+    (select c.nome_completo from pre_fichas c where c.id = p.conjuge_id) as conjuge_vinculado_nome
     from pre_fichas p left join usuarios u on u.id = p.atualizado_por
    where ${where}
    order by p.entrada_fila_em, p.id`

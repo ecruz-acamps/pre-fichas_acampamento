@@ -252,11 +252,36 @@ Cada ficha guarda duas datas:
   em um acampamento) e depois de ir para o fim da fila.
 - **Mover para o fim da fila…** faz o mesmo manualmente, com motivo obrigatório.
 
+### Preferência do cônjuge
+
+Quem faz o acampamento **N** dá ao cônjuge **preferência** para ser chamado nas próximas edições
+da mesma modalidade — por padrão **2** (fez o 24º Sênior → preferência no 25º e 26º). Depois disso
+ela expira sozinha. O número de edições fica em **Configurações → Regras da fila** (0 = desligado).
+
+1. **No formulário**, quem é casado(a)/união estável informa (opcional) nome e telefone do cônjuge,
+   se ele já fez o acampamento e qual.
+2. **Na ficha**, a equipe **vincula os cônjuges** — o sistema sugere a ficha pelo telefone/nome declarado.
+3. Com o vínculo, ao registrar que um deles **fez o acampamento**, o outro ganha a preferência
+   **automaticamente**. Se o vínculo for feito depois, a preferência também é criada (se ainda estiver no prazo).
+4. Se o cônjuge fez o acampamento antes do sistema (sem ficha), use **Registrar preferência de cônjuge**
+   informando o nome e o número da edição.
+
+A situação de cada preferência é calculada a partir das edições cadastradas em **Acampamentos**:
+**ativa**, **usada** (a pessoa fez uma das edições cobertas), **expirada** (as edições cobertas já
+foram cadastradas) ou **revogada** (cancelada pela equipe, com motivo). Por isso, cadastre cada edição
+realizada.
+
+Na fila, o filtro **Preferência** mostra quem tem preferência ativa (selo ★) e quem declarou que o
+cônjuge fez o acampamento mas ainda não foi validado. Na lista de chamada de cada edição, quem tem
+preferência para aquela edição aparece primeiro. Vincular/desvincular e criar/revogar preferências
+é feito por administradores e equipe, e tudo fica na auditoria.
+
 ### Trilha de auditoria
 
 Tudo fica registrado no histórico de cada ficha e na tela **Auditoria** (filtros por tipo de evento,
 período e texto; exportação CSV): inscrição, mudanças de status, observações, recusas,
-idas para o fim da fila (com data anterior → nova, quem fez e o motivo) e registros de acampamento.
+idas para o fim da fila (com data anterior → nova, quem fez e o motivo), registros de acampamento,
+vínculos de cônjuge e preferências criadas/revogadas.
 
 - O próprio **banco de dados** registra toda mudança da data na fila — mesmo que alguém altere
   direto no banco, aparece como "alteração direta no banco".

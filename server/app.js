@@ -13,6 +13,7 @@ import rotasUsuarios from './rotas/usuarios.js'
 import rotasNucleos from './rotas/nucleos.js'
 import rotasAcampamentos from './rotas/acampamentos.js'
 import rotasMarca from './rotas/marca.js'
+import rotasPreferencias from './rotas/preferencias.js'
 
 export async function construirApp({ pool, config, logger = true }) {
   const app = Fastify({
@@ -94,6 +95,7 @@ export async function construirApp({ pool, config, logger = true }) {
   await app.register(rotasNucleos)
   await app.register(rotasAcampamentos)
   await app.register(rotasMarca)
+  await app.register(rotasPreferencias)
 
   // ---- Site (arquivos gerados pelo `npm run build`) ----
   if (existsSync(config.pastaSite)) {

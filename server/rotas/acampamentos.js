@@ -2,6 +2,7 @@ import { MODALIDADES, rotuloDe } from '../../shared/opcoes.js'
 import { transacao } from '../db.js'
 import { carregarMarca } from '../marca.js'
 import { registrarHistorico } from './fila.js'
+import { preferenciaPorParticipacao, revogarPorParticipacaoRemovida } from '../preferencias.js'
 
 const DATA = /^\d{4}-\d{2}-\d{2}$/
 
@@ -121,6 +122,10 @@ export default async function rotasAcampamentos(app) {
         const nota = `${antes ? 'Tribo alterada' : 'Fez o'} ${nomeAcampamento(a)}${tribo ? ` — tribo ${tribo}` : ''}`
         await registrarHistorico(db, fichaId, req.usuario.id, f, 'participou', f.observacoes_internas, nota)
       }
+      // Regra do cônjuge: quem tem cônjuge vinculado gera a preferência para ele
+      if (!antes) {
+        await preferenciaPorParticipacao(db, { fichaId, acampamento: a, usuarioId: req.usuario.id, edicoes: marca.edicoesPreferenciaConjuge })
+      }
       return { ok: true }
     })
     if (!resultado) return reply.code(404).send({ mensagem: 'Acampamento ou pré-ficha não encontrado.' })
@@ -145,6 +150,7 @@ export default async function rotasAcampamentos(app) {
       }
       await registrarHistorico(db, fichaId, req.usuario.id, f, novoStatus, f.observacoes_internas,
         `Registro no ${nomeAcampamento(a)} removido`)
+      await revogarPorParticipacaoRemovida(db, { fichaId, acampamento: a, usuarioId: req.usuario.id })
       return { ok: true }
     })
     if (!resultado) return reply.code(404).send({ mensagem: 'Registro não encontrado.' })
