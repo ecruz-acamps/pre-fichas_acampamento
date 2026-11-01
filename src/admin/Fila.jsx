@@ -90,6 +90,7 @@ export default function Fila({ usuario, marca, nucleos }) {
   const [bairro, setBairro] = useState('')
   const [busca, setBusca] = useState('')
   const [preferencia, setPreferencia] = useState('')
+  const [ordem, setOrdem] = useState('fila')
   const [selecionada, setSelecionada] = useState(null)
 
   const posicoes = useMemo(() => calcularPosicoes(linhas), [linhas])
@@ -127,6 +128,10 @@ export default function Fila({ usuario, marca, nucleos }) {
         (termoDigitos.length >= 4 && somenteDigitos(l.telefone).includes(termoDigitos))
     })
   }, [porLugar, modalidade, filtroStatus, busca, preferencia])
+
+  const ordenadas = useMemo(() => (ordem === 'nome'
+    ? [...visiveis].sort((a, b) => a.nome_completo.localeCompare(b.nome_completo, 'pt-BR', { sensitivity: 'base' }))
+    : visiveis), [visiveis, ordem])
 
   const comPreferencia = useMemo(() => porLugar.filter((l) => STATUS_NA_FILA.includes(l.status) && preferenciaAtiva(l)).length, [porLugar])
 
@@ -191,6 +196,10 @@ export default function Fila({ usuario, marca, nucleos }) {
           <option value="validar">Declarou que o cônjuge fez — a validar</option>
           <option value="sem">Sem preferência</option>
         </select>
+        <select value={ordem} onChange={(e) => setOrdem(e.target.value)} aria-label="Ordenar">
+          <option value="fila">Ordem: posição na fila</option>
+          <option value="nome">Ordem: nome (A–Z)</option>
+        </select>
       </div>
       <div className="filtros">
         <SeletorNucleo nucleos={nucleos} coordenador={coordenador} valor={nucleo}
@@ -226,7 +235,7 @@ export default function Fila({ usuario, marca, nucleos }) {
             </tr>
           </thead>
           <tbody>
-            {visiveis.map((l) => {
+            {ordenadas.map((l) => {
               const wa = linkWhatsApp(l.telefone)
               return (
                 <tr key={l.id} onClick={() => setSelecionada(l)} className="clicavel">

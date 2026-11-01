@@ -54,6 +54,12 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
 - O **coordenador de núcleo** só vê as pré-fichas da sua área — garantido pelo servidor —
   e usa o resumo para saber quem chamar em cada acampamento.
 - O painel mostra quais cidades/bairros com pré-fichas ainda não têm núcleo.
+- **Dividir cidade por bairros**: para cidades com vários núcleos (ex.: Palhoça → Centro, Ponte do
+  Imaruim, Aririu e São Sebastião), uma tela lista os bairros da cidade (com quantas pré-fichas há
+  em cada um) e você escolhe o núcleo de cada bairro.
+- **Nomes (A–Z)**: lista alfabética com as pré-fichas do núcleo do coordenador e **todos os
+  campistas** (quem já fez o acampamento) de todos os núcleos. Campistas de outros núcleos aparecem
+  só com nome, cidade/bairro, núcleo, acampamento e tribo — sem contatos.
 
 **Acampamentos realizados**
 - Cadastre cada edição (**número + modalidade**, ex.: 45º Juvenil, com datas).

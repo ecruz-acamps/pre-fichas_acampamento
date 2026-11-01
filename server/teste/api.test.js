@@ -588,6 +588,84 @@ describe('API', { skip: pular }, () => {
     })
   })
 
+
+  // ------------------------------------------------------------------ divisão / campistas
+  describe('Palhoça dividida em núcleos por bairro e lista de campistas', () => {
+    const palhoca = { cidade: 'Palhoça', data_nascimento: '2001-01-01', modalidade: 'juvenil' }
+    const nucleos = {}
+    let coordAririu
+
+    before(async () => {
+      for (const nome of ['Palhoça Centro', 'Ponte do Imaruim', 'Aririu', 'São Sebastião']) {
+        nucleos[nome] = (await req('admin', 'POST', '/api/admin/nucleos', { nome, areas: [] })).json().id
+      }
+      for (const [nome, bairro] of [['Pessoa Centro', 'Centro'], ['Pessoa Ponte', 'Ponte do Imaruim'],
+        ['Pessoa Aririu', 'Aririu'], ['Pessoa Aririu 2', 'ARIRIU'], ['Pessoa Bela Vista', 'Bela Vista'], ['Pessoa Sem Bairro', '']]) {
+        await enviar({ ...palhoca, nome_completo: nome, bairro })
+      }
+      await pool.query(`insert into usuarios (email, nome, papel, senha_hash, trocar_senha) values ('aririu@x.com', 'Coord Aririu', 'coordenador', $1, false)`,
+        [await gerarHash(SENHA)])
+      sessoes.aririu = (await login('aririu@x.com')).cookie
+      const { rows: [u] } = await pool.query(`select id from usuarios where email = 'aririu@x.com'`)
+      coordAririu = u.id
+    })
+
+    test('a ferramenta lista os bairros de Palhoça com quantidade de fichas (grafias diferentes juntas)', async () => {
+      const r = await req('admin', 'GET', '/api/admin/nucleos/divisao?uf=SC&cidade=palhoca')
+      assert.equal(r.statusCode, 200)
+      const aririu = r.json().bairros.find((b) => b.bairro.toLowerCase() === 'aririu')
+      assert.equal(aririu.fichas, 2)
+      assert.equal(r.json().sem_bairro, 1)
+      assert.ok(r.json().cidade_inteira.some((n) => n.nome === 'Núcleo Sul'), 'mostra o núcleo que tinha a cidade inteira')
+      assert.equal((await req('coord', 'GET', '/api/admin/nucleos/divisao?uf=SC&cidade=Palhoça')).statusCode, 403)
+    })
+
+    test('salvar a divisão: cada bairro em um núcleo; a "cidade inteira" antiga é substituída', async () => {
+      const atribuicoes = [
+        { bairro: 'Centro', nucleo_id: nucleos['Palhoça Centro'] },
+        { bairro: 'Pagani', nucleo_id: nucleos['Palhoça Centro'] },
+        { bairro: 'Ponte do Imaruim', nucleo_id: nucleos['Ponte do Imaruim'] },
+        { bairro: 'Aririu', nucleo_id: nucleos.Aririu },
+        { bairro: 'Bela Vista', nucleo_id: nucleos['São Sebastião'] },
+        { bairro: 'Bairro Sem Núcleo', nucleo_id: null },
+      ]
+      assert.equal((await req('admin', 'PUT', '/api/admin/nucleos/divisao', { uf: 'SC', cidade: 'Palhoça', atribuicoes: [{ bairro: 'X', nucleo_id: 999999 }] })).statusCode, 400)
+      const r = await req('admin', 'PUT', '/api/admin/nucleos/divisao', { uf: 'SC', cidade: 'Palhoça', atribuicoes })
+      assert.equal(r.statusCode, 200)
+      assert.equal(r.json().inseridas, 5)
+      const d = (await req('admin', 'GET', '/api/admin/nucleos/divisao?uf=SC&cidade=Palhoça')).json()
+      assert.equal(d.cidade_inteira.length, 0)
+      assert.equal(d.bairros.find((b) => b.bairro === 'Bela Vista').nucleo_id, nucleos['São Sebastião'])
+      const sul = (await req('admin', 'GET', '/api/admin/nucleos')).json().find((n) => n.nome === 'Núcleo Sul')
+      assert.equal(sul.areas.length, 0)
+    })
+
+    test('o coordenador do Aririu vê só as pré-fichas do Aririu', async () => {
+      await req('admin', 'PATCH', `/api/admin/usuarios/${coordAririu}`, { nucleos: [nucleos.Aririu] })
+      const fichas = (await req('aririu', 'GET', '/api/admin/pre-fichas')).json().map((f) => f.nome_completo).sort()
+      assert.deepEqual(fichas, ['Pessoa Aririu', 'Pessoa Aririu 2'])
+    })
+
+    test('campistas: todos os núcleos; de fora da área sem telefone/e-mail', async () => {
+      const a = (await req('equipe', 'POST', '/api/admin/acampamentos', { numero: 60, modalidade: 'juvenil' })).json().id
+      for (const nome of ['Pessoa Aririu', 'Pessoa Ponte']) {
+        await req('equipe', 'PUT', `/api/admin/acampamentos/${a}/participantes/${await idPorNome(nome)}`, { tribo: 'Roxo' })
+      }
+      const r = await req('aririu', 'GET', '/api/admin/campistas')
+      assert.equal(r.statusCode, 200)
+      const nomes = r.json().map((c) => c.nome_completo)
+      assert.ok(nomes.includes('Pessoa Aririu') && nomes.includes('Pessoa Ponte'))
+      assert.ok(nomes.includes('Maria Silva'), 'inclui campistas de outras cidades')
+      const ponte = r.json().find((c) => c.nome_completo === 'Pessoa Ponte')
+      assert.deepEqual([ponte.da_minha_area, ponte.nucleos_nomes, ponte.participacoes[0].tribo], [false, ['Ponte do Imaruim'], 'Roxo'])
+      assert.equal(r.json().find((c) => c.nome_completo === 'Pessoa Aririu').da_minha_area, true)
+      for (const c of r.json()) {
+        assert.equal(c.telefone, undefined); assert.equal(c.email, undefined); assert.equal(c.data_nascimento, undefined)
+      }
+      assert.equal((await app.inject({ method: 'GET', url: '/api/admin/campistas' })).statusCode, 401)
+    })
+  })
+
   // ------------------------------------------------------------------ marca
   describe('marca (identidade do acampamento)', () => {
     const PNG = Buffer.from('89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a5c90000000049454e44ae426082', 'hex')

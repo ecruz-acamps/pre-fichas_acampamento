@@ -9,12 +9,14 @@ import Nucleos from './Nucleos.jsx'
 import Usuarios from './Usuarios.jsx'
 import Configuracoes from './Configuracoes.jsx'
 import Auditoria from './Auditoria.jsx'
+import Nomes from './Nomes.jsx'
 import AlterarSenha from './AlterarSenha.jsx'
 import Ativacao from './Ativacao.jsx'
 
 // Telas do painel e quem pode ver cada uma
 const TELAS = [
   { id: 'fila', rotulo: 'Fila', papeis: ['admin', 'equipe', 'coordenador'] },
+  { id: 'nomes', rotulo: 'Nomes (A–Z)', papeis: ['admin', 'equipe', 'coordenador'] },
   { id: 'resumo', rotulo: 'Resumo por cidade', papeis: ['admin', 'equipe', 'coordenador'] },
   { id: 'acampamentos', rotulo: 'Acampamentos', papeis: ['admin', 'equipe'] },
   { id: 'auditoria', rotulo: 'Auditoria', papeis: ['admin', 'equipe', 'coordenador'] },
@@ -108,6 +110,7 @@ export default function App() {
       </nav>
 
       {atual === 'fila' && <Fila {...props} />}
+      {atual === 'nomes' && <Nomes {...props} />}
       {atual === 'resumo' && <Resumo {...props} />}
       {atual === 'acampamentos' && <Acampamentos {...props} />}
       {atual === 'auditoria' && <Auditoria {...props} />}

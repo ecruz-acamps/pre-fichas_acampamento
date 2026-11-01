@@ -389,3 +389,28 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
   font-size: 1.6rem !important; letter-spacing: 0.25em; text-transform: uppercase; padding: 10px 6px !important; }
 .serial input:last-child { width: 140px !important; }
 .serial span { font-size: 1.6rem; color: var(--texto-suave); }
+
+/* ---------- nomes (A–Z) e divisão de cidade ---------- */
+.indice-letras { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 14px; }
+.indice-letras a { min-width: 30px; text-align: center; padding: 4px 6px; border-radius: 6px; background: #fff;
+  border: 1px solid var(--borda); color: var(--cor); text-decoration: none; font-weight: 500; font-size: 0.88rem; }
+.indice-letras a.vazia { color: #c9c1b7; pointer-events: none; }
+.grupo-letra { margin-bottom: 14px; scroll-margin-top: 12px; }
+.grupo-letra h2.letra { font-size: 1.1rem; color: var(--cor); margin: 0 0 6px; }
+.col-nome { width: 30%; }
+.selo-tipo { border-radius: 999px; padding: 2px 10px; font-size: 0.78rem; white-space: nowrap; }
+.selo-tipo.campista { background: #f3e5f5; color: #6a1b9a; }
+.selo-tipo.preficha { background: #e3f2fd; color: #1565c0; }
+.acamp-tribo { display: inline-flex; align-items: center; gap: 4px; margin-right: 10px; white-space: nowrap; }
+.dividir-cidade .linha-form.tres-col { grid-template-columns: 90px 1fr auto; }
+.tabela-divisao td { padding: 6px 10px; }
+.tabela-divisao select { min-height: 36px; padding: 4px 8px; }
+.tabela-divisao tr.sem-nucleo td { background: #fff8e1; }
+.resumo-divisao .chip.sem { background: #fff4e5; color: #8a4f00; }
+.vazio { color: var(--texto-suave); text-align: center; }
+.grupo-letra .tabela { table-layout: fixed; }
+.grupo-letra .tabela td:nth-child(1) { width: 28%; }
+.grupo-letra .tabela td:nth-child(2) { width: 12%; }
+.grupo-letra .tabela td:nth-child(3) { width: 20%; }
+.grupo-letra .tabela td:nth-child(4) { width: 16%; }
+@media (max-width: 760px) { .grupo-letra .tabela { table-layout: auto; } }

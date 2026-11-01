@@ -231,7 +231,10 @@ curl -s https://app.seudominio.com.br/api/saude      # {"ok":true}
    "Inscrições em breve". (Também é possível ativar pelo terminal — veja a seção 10.)
 2. **Configurações** → confira nome, cor, contatos, textos e declarações; envie a **logo**;
    ajuste as **Regras da fila** (recusas para ir ao fim da fila; edições de preferência do cônjuge).
-3. **Núcleos** → crie os núcleos com as cidades/bairros de cada um.
+3. **Núcleos** → crie os núcleos com as cidades/bairros de cada um. Para uma cidade dividida
+   entre vários núcleos (ex.: Palhoça), use **Dividir cidade por bairros**: escolha a cidade,
+   crie os núcleos e indique o núcleo de cada bairro. Bairros novos que aparecerem nas pré-fichas
+   ficam marcados como "sem núcleo" nessa tela — volte lá de tempos em tempos.
 4. **Usuários** → crie as contas da equipe e dos coordenadores de núcleo (cada um recebe uma
    senha temporária, que você repassa).
 5. **Acampamentos** → cadastre as edições já realizadas que importam para as regras (ex.: as
