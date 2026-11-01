@@ -21,6 +21,150 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
 > 📘 **Instalação passo a passo no Linux:** [`docs/INSTALACAO.md`](docs/INSTALACAO.md)
 > (preparar o servidor, domínio, HTTPS, vários acampamentos, backup, atualização e solução de problemas).
 
+## Telas
+
+> Capturas do sistema funcionando, com **dados fictícios** de demonstração.
+
+<table>
+<tr>
+<td width="32%" valign="top"><strong>Formulário no celular</strong><br /><img src="docs/imagens/07-formulario-celular-preenchido.webp" alt="Formulário de pré-ficha no celular" /></td>
+<td valign="top"><strong>Fila de espera (administrador)</strong><br /><img src="docs/imagens/09-painel-fila-de-espera.webp" alt="Fila de espera com selos de preferência, recusa e fim da fila" />
+<br /><br /><strong>Ficha com preferência do cônjuge</strong> · <strong>Atualização pelo painel</strong><br />
+<img src="docs/imagens/11-painel-ficha-completa-conjuge-preferencia.webp" alt="Ficha completa com cônjuge e preferência" width="260" /> <img src="docs/imagens/30-painel-janela-atualizacao.webp" alt="Janela de atualização" width="440" /></td>
+</tr>
+</table>
+
+<details>
+<summary><strong>Formulário público</strong></summary>
+
+<p><em>Formulário no computador</em><br />
+<img src="docs/imagens/05-formulario-computador.webp" alt="Formulário no computador" width="700" /></p>
+
+<p><em>Avisos de campos obrigatórios</em><br />
+<img src="docs/imagens/06-formulario-validacao-campos.webp" alt="Avisos de campos obrigatórios" width="700" /></p>
+
+<p><em>Mensagem após o envio</em><br />
+<img src="docs/imagens/08-formulario-celular-enviado.webp" alt="Mensagem após o envio" width="300" /></p>
+
+<p><em>"Inscrições em breve" — antes da ativação do sistema</em><br />
+<img src="docs/imagens/01-formulario-inscricoes-em-breve.webp" alt=""Inscrições em breve" — antes da ativação do sistema" width="300" /></p>
+
+</details>
+
+<details>
+<summary><strong>Primeiro acesso e ativação</strong></summary>
+
+<p><em>Login da equipe</em><br />
+<img src="docs/imagens/02-painel-login.webp" alt="Login da equipe" width="700" /></p>
+
+<p><em>Troca obrigatória da senha temporária</em><br />
+<img src="docs/imagens/03-painel-primeiro-acesso-troca-senha.webp" alt="Troca obrigatória da senha temporária" width="700" /></p>
+
+<p><em>Ativação do sistema com a chave XXX-0000</em><br />
+<img src="docs/imagens/04-painel-ativacao-chave.webp" alt="Ativação do sistema com a chave XXX-0000" width="700" /></p>
+
+</details>
+
+<details>
+<summary><strong>Fila de espera e ficha</strong></summary>
+
+<p><em>Fila com selos: ★ preferência, recusa, fim da fila, possível duplicado</em><br />
+<img src="docs/imagens/09-painel-fila-de-espera.webp" alt="Fila com selos: ★ preferência, recusa, fim da fila, possível duplicado" /></p>
+
+<p><em>Filtro "Preferência"</em><br />
+<img src="docs/imagens/10-painel-fila-filtro-preferencia.webp" alt="Filtro "Preferência"" /></p>
+
+<p><em>Ficha: cônjuge vinculado e preferência para o 25º e 26º</em><br />
+<img src="docs/imagens/11-painel-ficha-completa-conjuge-preferencia.webp" alt="Ficha: cônjuge vinculado e preferência para o 25º e 26º" width="400" /></p>
+
+<p><em>Ficha: 2 recusas → fim da fila, com a trilha de auditoria</em><br />
+<img src="docs/imagens/12-painel-ficha-recusas-fim-da-fila-historico.webp" alt="Ficha: 2 recusas → fim da fila, com a trilha de auditoria" width="400" /></p>
+
+<p><em>Registrar recusa (comentário obrigatório)</em><br />
+<img src="docs/imagens/13-painel-registrar-recusa.webp" alt="Registrar recusa (comentário obrigatório)" /></p>
+
+</details>
+
+<details>
+<summary><strong>Nomes, resumo, acampamentos e auditoria</strong></summary>
+
+<p><em>Nomes (A–Z): pré-fichas e campistas</em><br />
+<img src="docs/imagens/14-painel-nomes-a-z.webp" alt="Nomes (A–Z): pré-fichas e campistas" /></p>
+
+<p><em>Resumo por cidade e bairro, por modalidade</em><br />
+<img src="docs/imagens/15-painel-resumo-por-cidade-e-bairro.webp" alt="Resumo por cidade e bairro, por modalidade" /></p>
+
+<p><em>Acampamentos realizados</em><br />
+<img src="docs/imagens/16-painel-acampamentos.webp" alt="Acampamentos realizados" /></p>
+
+<p><em>Edição do acampamento: quem fez e a cor da tribo</em><br />
+<img src="docs/imagens/17-painel-acampamento-participantes-tribos.webp" alt="Edição do acampamento: quem fez e a cor da tribo" /></p>
+
+<p><em>Auditoria</em><br />
+<img src="docs/imagens/18-painel-auditoria.webp" alt="Auditoria" /></p>
+
+</details>
+
+<details>
+<summary><strong>Núcleos, usuários e configurações</strong></summary>
+
+<p><em>Núcleos e suas áreas</em><br />
+<img src="docs/imagens/19-painel-nucleos.webp" alt="Núcleos e suas áreas" /></p>
+
+<p><em>Dividir cidade por bairros (ex.: Palhoça em 4 núcleos)</em><br />
+<img src="docs/imagens/20-painel-dividir-palhoca-por-bairros.webp" alt="Dividir cidade por bairros (ex.: Palhoça em 4 núcleos)" /></p>
+
+<p><em>Usuários e papéis (senha temporária gerada)</em><br />
+<img src="docs/imagens/21-painel-usuarios.webp" alt="Usuários e papéis (senha temporária gerada)" /></p>
+
+<p><em>Configurações: marca, textos, declarações, regras da fila e tribos</em><br />
+<img src="docs/imagens/22-painel-configuracoes-marca.webp" alt="Configurações: marca, textos, declarações, regras da fila e tribos" /></p>
+
+</details>
+
+<details>
+<summary><strong>Coordenador de núcleo</strong></summary>
+
+<p><em>Fila apenas do núcleo</em><br />
+<img src="docs/imagens/23-coordenador-fila-do-nucleo.webp" alt="Fila apenas do núcleo" /></p>
+
+<p><em>Nomes: pré-fichas do núcleo e todos os campistas</em><br />
+<img src="docs/imagens/24-coordenador-nomes-prefichas-e-campistas.webp" alt="Nomes: pré-fichas do núcleo e todos os campistas" /></p>
+
+<p><em>Campista de outro núcleo em modo consulta</em><br />
+<img src="docs/imagens/25-coordenador-campista-outro-nucleo-consulta.webp" alt="Campista de outro núcleo em modo consulta" width="400" /></p>
+
+</details>
+
+<details>
+<summary><strong>Atualização pelo painel</strong></summary>
+
+<p><em>Botão "Atualização disponível" (aparece só quando há versão nova)</em><br />
+<img src="docs/imagens/29-painel-botao-atualizacao-disponivel.webp" alt="Botão "Atualização disponível" (aparece só quando há versão nova)" /></p>
+
+<p><em>O que há de novo e "Atualizar agora"</em><br />
+<img src="docs/imagens/30-painel-janela-atualizacao.webp" alt="O que há de novo e "Atualizar agora"" /></p>
+
+<p><em>Andamento da atualização</em><br />
+<img src="docs/imagens/31-painel-atualizando.webp" alt="Andamento da atualização" /></p>
+
+</details>
+
+<details>
+<summary><strong>Celular e outra marca</strong></summary>
+
+<p><em>Painel no celular</em><br />
+<img src="docs/imagens/26-celular-painel-fila.webp" alt="Painel no celular" width="300" /></p>
+
+<p><em>Mesmo sistema com a marca da Beata Albertina</em><br />
+<img src="docs/imagens/27-outra-marca-beata-albertina-formulario.webp" alt="Mesmo sistema com a marca da Beata Albertina" width="300" /></p>
+
+<p><em>Painel com a marca da Beata Albertina</em><br />
+<img src="docs/imagens/28-outra-marca-beata-albertina-painel.webp" alt="Painel com a marca da Beata Albertina" /></p>
+
+</details>
+
+
 ## Funcionalidades
 
 **Feito para vários acampamentos**
