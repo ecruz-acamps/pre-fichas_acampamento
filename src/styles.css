@@ -509,3 +509,7 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
 .confirmar p { margin: 0 0 10px; }
 .botao-secundario.perigo { color: #b3261e; border-color: #b3261e; margin-right: 12px; }
 .acoes .botao-secundario { margin-left: 12px; }
+
+.selo-conta { background: var(--cor-clara); color: var(--cor); border-radius: 999px; padding: 2px 10px; font-size: 0.85rem; }
+.acoes-conta { margin: -4px 0 16px; }
+.acoes-conta .linha-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

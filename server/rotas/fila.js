@@ -51,8 +51,11 @@ export const SQL_FICHAS = (where) => `
                 order by ps.criado_em desc)
                 from preferencias_situacao ps left join pre_fichas c on c.id = ps.conjuge_ficha_id
                where ps.pre_ficha_id = p.id), '[]') as preferencias,
-    (select c.nome_completo from pre_fichas c where c.id = p.conjuge_id) as conjuge_vinculado_nome
+    (select c.nome_completo from pre_fichas c where c.id = p.conjuge_id) as conjuge_vinculado_nome,
+    (p.participante_id is not null) as tem_conta, pc.email as conta_email, pc.ultimo_login as conta_ultimo_login,
+    (pc.id is not null and pc.senha_hash is null) as conta_sem_senha
     from pre_fichas p left join usuarios u on u.id = p.atualizado_por
+    left join participantes pc on pc.id = p.participante_id
    where ${where}
    order by p.entrada_fila_em, p.id`
 

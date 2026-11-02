@@ -125,7 +125,7 @@ export default function Fila({ usuario, marca, nucleos }) {
       if (preferencia === 'sem' && preferenciaAtiva(l)) return false
       if (!termo) return true
       return [l.nome_completo, l.email, l.cidade, l.bairro, l.paroquia].some((v) => normalizar(v).includes(termo)) ||
-        (termoDigitos.length >= 4 && somenteDigitos(l.telefone).includes(termoDigitos))
+        (termoDigitos.length >= 4 && (somenteDigitos(l.telefone).includes(termoDigitos) || (l.cpf ?? '').includes(termoDigitos)))
     })
   }, [porLugar, modalidade, filtroStatus, busca, preferencia])
 
@@ -250,6 +250,7 @@ export default function Fila({ usuario, marca, nucleos }) {
                   </td>
                   <td>
                     {l.nome_completo}
+                    {l.tem_conta && <span className="selo-conta" title={`Tem conta${l.conta_email ? `: ${l.conta_email}` : ''}`}> 🔑</span>}
                     {duplicados.has(l.id) && <span className="selo alerta" title="Mesmo e-mail ou telefone de outra ficha">possível duplicado</span>}
                     <SeloPreferencia ficha={l} />
                     {l.recusas_seguidas > 0 && (

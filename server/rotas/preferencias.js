@@ -13,6 +13,33 @@ export default async function rotasPreferencias(app) {
   const gestao = { onRequest: [app.exigirLogin, exigirGestao] }
   const fichaAtualizada = async (id) => limparFicha((await pool.query(SQL_FICHAS('p.id = $1'), [id])).rows[0])
 
+  // Vincula uma pré-ficha (ex.: feita antes das contas) à conta da pessoa, pelo CPF da conta.
+  // cpf = null desvincula. A equipe confere a identidade antes (ex.: pelo telefone).
+  app.put('/api/admin/pre-fichas/:id/conta', gestao, async (req, reply) => {
+    const id = Number(req.params.id)
+    const cpf = req.body?.cpf === null ? null : String(req.body?.cpf ?? '').replace(/\D/g, '')
+    if (!Number.isInteger(id)) return reply.code(400).send({ mensagem: 'Pré-ficha inválida.' })
+    let conta = null
+    if (cpf !== null) {
+      if (cpf.length !== 11) return reply.code(400).send({ mensagem: 'Informe o CPF da conta (11 dígitos).' })
+      conta = (await pool.query('select id, email from participantes where cpf = $1', [cpf])).rows[0]
+      if (!conta) return reply.code(404).send({ mensagem: 'Não existe conta com este CPF. Peça para a pessoa criar a conta primeiro.' })
+    }
+    const ok = await transacao(pool, async (db) => {
+      const { rows: [f] } = await db.query('select id, participante_id from pre_fichas where id = $1 for update', [id])
+      if (!f) return false
+      await db.query('update pre_fichas set participante_id = $2, cpf = coalesce($3, cpf), atualizado_em = now(), atualizado_por = $4 where id = $1',
+        [id, conta?.id ?? null, cpf, req.usuario.id])
+      await db.query(
+        `insert into pre_fichas_historico (pre_ficha_id, usuario_id, tipo, observacao, detalhes) values ($1, $2, 'observacao', $3, $4)`,
+        [id, req.usuario.id, conta ? `Pré-ficha vinculada à conta ${conta.email}.` : 'Pré-ficha desvinculada da conta do participante.',
+          JSON.stringify({ conta_anterior: f.participante_id, conta_nova: conta?.id ?? null })])
+      return true
+    })
+    if (!ok) return reply.code(404).send({ mensagem: 'Pré-ficha não encontrada.' })
+    return { ficha: await fichaAtualizada(id) }
+  })
+
   // Vincula (ou desvincula, com conjuge_id = null) as fichas de dois cônjuges.
   app.put('/api/admin/pre-fichas/:id/conjuge', gestao, async (req, reply) => {
     const id = Number(req.params.id)

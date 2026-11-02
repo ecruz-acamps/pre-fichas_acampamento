@@ -1078,6 +1078,24 @@ describe('API', { skip: pular }, () => {
       assert.equal((await conta('bia', 'POST', '/api/conta/pre-ficha', casada)).statusCode, 201)
     })
 
+    test('painel mostra CPF e conta; equipe vincula ficha antiga à conta pelo CPF', async () => {
+      await enviar({ nome_completo: 'Carla Antiga', email: 'carla@x.com', telefone: '(48) 98888-1111' })
+      const id = await idPorNome('Carla Antiga')
+      let f = (await req('admin', 'GET', '/api/admin/pre-fichas')).json().find((x) => x.id === id)
+      assert.equal(f.tem_conta, false)
+      assert.equal((await req('coord', 'PUT', `/api/admin/pre-fichas/${id}/conta`, { cpf: CPF })).statusCode, 403)
+      assert.equal((await req('equipe', 'PUT', `/api/admin/pre-fichas/${id}/conta`, { cpf: '390.533.447-05' })).statusCode, 404)
+      const r = await req('equipe', 'PUT', `/api/admin/pre-fichas/${id}/conta`, { cpf: CPF })
+      assert.equal(r.statusCode, 200)
+      assert.equal(r.json().ficha.tem_conta, true)
+      assert.equal(r.json().ficha.cpf, '52998224725')
+      assert.equal(r.json().ficha.conta_email, 'ana@conta.com')
+      const des = await req('admin', 'PUT', `/api/admin/pre-fichas/${id}/conta`, { cpf: null })
+      assert.equal(des.json().ficha.tem_conta, false)
+      f = (await req('admin', 'GET', `/api/admin/pre-fichas/${id}/historico`)).json()
+      assert.ok(f.some((h) => /vinculada à conta ana@conta.com/.test(h.observacao ?? '')))
+    })
+
     test('contas antigas importadas criam a senha pelo link do e-mail (uso único)', async () => {
       const csv = 'nome;cpf;email;data_nascimento\nJoão Antigo;390.533.447-05;joao@antigo.com;10/02/1990\nRuim;123;x@y.com;\n'
       const imp = await req('admin', 'POST', '/api/admin/participantes/importar', { csv })
