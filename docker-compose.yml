@@ -52,7 +52,8 @@ services:
       TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
       TURNSTILE_SECRET: ${TURNSTILE_SECRET:-}
       VIACEP_URL: ${VIACEP_URL:-https://viacep.com.br/ws}
-      # Identidade aplicada só na primeira inicialização (depois, pelo painel)
+      # Nome do acampamento (aplicado só na primeira inicialização; depois, pelo painel)
+      NOME_ACAMPAMENTO: ${NOME_ACAMPAMENTO:-}
       MARCA_INICIAL: ${MARCA_INICIAL:-}
       # Endereço público (prévia de links no WhatsApp)
       URL_PUBLICA: ${URL_PUBLICA:-}
@@ -83,8 +84,8 @@ services:
     depends_on:
       - app
     ports:
-      - "80:80"
-      - "443:443"
+      - "${PORTA_HTTP:-80}:80"
+      - "${PORTA_HTTPS:-443}:443"
     environment:
       DOMINIO: ${DOMINIO:-:80}
     volumes:

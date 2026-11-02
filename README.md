@@ -153,16 +153,11 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
 </details>
 
 <details>
-<summary><strong>Celular e outra marca</strong></summary>
+<summary><strong>Celular</strong></summary>
 
 <p><em>Painel no celular</em><br />
 <img src="docs/imagens/26-celular-painel-fila.webp" alt="Painel no celular" width="300" /></p>
 
-<p><em>Mesmo sistema com a marca da Beata Albertina</em><br />
-<img src="docs/imagens/27-outra-marca-beata-albertina-formulario.webp" alt="Mesmo sistema com a marca da Beata Albertina" width="300" /></p>
-
-<p><em>Painel com a marca da Beata Albertina</em><br />
-<img src="docs/imagens/28-outra-marca-beata-albertina-painel.webp" alt="Painel com a marca da Beata Albertina" /></p>
 
 </details>
 
@@ -170,13 +165,13 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
 ## Funcionalidades
 
 **Feito para vários acampamentos**
-- Cada acampamento tem **sua própria instalação** (banco de dados separado): os dados do
-  São Padre Pio e da Beata Albertina nunca se misturam. Podem ficar em servidores diferentes
+- Cada acampamento tem **sua própria instalação** (banco de dados separado): os dados de
+  um acampamento nunca se misturam com os de outro. Podem ficar em servidores diferentes
   ou no mesmo servidor, cada um com seu domínio.
 - **Marca configurável** sem mexer no código: nome, logo, cor, contatos, textos do formulário,
   declarações obrigatórias e tribos — pelo painel (**Configurações**) ou por arquivo
   (`marcas/*.json`). Vale na hora, sem reiniciar. Veja [`marcas/README.md`](marcas/README.md).
-- Assistente de instalação: `./scripts/novo-acampamento.sh` coloca um acampamento no ar.
+- **Instalação em um único comando** (`instalar.sh`): instala o Docker, baixa o sistema, pergunta o nome do acampamento e coloca no ar.
 - **Atualização pelo painel**: o sistema compara a versão instalada com o GitHub; quando há versão
   nova, o administrador vê o botão **"Atualização disponível"**, confere o que mudou e clica em
   **Atualizar agora** — backup, código novo, reconstrução e reinício, acompanhados na tela. (Também
@@ -238,30 +233,26 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
 
 ---
 
-## Instalação com Docker (recomendado)
+## Instalação (um único comando)
 
-Resumo abaixo — o guia completo está em [`docs/INSTALACAO.md`](docs/INSTALACAO.md).
-
-Requisitos: um servidor Linux com [Docker Engine e o plugin Compose](https://docs.docker.com/engine/install/).
-Para HTTPS automático, um domínio apontando para o IP do servidor, com as portas 80 e 443 liberadas.
+Num servidor Linux (Ubuntu ou Debian), rode:
 
 ```bash
-sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/prefichas-sao-padre-pio
-cd /opt/prefichas-sao-padre-pio
-sudo ./scripts/novo-acampamento.sh \
-    --marca marcas/sao-padre-pio.json \
-    --dominio app.acampamentosaopadrepio.com.br \
-    --admin voce@email.com --nome-admin "Seu Nome"
+curl -fsSL https://raw.githubusercontent.com/ecruz-acamps/pre-fichas_acampamento/main/instalar.sh | sudo bash
 ```
 
-O assistente gera o `.env` (com senha aleatória para o banco), sobe banco + aplicação + HTTPS,
-aplica a marca, cria o primeiro administrador (mostra a senha temporária) e pede a **chave de
-ativação** (ou use `--chave XXX-0000`; se deixar em branco, o painel pede no primeiro acesso).
-Acesse `https://SEU-DOMINIO/` (formulário) e `https://SEU-DOMINIO/admin/` (painel).
+O instalador faz tudo sozinho: instala o que faltar (git, Docker), baixa o sistema em
+`/opt/prefichas-NOME`, **pergunta o nome do acampamento**, o domínio (opcional) e os dados do
+administrador, sobe banco + aplicação, cria o administrador (mostra a senha temporária) e pede a
+**chave de ativação** (ENTER = ativar depois pelo painel). No fim mostra os endereços do
+formulário e do painel.
 
-Prefere configurar à mão? `cp .env.example .env`, edite e rode `docker compose up -d --build`.
+- **Com domínio** (ex.: `prefichas.seuacampamento.com.br` apontando para o servidor): HTTPS automático.
+- **Sem domínio**: deixe em branco e acesse por `http://IP-DO-SERVIDOR`.
+- **Porta 80/443 já ocupada** por outro programa: o instalador avisa quem está usando e instala
+  numa porta livre (padrão `http://IP:8180`; escolha outra na pergunta "Porta do site").
 
-**Rede interna, sem domínio público?** Use `--dominio :80` (acesso por `http://IP-DO-SERVIDOR`).
+Guia completo e instalação manual: [`docs/INSTALACAO.md`](docs/INSTALACAO.md).
 
 **Já tem Nginx no servidor?** Rode o assistente com `--multi` (sem Caddy próprio) e use
 `deploy/nginx.conf` apontando para a porta local (`--porta`, padrão 3000).
@@ -272,26 +263,29 @@ Cada acampamento fica em uma pasta própria, com porta local diferente, e um ún
 na frente atende todos os domínios:
 
 ```bash
-sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/prefichas-sao-padre-pio
-sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/prefichas-beata-albertina
+sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/prefichas-acampamento-a
+sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/prefichas-acampamento-b
 
-cd /opt/prefichas-sao-padre-pio && sudo ./scripts/novo-acampamento.sh --multi --porta 3001 \
-    --marca marcas/sao-padre-pio.json --dominio app.acampamentosaopadrepio.com.br \
-    --admin admin@saopadrepio.com.br --nome-admin "Coordenação SPP"
+cd /opt/prefichas-acampamento-a && sudo ./scripts/novo-acampamento.sh --multi --porta 3001 \
+    --nome "Acampamento A" --dominio prefichas.acampamento-a.com.br \
+    --admin admin@acampamento-a.com.br --nome-admin "Coordenação A"
 
-cd /opt/prefichas-beata-albertina && sudo ./scripts/novo-acampamento.sh --multi --porta 3002 \
-    --marca marcas/beata-albertina.json --dominio prefichas.beataalbertina.com.br \
-    --admin admin@beataalbertina.com.br --nome-admin "Coordenação Beata"
+cd /opt/prefichas-acampamento-b && sudo ./scripts/novo-acampamento.sh --multi --porta 3002 \
+    --nome "Acampamento B" --dominio prefichas.acampamento-b.com.br \
+    --admin admin@acampamento-b.com.br --nome-admin "Coordenação B"
 ```
 
 Depois instale o Caddy no servidor e use [`deploy/Caddyfile.multi`](deploy/Caddyfile.multi)
 (o assistente imprime o bloco de cada domínio). Cada instalação tem seu banco, seus usuários,
 seus backups e sua marca.
 
-### Novo acampamento? Crie a marca dele
+### Logo, cores e tribos
+
+O nome é escolhido na instalação. Logo, cor, contatos e tribos ficam no painel → **Configurações**.
+Se preferir arquivo:
 
 ```bash
-cp marcas/sao-padre-pio.json marcas/meu-acampamento.json   # edite nome, cor, contatos, tribos...
+cp marcas/modelo.json marcas/meu-acampamento.json   # edite nome, cor, contatos, tribos...
 cp ~/logo.png marcas/meu-acampamento.png                     # e indique "logo": "meu-acampamento.png" no .json
 ```
 
@@ -306,7 +300,7 @@ docker compose exec app node server/cli.js listar
 docker compose exec app node server/cli.js redefinir-senha pessoa@email.com
 docker compose exec app node server/cli.js desativar pessoa@email.com
 docker compose exec app node server/cli.js criar-coordenador pessoa@email.com "Nome"
-docker compose exec app node server/cli.js marca aplicar marcas/beata-albertina.json
+docker compose exec app node server/cli.js marca aplicar marcas/meu-acampamento.json
 docker compose exec app node server/cli.js marca exportar        # mostra a marca atual (JSON)
 
 # Atualizar: pelo botão "Atualização disponível" no painel, ou pelo terminal
@@ -340,7 +334,7 @@ sudo chmod 600 /etc/pre-fichas.env
 sudo cp deploy/pre-fichas.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now pre-fichas
 
-echo 'MARCA_INICIAL=marcas/sao-padre-pio.json' | sudo tee -a /etc/pre-fichas.env
+echo 'NOME_ACAMPAMENTO=Nome do Acampamento' | sudo tee -a /etc/pre-fichas.env
 
 # Primeiro administrador
 sudo bash -c 'set -a; . /etc/pre-fichas.env; node server/cli.js criar-admin voce@email.com "Seu Nome"'

@@ -40,7 +40,9 @@ export function lerConfig(env = process.env) {
     // Endereço público do site (ex.: https://prefichas.seuacampamento.com.br), usado na
     // prévia de links (WhatsApp). Nunca é deduzido do cabeçalho da requisição.
     urlPublica: (env.URL_PUBLICA || '').replace(/\/+$/, '') || null,
-    // Arquivo de marca aplicado na primeira inicialização (ex.: marcas/sao-padre-pio.json)
+    // Primeira inicialização: nome do acampamento escolhido na instalação (e, opcional,
+    // um arquivo de marca completo). Depois disso, tudo é ajustado pelo painel.
+    nomeInicial: (env.NOME_ACAMPAMENTO || '').trim() || null,
     marcaInicial: env.MARCA_INICIAL || null,
     // Aviso de atualização: compara a versão instalada com o GitHub
     atualizacao: {

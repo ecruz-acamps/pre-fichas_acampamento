@@ -1,15 +1,15 @@
 # Marcas (identidade de cada acampamento)
 
-Cada arquivo `.json` desta pasta descreve um acampamento: nome, cor, contatos, textos do
+O nome do acampamento é escolhido na instalação. Para configurar tudo por arquivo, cada `.json` descreve um acampamento: nome, cor, contatos, textos do
 formulário, declarações obrigatórias e as tribos (nome + cor).
 
 ## Aplicar em uma instalação
 
 ```bash
 # Docker
-docker compose exec app node server/cli.js marca aplicar marcas/beata-albertina.json
+docker compose exec app node server/cli.js marca aplicar marcas/meu-acampamento.json
 # Sem Docker
-npm run usuarios -- marca aplicar marcas/beata-albertina.json
+npm run usuarios -- marca aplicar marcas/meu-acampamento.json
 ```
 
 Tudo também pode ser ajustado pelo painel: **Configurações** (somente administradores).
@@ -17,7 +17,7 @@ As alterações valem na hora, sem reiniciar nem gerar o site de novo.
 
 ## Criar a marca de um novo acampamento
 
-1. Copie um arquivo existente: `cp marcas/sao-padre-pio.json marcas/novo-acampamento.json`
+1. Copie o modelo: `cp marcas/modelo.json marcas/novo-acampamento.json`
 2. Edite os campos (veja abaixo).
 3. (Opcional) Coloque a logo nesta pasta e indique no arquivo: `"logo": "novo-acampamento.png"`
    — PNG, JPG, WEBP ou SVG, até 1 MB. De preferência quadrada ou horizontal, com fundo transparente.
