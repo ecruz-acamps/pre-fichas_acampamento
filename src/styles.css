@@ -451,6 +451,8 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
 .botao-atualizacao { background: #e8590c; color: #fff; border: 0; border-radius: 999px; padding: 8px 16px; font: inherit;
   font-size: 0.9rem; font-weight: 500; cursor: pointer; box-shadow: 0 0 0 0 rgba(232, 89, 12, 0.5); animation: pulso 2s infinite; }
 .botao-atualizacao:hover { background: #c94d0a; }
+.botao-atualizacao.discreto { background: transparent; color: inherit; border: 1px solid currentColor; animation: none; opacity: 0.85; }
+.botao-atualizacao.discreto:hover { background: rgba(127, 127, 127, 0.15); opacity: 1; }
 @keyframes pulso { 0% { box-shadow: 0 0 0 0 rgba(232, 89, 12, 0.45); } 70% { box-shadow: 0 0 0 10px rgba(232, 89, 12, 0); } 100% { box-shadow: 0 0 0 0 rgba(232, 89, 12, 0); } }
 .modal-fundo.centro-tela { justify-content: center; align-items: center; padding: 16px; }
 .dialogo-atualizacao { width: min(560px, 100%); max-height: 90vh; overflow-y: auto; }
