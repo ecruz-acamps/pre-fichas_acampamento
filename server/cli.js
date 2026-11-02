@@ -15,6 +15,7 @@ import { criarPool, migrar } from './db.js'
 import { gerarHash, gerarSenhaTemporaria } from './senha.js'
 import { carregarMarca, conferirImagem, salvarLogo, salvarMarca } from './marca.js'
 import { ativarLicenca, gerarHashChave, situacaoLicenca } from './licenca.js'
+import { importarParticipantes } from './participantes.js'
 
 const TIPO_POR_EXTENSAO = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' }
 
@@ -125,6 +126,16 @@ try {
       } else {
         throw new Error(AJUDA)
       }
+      break
+    }
+    case 'participantes': {
+      // node server/cli.js participantes importar contas.csv   (colunas: cpf; email; nome; data_nascimento)
+      const [acao, arquivo] = args
+      if (acao !== 'importar' || !arquivo) throw new Error('Uso: node server/cli.js participantes importar contas.csv')
+      const r = await importarParticipantes(pool, await readFile(arquivo, 'utf8'))
+      console.log(`Importadas: ${r.importados} · já existiam: ${r.ignorados} · com erro: ${r.erros.length}`)
+      for (const e of r.erros) console.log(`  linha ${e.linha}: ${e.motivo}`)
+      console.log('As pessoas criam a senha em "Esqueci minha senha" (link enviado ao e-mail).')
       break
     }
     case 'licenca': {

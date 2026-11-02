@@ -149,6 +149,14 @@ Ele instala o que faltar (git, curl, Docker), baixa o sistema em `/opt/prefichas
 3. **E-mail e nome do administrador**;
 4. **Chave de ativação** (ENTER = ativar depois pelo painel).
 
+**Endereço automático na Cloudflare:** o instalador sugere `NOME.movimentocampista.com.br`
+(pode trocar o NOME) e publica sozinho pelo **Cloudflare Tunnel**: cria o DNS e o HTTPS, sem
+usar as portas 80/443 e sem abrir portas no roteador. Na 1ª instalação ele pede um token da API
+da Cloudflare (crie em *dash.cloudflare.com → Perfil → Tokens de API* com as permissões
+**Conta › Cloudflare Tunnel › Editar** e **Zona › DNS › Editar** para `movimentocampista.com.br`);
+o token fica guardado em `/etc/prefichas/cloudflare.env` (só o root lê) e não é pedido de novo.
+Outro domínio: `DOMINIO_BASE=outro.com.br`; sem Cloudflare (acesso pelo IP): `DOMINIO_BASE=`.
+
 Sem perguntas (automação): `curl -fsSL …/instalar.sh | sudo NOME="Acampamento Exemplo" DOMINIO= ADMIN_EMAIL=voce@email.com ADMIN_NOME="Seu Nome" bash`
 
 Se as portas 80/443 já estiverem em uso por outro programa, o instalador mostra qual é e usa uma
@@ -505,6 +513,27 @@ Atualização pelo painel: rode uma vez `cd /opt/pre-fichas && sudo MODO=local .
 Logs: `sudo journalctl -u pre-fichas -f`.
 
 ---
+
+## 11b. E-mail (Esqueci minha senha e contas antigas)
+
+O link de "Esqueci minha senha" — e a criação de senha das contas antigas importadas — é enviado
+por e-mail. O instalador pergunta um Gmail; para configurar depois, acrescente ao `.env`:
+
+```
+SMTP_HOST=smtp.gmail.com
+SMTP_PORTA=465
+SMTP_USUARIO=inscricoes@gmail.com
+SMTP_SENHA=senhadeappdogoogle
+SMTP_REMETENTE=inscricoes@gmail.com
+```
+
+No Gmail use uma **senha de app** (myaccount.google.com → Segurança → Senhas de app; exige
+verificação em duas etapas na conta Google). Depois: `sudo docker compose up -d`.
+
+**Importar contas antigas:** painel → Configurações → *Contas dos participantes* → planilha CSV com
+as colunas `cpf`, `email`, `nome`, `data_nascimento` (ou `docker compose exec app node server/cli.js
+participantes importar contas.csv`). As contas entram sem senha: a pessoa clica em "Esqueci minha
+senha" e cria a senha pelo link. Nunca é usado o CPF como senha.
 
 ## 12. Solução de problemas
 

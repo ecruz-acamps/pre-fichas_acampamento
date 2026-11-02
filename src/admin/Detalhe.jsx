@@ -5,7 +5,7 @@ import { DescricaoEvento, SeloTipo, autorEvento } from './EventoAuditoria.jsx'
 import ConjugePreferencia from './ConjugePreferencia.jsx'
 import { SeloPreferencia } from './Preferencia.jsx'
 import { ESTADOS_CIVIS, MODALIDADES, SEXOS, STATUS, rotuloDe } from '../../shared/opcoes.js'
-import { calcularIdade, formatarData, formatarDataHora, linkWhatsApp, mascaraCep, simNao } from '../../shared/util.js'
+import { calcularIdade, formatarData, formatarDataHora, linkWhatsApp, mascaraCep, mascaraCpf, simNao } from '../../shared/util.js'
 
 function Item({ rotulo, children }) {
   const vazio = children === null || children === undefined || children === ''
@@ -14,6 +14,56 @@ function Item({ rotulo, children }) {
       <dt>{rotulo}</dt>
       <dd className={vazio ? 'vazio' : ''}>{vazio ? '—' : children}</dd>
     </div>
+  )
+}
+
+/** Conta do participante: se a pessoa tem conta, e vincular/desvincular (admin e equipe). */
+function ContaParticipante({ f, podeGerir, onFichaAtualizada }) {
+  const [cpf, setCpf] = useState('')
+  const [abrir, setAbrir] = useState(false)
+  const [erro, setErro] = useState('')
+  async function salvar(valor) {
+    setErro('')
+    try {
+      const r = await api.put(`/api/admin/pre-fichas/${f.id}/conta`, { cpf: valor })
+      onFichaAtualizada?.(r.ficha)
+      setAbrir(false); setCpf('')
+    } catch (e) { setErro(e.dados?.mensagem || 'Não foi possível salvar.') }
+  }
+  return (
+    <>
+      <h3>Conta do participante</h3>
+      <dl className="grade">
+        <Item rotulo="Conta">
+          {f.tem_conta ? (
+            <span className="selo-conta">🔑 Tem conta{f.conta_email ? ` · ${f.conta_email}` : ''}</span>
+          ) : <span className="dica">Sem conta (pré-ficha feita sem login)</span>}
+        </Item>
+        {f.tem_conta && (
+          <Item rotulo="Último acesso">
+            {f.conta_sem_senha ? 'ainda não criou a senha (conta importada)' : f.conta_ultimo_login ? formatarDataHora(f.conta_ultimo_login) : 'nunca entrou'}
+          </Item>
+        )}
+      </dl>
+      {podeGerir && (
+        <div className="acoes-conta">
+          {!abrir ? (
+            <>
+              <button className="link inline" onClick={() => setAbrir(true)}>{f.tem_conta ? 'Trocar a conta vinculada' : 'Vincular a uma conta'}</button>
+              {f.tem_conta && <> · <button className="link inline perigo" onClick={() => window.confirm('Desvincular esta pré-ficha da conta? A pessoa deixa de vê-la na área dela.') && salvar(null)}>desvincular</button></>}
+            </>
+          ) : (
+            <div className="linha-form">
+              <input placeholder="CPF da conta" value={cpf} onChange={(e) => setCpf(mascaraCpf(e.target.value))} inputMode="numeric" aria-label="CPF da conta" />
+              <button className="botao-secundario" onClick={() => salvar(cpf)}>Vincular</button>
+              <button className="link inline" onClick={() => setAbrir(false)}>cancelar</button>
+            </div>
+          )}
+          <small className="dica bloco">Use para fichas feitas antes das contas: confira a identidade da pessoa (ex.: pelo telefone) e informe o CPF da conta dela.</small>
+          {erro && <div className="alerta-erro">{erro}</div>}
+        </div>
+      )}
+    </>
   )
 }
 
@@ -185,6 +235,7 @@ export default function Detalhe({ ficha: f, marca, usuario, todas = [], posicao,
 
           <h3>Dados pessoais</h3>
           <dl className="grade">
+            <Item rotulo="CPF">{f.cpf ? mascaraCpf(f.cpf) : <span className="dica">não informado</span>}</Item>
             <Item rotulo="Data de nascimento">{formatarData(f.data_nascimento)} ({calcularIdade(f.data_nascimento)} anos)</Item>
             <Item rotulo="Sexo">{rotuloDe(SEXOS, f.sexo)}</Item>
             <Item rotulo="Estado civil">{rotuloDe(ESTADOS_CIVIS, f.estado_civil)}</Item>
@@ -204,6 +255,8 @@ export default function Detalhe({ ficha: f, marca, usuario, todas = [], posicao,
             <Item rotulo="Paróquia">{f.paroquia}</Item>
             <Item rotulo="Pastoral">{f.participa_pastoral ? `Sim — ${f.pastoral_qual || ''}` : 'Não'}</Item>
           </dl>
+
+          <ContaParticipante f={f} podeGerir={!somenteLeitura && ['admin', 'equipe'].includes(usuario?.papel)} onFichaAtualizada={onFichaAtualizada} />
 
           <h3>Contato</h3>
           <dl className="grade">

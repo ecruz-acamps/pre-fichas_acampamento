@@ -42,6 +42,17 @@ export function lerConfig(env = process.env) {
     urlPublica: (env.URL_PUBLICA || '').replace(/\/+$/, '') || null,
     // Primeira inicialização: nome do acampamento escolhido na instalação (e, opcional,
     // um arquivo de marca completo). Depois disso, tudo é ajustado pelo painel.
+    // Contas dos participantes: a página inicial pede login; a inscrição exige conta.
+    contaObrigatoria: bool(env.CONTA_OBRIGATORIA, true),
+    // Envio de e-mails (recuperação de senha). Sem SMTP_HOST, a recuperação por e-mail fica desligada.
+    smtp: env.SMTP_HOST ? {
+      host: env.SMTP_HOST,
+      porta: int(env.SMTP_PORTA, 587),
+      seguro: bool(env.SMTP_SEGURO, int(env.SMTP_PORTA, 587) === 465),
+      usuario: env.SMTP_USUARIO || '',
+      senha: env.SMTP_SENHA || '',
+      remetente: env.SMTP_REMETENTE || env.SMTP_USUARIO || '',
+    } : null,
     nomeInicial: (env.NOME_ACAMPAMENTO || '').trim() || null,
     marcaInicial: env.MARCA_INICIAL || null,
     // Aviso de atualização: compara a versão instalada com o GitHub

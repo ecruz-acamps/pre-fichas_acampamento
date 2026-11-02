@@ -35,6 +35,8 @@ export const MARCA_PADRAO = {
   recusasParaFimDaFila: 2,
   // Quantas edições seguintes o cônjuge de quem fez o acampamento tem preferência (0 = desligado)
   edicoesPreferenciaConjuge: 2,
+  // Área do participante: mostrar a posição na fila (desligado = mostra só a situação)
+  mostrarPosicaoFila: false,
 }
 
 const COR = /^#[0-9a-fA-F]{6}$/
@@ -80,6 +82,8 @@ export function validarMarca(entrada) {
     if (!Number.isInteger(n) || n < 0 || n > 10) e.edicoesPreferenciaConjuge = 'Use um número de 0 a 10.'
     else m.edicoesPreferenciaConjuge = n
   }
+
+  if (bruto.mostrarPosicaoFila !== undefined) m.mostrarPosicaoFila = bruto.mostrarPosicaoFila === true
 
   if (bruto.termos !== undefined) {
     const termos = Array.isArray(bruto.termos)

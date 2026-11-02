@@ -164,6 +164,15 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
 
 ## Funcionalidades
 
+**Conta do participante**
+- A página inicial é a **tela de entrada**: CPF ou e-mail + senha, "Esqueci minha senha" e "Crie uma aqui".
+- Com a conta, a pessoa faz a inscrição, vê a situação (e, se o acampamento quiser, a **posição na
+  fila** — opção em Configurações), **edita os próprios dados** (endereço, telefone…; cada alteração
+  fica na auditoria e a posição na fila não muda), **desiste da vaga** e **se inscreve de novo** com
+  os dados já preenchidos.
+- **Contas antigas**: importe uma planilha CSV (painel → Configurações); a pessoa cria a senha pelo
+  link enviado ao e-mail em "Esqueci minha senha". Precisa do envio de e-mail configurado (SMTP).
+
 **Feito para vários acampamentos**
 - Cada acampamento tem **sua própria instalação** (banco de dados separado): os dados de
   um acampamento nunca se misturam com os de outro. Podem ficar em servidores diferentes
@@ -251,6 +260,14 @@ formulário e do painel.
 - **Sem domínio**: deixe em branco e acesse por `http://IP-DO-SERVIDOR`.
 - **Porta 80/443 já ocupada** por outro programa: o instalador avisa quem está usando e instala
   numa porta livre (padrão `http://IP:8180`; escolha outra na pergunta "Porta do site").
+
+**Endereço automático na Cloudflare:** o instalador sugere `NOME.movimentocampista.com.br`
+(pode trocar o NOME) e publica sozinho pelo **Cloudflare Tunnel**: cria o DNS e o HTTPS, sem
+usar as portas 80/443 e sem abrir portas no roteador. Na 1ª instalação ele pede um token da API
+da Cloudflare (crie em *dash.cloudflare.com → Perfil → Tokens de API* com as permissões
+**Conta › Cloudflare Tunnel › Editar** e **Zona › DNS › Editar** para `movimentocampista.com.br`);
+o token fica guardado em `/etc/prefichas/cloudflare.env` (só o root lê) e não é pedido de novo.
+Outro domínio: `DOMINIO_BASE=outro.com.br`; sem Cloudflare (acesso pelo IP): `DOMINIO_BASE=`.
 
 Guia completo e instalação manual: [`docs/INSTALACAO.md`](docs/INSTALACAO.md).
 

@@ -38,21 +38,57 @@ BANNER
 etapa "Dados do acampamento"
 perguntar NOME "Nome do acampamento (ex.: Acampamento Exemplo)"
 [ -n "${NOME:-}" ] || erro "Informe o nome do acampamento."
-if [ -z "${DOMINIO+x}" ] && [ "$TEM_TTY" = 1 ]; then
-  read -r -p "Domínio com HTTPS (ex.: prefichas.seuacampamento.com.br) — deixe vazio para usar pelo IP: " DOMINIO </dev/tty
+SLUG="$(printf '%s' "$NOME" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null || printf '%s' "$NOME")"
+SLUG="$(printf '%s' "$SLUG" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '-' | sed 's/-\+/-/g; s/^-//; s/-$//')"
+
+# Endereço: SUBDOMINIO.DOMINIO_BASE publicado pela Cloudflare (padrão movimentocampista.com.br).
+# DOMINIO_BASE= (vazio) instala sem Cloudflare, acessando pelo IP.
+DOMINIO_BASE="${DOMINIO_BASE-movimentocampista.com.br}"
+CLOUDFLARE=0
+if [ -n "${DOMINIO:-}" ]; then
+  : # domínio completo informado por variável: usa como está (HTTPS pelo Caddy)
+elif [ -n "$DOMINIO_BASE" ]; then
+  SUB_PADRAO="${SLUG#acampamento-}"
+  if [ -z "${SUBDOMINIO:-}" ] && [ "$TEM_TTY" = 1 ]; then
+    read -r -p "Endereço: ____.${DOMINIO_BASE} [${SUB_PADRAO}]: " SUBDOMINIO </dev/tty
+  fi
+  SUBDOMINIO="$(printf '%s' "${SUBDOMINIO:-$SUB_PADRAO}" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9-' '-' | sed 's/-\+/-/g; s/^-//; s/-$//')"
+  DOMINIO="${SUBDOMINIO}.${DOMINIO_BASE}"
+  CLOUDFLARE=1
+  mkdir -p /etc/prefichas
+  [ -z "${CF_API_TOKEN:-}" ] && [ -r /etc/prefichas/cloudflare.env ] && . /etc/prefichas/cloudflare.env
+  if [ -z "${CF_API_TOKEN:-}" ]; then
+    echo "Token da API da Cloudflare (pedido só na 1ª instalação; fica guardado em /etc/prefichas/cloudflare.env)."
+    echo "Permissões: Conta › Cloudflare Tunnel › Editar  e  Zona › DNS › Editar (${DOMINIO_BASE})."
+    [ "$TEM_TTY" = 1 ] && read -r -s -p "Token: " CF_API_TOKEN </dev/tty && echo
+    [ -n "${CF_API_TOKEN:-}" ] || erro "Sem o token da Cloudflare não dá para publicar ${DOMINIO}."
+  fi
+  ( umask 077; printf 'CF_API_TOKEN=%q\n' "$CF_API_TOKEN" > /etc/prefichas/cloudflare.env )
+  export CF_API_TOKEN
+else
+  DOMINIO=""
 fi
-DOMINIO="${DOMINIO:-}"
 perguntar ADMIN_EMAIL "E-mail do administrador"
 perguntar ADMIN_NOME "Nome do administrador"
 [ -n "${ADMIN_EMAIL:-}" ] && [ -n "${ADMIN_NOME:-}" ] || erro "Informe e-mail e nome do administrador."
 CHAVE="${CHAVE:-}"
+
+# E-mail que envia o link de "Esqueci minha senha" (Gmail com senha de app)
+if [ -z "${SMTP_USUARIO+x}" ] && [ "$TEM_TTY" = 1 ]; then
+  echo
+  echo "E-mail para enviar o link de 'Esqueci minha senha' (recomendado: um Gmail do acampamento)."
+  read -r -p "E-mail (Gmail) — ENTER para configurar depois: " SMTP_USUARIO </dev/tty
+  if [ -n "$SMTP_USUARIO" ]; then
+    echo "Use uma SENHA DE APP do Google (myaccount.google.com → Segurança → Senhas de app), não a senha normal."
+    read -r -s -p "Senha de app: " SMTP_SENHA </dev/tty; echo
+  fi
+fi
+SMTP_USUARIO="${SMTP_USUARIO:-}" SMTP_SENHA="${SMTP_SENHA:-}"
 if [ -z "${PORTA_HTTP:-}" ] && [ -z "$DOMINIO" ] && [ "$TEM_TTY" = 1 ]; then
   read -r -p "Porta do site (ENTER = automática: 80, ou 8180 se a 80 estiver ocupada): " PORTA_HTTP </dev/tty
 fi
 PORTA_HTTP="${PORTA_HTTP:-}"
 
-SLUG="$(printf '%s' "$NOME" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null || printf '%s' "$NOME")"
-SLUG="$(printf '%s' "$SLUG" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '-' | sed 's/-\+/-/g; s/^-//; s/-$//')"
 PASTA="${PASTA:-/opt/prefichas-${SLUG:-acampamento}}"
 [ -f "$PASTA/.env" ] && erro "Já existe uma instalação em $PASTA. Para reinstalar do zero: cd $PASTA && docker compose down -v && cd / && rm -rf $PASTA"
 
@@ -60,11 +96,11 @@ PASTA="${PASTA:-/opt/prefichas-${SLUG:-acampamento}}"
 etapa "Verificando programas necessários"
 if command -v apt-get >/dev/null; then
   FALTAM=""
-  for p in git curl openssl ss iconv; do command -v "$p" >/dev/null || FALTAM="$FALTAM $p"; done
+  for p in git curl openssl ss iconv jq; do command -v "$p" >/dev/null || FALTAM="$FALTAM $p"; done
   if [ -n "$FALTAM" ]; then
     echo "Instalando:$FALTAM"
     export DEBIAN_FRONTEND=noninteractive
-    apt-get update -qq && apt-get install -y -qq git curl ca-certificates openssl iproute2 libc-bin >/dev/null
+    apt-get update -qq && apt-get install -y -qq git curl ca-certificates openssl iproute2 libc-bin jq >/dev/null
   fi
 else
   for p in git curl; do command -v "$p" >/dev/null || erro "Instale '$p' e rode de novo (sistema sem apt-get)."; done
@@ -92,4 +128,6 @@ cd "$PASTA"
 ARGS=(--nome "$NOME" --dominio "$DOMINIO" --admin "$ADMIN_EMAIL" --nome-admin "$ADMIN_NOME")
 [ -n "$CHAVE" ] && ARGS+=(--chave "$CHAVE")
 [ -n "$PORTA_HTTP" ] && ARGS+=(--porta-http "$PORTA_HTTP")
+[ "$CLOUDFLARE" = 1 ] && ARGS+=(--cloudflare)
+export SMTP_USUARIO SMTP_SENHA SMTP_HOST="${SMTP_HOST:-smtp.gmail.com}" SMTP_PORTA="${SMTP_PORTA:-465}"
 ./scripts/novo-acampamento.sh "${ARGS[@]}"

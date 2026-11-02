@@ -4,7 +4,49 @@ import { carregarMarca, TextoMarca } from '../lib/marca.jsx'
 import { ajustarCor, corTextoSobre } from '../../shared/marca.js'
 
 const CAMPOS_EXPORTADOS = ['nome', 'nomeCurto', 'corPrimaria', 'whatsapp', 'email', 'instagram', 'site',
-  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila', 'edicoesPreferenciaConjuge']
+  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila', 'edicoesPreferenciaConjuge', 'mostrarPosicaoFila']
+
+/** Importação de contas antigas (planilha CSV). As pessoas criam a senha pelo "Esqueci minha senha". */
+function ContasAntigas() {
+  const [resumo, setResumo] = useState(null)
+  const [resultado, setResultado] = useState(null)
+  const [erro, setErro] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const carregar = () => api.get('/api/admin/participantes/resumo').then(setResumo).catch(() => {})
+  useEffect(() => { carregar() }, [])
+  async function importar(ev) {
+    const arquivo = ev.target.files?.[0]
+    ev.target.value = ''
+    if (!arquivo) return
+    setErro(''); setResultado(null); setEnviando(true)
+    try {
+      setResultado(await api.post('/api/admin/participantes/importar', { csv: await arquivo.text() }))
+      carregar()
+    } catch (e) { setErro(e.dados?.mensagem || 'Não foi possível importar.') } finally { setEnviando(false) }
+  }
+  return (
+    <div className="contas-antigas">
+      <h3>Contas dos participantes</h3>
+      {resumo && <p className="dica">{resumo.total} conta(s) · {resumo.sem_senha} ainda sem senha (importadas).</p>}
+      {resumo && !resumo.recuperacao && (
+        <div className="alerta-erro">O envio de e-mails não está configurado: sem ele ninguém consegue recuperar a senha nem criar a senha de uma conta importada. Veja "E-mail" no manual de instalação.</div>
+      )}
+      <p className="dica">Importar contas antigas: planilha <strong>CSV</strong> com as colunas <code>cpf</code>, <code>email</code>, <code>nome</code> e <code>data_nascimento</code>.
+        As contas entram <strong>sem senha</strong>; no primeiro acesso a pessoa clica em "Esqueci minha senha" e cria a senha pelo link enviado ao e-mail.</p>
+      <label className="botao-secundario">
+        {enviando ? 'Importando…' : 'Escolher planilha CSV'}
+        <input type="file" accept=".csv,text/csv" hidden onChange={importar} disabled={enviando} />
+      </label>
+      {erro && <div className="alerta-erro">{erro}</div>}
+      {resultado && (
+        <div className="alerta-ok">
+          Importadas: <strong>{resultado.importados}</strong> · já existiam: {resultado.ignorados} · com erro: {resultado.erros.length}
+          {resultado.erros.length > 0 && <ul>{resultado.erros.slice(0, 20).map((e) => <li key={e.linha}>Linha {e.linha}: {e.motivo}</li>)}</ul>}
+        </div>
+      )}
+    </div>
+  )
+}
 
 function Campo({ id, rotulo, dica, erro, children }) {
   return (
@@ -245,6 +287,15 @@ export default function Configuracoes({ marca, onSalvar }) {
               <input id="cfg-pref" type="number" min="0" max="10" className="numero-curto" value={m.edicoesPreferenciaConjuge}
                 onChange={(e) => setM({ ...m, edicoesPreferenciaConjuge: e.target.value === '' ? '' : Number(e.target.value) })} />
             </Campo>
+          </section>
+
+          <section>
+            <h2>Área do participante</h2>
+            <label className="check">
+              <input type="checkbox" checked={m.mostrarPosicaoFila === true} onChange={(e) => setM({ ...m, mostrarPosicaoFila: e.target.checked })} />
+              <span>Mostrar a <strong>posição na fila</strong> para a pessoa quando ela entra na conta (desligado = mostra só a situação: aguardando, em contato…)</span>
+            </label>
+            <ContasAntigas />
           </section>
 
           <section>

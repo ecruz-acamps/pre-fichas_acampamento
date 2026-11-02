@@ -81,3 +81,22 @@ export function melhorGrafia(a, b) {
   const nota = (s) => (s === s.toUpperCase() ? 0 : 4) + (s.normalize('NFD') !== s ? 2 : 0) + (s[0] === s[0].toUpperCase() ? 1 : 0)
   return nota(b) > nota(a) ? b : a
 }
+
+/** CPF válido (11 dígitos e dígitos verificadores corretos). */
+export function cpfValido(valor) {
+  const c = somenteDigitos(valor)
+  if (c.length !== 11 || /^(\d)\1{10}$/.test(c)) return false
+  const dv = (n) => {
+    let soma = 0
+    for (let i = 0; i < n; i++) soma += Number(c[i]) * (n + 1 - i)
+    const r = (soma * 10) % 11
+    return r === 10 ? 0 : r
+  }
+  return dv(9) === Number(c[9]) && dv(10) === Number(c[10])
+}
+
+/** 000.000.000-00 enquanto digita. */
+export function mascaraCpf(valor) {
+  const d = somenteDigitos(valor).slice(0, 11)
+  return d.replace(/^(\d{3})(\d)/, '$1.$2').replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3').replace(/\.(\d{3})(\d{1,2})$/, '.$1-$2')
+}

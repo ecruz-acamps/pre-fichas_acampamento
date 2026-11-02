@@ -55,7 +55,15 @@ services:
       # Nome do acampamento (aplicado só na primeira inicialização; depois, pelo painel)
       NOME_ACAMPAMENTO: ${NOME_ACAMPAMENTO:-}
       MARCA_INICIAL: ${MARCA_INICIAL:-}
-      # Endereço público (prévia de links no WhatsApp)
+      # Contas dos participantes e e-mail (recuperação de senha)
+      CONTA_OBRIGATORIA: ${CONTA_OBRIGATORIA:-true}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORTA: ${SMTP_PORTA:-587}
+      SMTP_SEGURO: ${SMTP_SEGURO:-}
+      SMTP_USUARIO: ${SMTP_USUARIO:-}
+      SMTP_SENHA: ${SMTP_SENHA:-}
+      SMTP_REMETENTE: ${SMTP_REMETENTE:-}
+      # Endereço público (prévia de links no WhatsApp e link de redefinição de senha)
       URL_PUBLICA: ${URL_PUBLICA:-}
       # Aviso de atualização (GitHub)
       ATUALIZACAO_VERIFICAR: ${ATUALIZACAO_VERIFICAR:-true}
@@ -92,6 +100,18 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+
+  # Publicação pela Cloudflare (COMPOSE_PROFILES=tunel): HTTPS sem abrir portas no servidor.
+  # O token é criado por scripts/cloudflare-tunel.sh.
+  tunel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunel"]
+    restart: unless-stopped
+    depends_on:
+      - app
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNEL_TOKEN:-}
 
 volumes:
   pgdata:

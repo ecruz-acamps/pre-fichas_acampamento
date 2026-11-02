@@ -18,8 +18,10 @@ import rotasNucleos from './rotas/nucleos.js'
 import rotasAcampamentos from './rotas/acampamentos.js'
 import rotasMarca from './rotas/marca.js'
 import rotasPreferencias from './rotas/preferencias.js'
+import rotasConta from './rotas/conta.js'
+import { criarEmail } from './email.js'
 
-export async function construirApp({ pool, config, logger = true, chavesLicenca = CHAVES_LICENCA, versaoInstalada = lerVersaoInstalada() }) {
+export async function construirApp({ pool, config, logger = true, chavesLicenca = CHAVES_LICENCA, versaoInstalada = lerVersaoInstalada(), email = undefined }) {
   const app = Fastify({
     logger: logger && {
       level: config.logNivel,
@@ -33,6 +35,7 @@ export async function construirApp({ pool, config, logger = true, chavesLicenca 
   app.decorate('pool', pool)
   app.decorate('config', config)
   app.decorate('chavesLicenca', chavesLicenca)
+  app.decorate('email', email === undefined ? criarEmail(config.smtp, null) : email)
   app.decorate('verificadorAtualizacao', criarVerificador(config.atualizacao, versaoInstalada, app.log))
   app.decorateRequest('usuario', null)
 
@@ -72,7 +75,7 @@ export async function construirApp({ pool, config, logger = true, chavesLicenca 
   // conseguem enviá-lo sem permissão de CORS, que este servidor não concede).
   app.addHook('onRequest', async (req, reply) => {
     const altera = !['GET', 'HEAD', 'OPTIONS'].includes(req.method)
-    const protegida = req.url.startsWith('/api/admin') || req.url.startsWith('/api/auth')
+    const protegida = req.url.startsWith('/api/admin') || req.url.startsWith('/api/auth') || req.url.startsWith('/api/conta')
     if (altera && protegida && req.headers['x-requested-with'] !== 'fetch') {
       return reply.code(403).send({ mensagem: 'Requisição recusada.' })
     }
@@ -114,6 +117,7 @@ export async function construirApp({ pool, config, logger = true, chavesLicenca 
   await app.register(rotasPreferencias)
   await app.register(rotasLicenca)
   await app.register(rotasAtualizacao)
+  await app.register(rotasConta)
 
   // ---- Site (arquivos gerados pelo `npm run build`) ----
   if (existsSync(config.pastaSite)) {

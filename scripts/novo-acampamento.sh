@@ -18,12 +18,14 @@
 #   --porta-http N     porta pública do site (padrão 80; se ocupada, 8180 ou a próxima livre)
 #   --porta N          porta local da aplicação (padrão 3000; vários acampamentos: 3001, 3002...)
 #   --marca ARQ        (avançado) arquivo de marca completo, ver marcas/modelo.json
+#   --cloudflare       publica o --dominio pelo Cloudflare Tunnel (HTTPS sem usar portas 80/443;
+#                      precisa de CF_API_TOKEN ou /etc/prefichas/cloudflare.env)
 #   --multi            vários acampamentos atrás de um proxy compartilhado (sem Caddy próprio)
 #   --forcar           sobrescreve um .env existente (CUIDADO: troca a senha do banco gerada antes)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-PORTA_WEB="${PORTA_HTTP:-}" NOME="" DOMINIO="-" ADMIN="" NOME_ADMIN="" PORTA="3000" MULTI=0 FORCAR=0 CHAVE="" MARCA=""
+PORTA_WEB="${PORTA_HTTP:-}" NOME="" DOMINIO="-" ADMIN="" NOME_ADMIN="" PORTA="3000" MULTI=0 CLOUDFLARE=0 FORCAR=0 CHAVE="" MARCA=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --nome) NOME="$2"; shift 2 ;;
@@ -35,6 +37,7 @@ while [ $# -gt 0 ]; do
     --chave) CHAVE="$2"; shift 2 ;;
     --marca) MARCA="$2"; shift 2 ;;
     --multi) MULTI=1; shift ;;
+    --cloudflare) CLOUDFLARE=1; shift ;;
     --forcar) FORCAR=1; shift ;;
     -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
     *) echo "Opção desconhecida: $1"; exit 1 ;;
@@ -88,7 +91,10 @@ else SENHA_DB="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"; fi
 # ---- Portas -----------------------------------------------------------------
 PERFIS="caddy" COOKIE="true" PORTA_HTTP=80 PORTA_HTTPS=443 SITE="${DOMINIO}"
 PORTA=$(porta_livre_a_partir "$PORTA")
-if [ "$MULTI" = 1 ]; then
+if [ "$CLOUDFLARE" = 1 ]; then
+  [ -n "$DOMINIO" ] || { echo "--cloudflare precisa de --dominio (ex.: nome.movimentocampista.com.br)."; exit 1; }
+  PERFIS="tunel"
+elif [ "$MULTI" = 1 ]; then
   PERFIS=""
 elif [ -n "$DOMINIO" ]; then
   if porta_ocupada 80 || porta_ocupada 443; then
@@ -101,7 +107,7 @@ elif [ -n "$DOMINIO" ]; then
     DOMINIO=""
   fi
 fi
-if [ "$MULTI" = 0 ] && [ -z "$DOMINIO" ]; then
+if [ "$MULTI" = 0 ] && [ "$CLOUDFLARE" = 0 ] && [ -z "$DOMINIO" ]; then
   SITE=":80"; COOKIE="false"
   if [ -n "$PORTA_WEB" ]; then
     porta_ocupada "$PORTA_WEB" && { echo "A porta $PORTA_WEB já está em uso por $(quem_usa "$PORTA_WEB" || echo 'outro programa')."; exit 1; }
@@ -113,6 +119,11 @@ if [ "$MULTI" = 0 ] && [ -z "$DOMINIO" ]; then
   if [ "$PORTA_HTTP" != 80 ]; then echo "→ Porta 80 ocupada por $(quem_usa 80 || echo 'outro programa'): usando a porta $PORTA_HTTP."; fi
 fi
 URL_PUB=""; [ -n "$DOMINIO" ] && URL_PUB="https://${DOMINIO}"
+# Sem domínio: o link do "Esqueci minha senha" usa o IP do servidor
+IP_LOCAL="$(hostname -I 2>/dev/null | awk '{print $1}')"
+if [ -z "$URL_PUB" ] && [ "$MULTI" = 0 ] && [ -n "$IP_LOCAL" ]; then
+  URL_PUB="http://${IP_LOCAL}$([ "$PORTA_HTTP" = 80 ] || echo ":${PORTA_HTTP}")"
+fi
 
 umask 077
 cat > .env <<ENV
@@ -133,8 +144,19 @@ POSTGRES_PASSWORD=${SENHA_DB}
 COOKIE_SEGURO=${COOKIE}
 SESSAO_HORAS=12
 LIMITE_ENVIOS_POR_HORA=30
+CONTA_OBRIGATORIA=true
 ENV
+if [ -n "${SMTP_USUARIO:-}" ]; then
+  { echo "SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}"; echo "SMTP_PORTA=${SMTP_PORTA:-465}"
+    echo "SMTP_USUARIO=${SMTP_USUARIO}"; echo "SMTP_SENHA=${SMTP_SENHA// /}"; echo "SMTP_REMETENTE=${SMTP_USUARIO}"; } >> .env
+fi
 echo "✓ Configuração criada (${PROJETO})"
+
+if [ "$CLOUDFLARE" = 1 ]; then
+  echo "→ Publicando ${DOMINIO} na Cloudflare…"
+  TOKEN_TUNEL="$(./scripts/cloudflare-tunel.sh "$DOMINIO" http://app:3000)" || { rm -f .env; exit 1; }
+  echo "TUNEL_TOKEN=${TOKEN_TUNEL}" >> .env
+fi
 
 # Versão do código (aparece no painel e permite avisar quando houver atualização)
 VERSAO_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"

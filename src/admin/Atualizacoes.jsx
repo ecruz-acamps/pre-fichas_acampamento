@@ -4,12 +4,18 @@ import { formatarDataHora } from '../../shared/util.js'
 
 const curto = (sha) => (sha ? sha.slice(0, 7) : '—')
 
-/** O único ponto de entrada: aparece no topo só quando há versão nova (administradores). */
+/** O único ponto de entrada (administradores): sempre visível; destaca quando há versão nova. */
 export function BotaoAtualizacao({ info, onAbrir }) {
-  if (!info?.desatualizado) return null
+  if (info?.desatualizado) {
+    return (
+      <button className="botao-atualizacao" onClick={onAbrir} title="Há uma versão nova do sistema">
+        <span aria-hidden="true">⬆</span> Atualização disponível
+      </button>
+    )
+  }
   return (
-    <button className="botao-atualizacao" onClick={onAbrir} title="Há uma versão nova do sistema">
-      <span aria-hidden="true">⬆</span> Atualização disponível
+    <button className="botao-atualizacao discreto" onClick={onAbrir} title="Verificar e instalar atualizações">
+      <span aria-hidden="true">⟳</span> Atualizações
     </button>
   )
 }
