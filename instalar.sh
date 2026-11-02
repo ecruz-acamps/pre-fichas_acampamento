@@ -72,6 +72,18 @@ perguntar ADMIN_EMAIL "E-mail do administrador"
 perguntar ADMIN_NOME "Nome do administrador"
 [ -n "${ADMIN_EMAIL:-}" ] && [ -n "${ADMIN_NOME:-}" ] || erro "Informe e-mail e nome do administrador."
 CHAVE="${CHAVE:-}"
+
+# E-mail que envia o link de "Esqueci minha senha" (Gmail com senha de app)
+if [ -z "${SMTP_USUARIO+x}" ] && [ "$TEM_TTY" = 1 ]; then
+  echo
+  echo "E-mail para enviar o link de 'Esqueci minha senha' (recomendado: um Gmail do acampamento)."
+  read -r -p "E-mail (Gmail) — ENTER para configurar depois: " SMTP_USUARIO </dev/tty
+  if [ -n "$SMTP_USUARIO" ]; then
+    echo "Use uma SENHA DE APP do Google (myaccount.google.com → Segurança → Senhas de app), não a senha normal."
+    read -r -s -p "Senha de app: " SMTP_SENHA </dev/tty; echo
+  fi
+fi
+SMTP_USUARIO="${SMTP_USUARIO:-}" SMTP_SENHA="${SMTP_SENHA:-}"
 if [ -z "${PORTA_HTTP:-}" ] && [ -z "$DOMINIO" ] && [ "$TEM_TTY" = 1 ]; then
   read -r -p "Porta do site (ENTER = automática: 80, ou 8180 se a 80 estiver ocupada): " PORTA_HTTP </dev/tty
 fi
@@ -117,4 +129,5 @@ ARGS=(--nome "$NOME" --dominio "$DOMINIO" --admin "$ADMIN_EMAIL" --nome-admin "$
 [ -n "$CHAVE" ] && ARGS+=(--chave "$CHAVE")
 [ -n "$PORTA_HTTP" ] && ARGS+=(--porta-http "$PORTA_HTTP")
 [ "$CLOUDFLARE" = 1 ] && ARGS+=(--cloudflare)
+export SMTP_USUARIO SMTP_SENHA SMTP_HOST="${SMTP_HOST:-smtp.gmail.com}" SMTP_PORTA="${SMTP_PORTA:-465}"
 ./scripts/novo-acampamento.sh "${ARGS[@]}"

@@ -51,6 +51,51 @@ async function conferirCaptcha(cfg, token, ip) {
   }
 }
 
+/**
+ * Grava uma pré-ficha já validada. Usado pelo formulário sem conta e pela área do participante.
+ * Retorna { codigo, corpo, id }.
+ */
+export async function registrarPreFicha(pool, config, registro, { ip, log, participanteId = null, cpf = null }) {
+  // Mesma pessoa já na fila (nome + data de nascimento)
+  const { rows: [existente] } = await pool.query(
+    `select id from pre_fichas
+      where chave_local(nome_completo) = chave_local($1) and data_nascimento = $2
+        and status in ('aguardando', 'em_contato', 'confirmado')
+      order by id limit 1`, [registro.nome_completo, registro.data_nascimento])
+  if (existente) {
+    await pool.query(
+      `insert into pre_fichas_historico (pre_ficha_id, tipo, observacao, detalhes) values ($1, 'observacao', $2, $3)`,
+      [existente.id, 'Nova pré-ficha enviada para a mesma pessoa (nome e data de nascimento) — descartada como duplicada.',
+        JSON.stringify({ duplicada: true, telefone: registro.telefone, email: registro.email, conta: participanteId })])
+    log?.info({ ficha: existente.id }, 'Pré-ficha duplicada descartada')
+    // Sem conta: responde como sucesso (não revela a quem enviou). Com conta: avisa a pessoa.
+    if (participanteId) {
+      return { codigo: 409, corpo: { mensagem: 'Já existe uma pré-ficha na fila com este nome e data de nascimento. Fale com o acampamento para vinculá-la à sua conta.' } }
+    }
+    return { codigo: 201, corpo: { ok: true } }
+  }
+
+  // Limite por contato: mesmo telefone ou e-mail em 24 h
+  const { rows: [{ n }] } = await pool.query(
+    `select count(*)::int n from pre_fichas
+      where created_at > now() - interval '24 hours'
+        and (regexp_replace(telefone, '\D', '', 'g') = $1 or email = $2)`,
+    [registro.telefone.replace(/\D/g, ''), registro.email])
+  if (n >= config.limiteEnviosPorContatoDia) {
+    return { codigo: 429, corpo: { mensagem: 'Muitas pré-fichas com este telefone ou e-mail hoje. Fale com o acampamento pelo WhatsApp.' } }
+  }
+
+  const dados = { ...registro, participante_id: participanteId, cpf }
+  const colunas = [...COLUNAS, 'participante_id', 'cpf']
+  // created_at, status e id NÃO vêm do usuário: são definidos pelo banco.
+  const { rows: [nova] } = await pool.query(
+    `insert into pre_fichas (${colunas.join(', ')}, ip_origem)
+     values (${colunas.map((_, i) => `$${i + 1}`).join(', ')}, $${colunas.length + 1}) returning id`,
+    [...colunas.map((c) => dados[c]), ip],
+  )
+  return { codigo: 201, corpo: { ok: true }, id: nova.id }
+}
+
 export default async function rotasPublicas(app) {
   const { pool, config } = app
   const dentroDoLimiteGlobal = criarLimiteGlobal(config.limiteEnviosGlobalHora)
@@ -66,6 +111,9 @@ export default async function rotasPublicas(app) {
   }, async (req, reply) => {
     if (!(await licencaAtivada(pool))) {
       return reply.code(503).send({ mensagem: 'As inscrições ainda não estão disponíveis.', licencaPendente: true })
+    }
+    if (config.contaObrigatoria) {
+      return reply.code(401).send({ mensagem: 'Entre na sua conta (ou crie uma) para fazer a inscrição.', precisaConta: true })
     }
     const f = normalizarEntrada(req.body)
 
@@ -87,42 +135,8 @@ export default async function rotasPublicas(app) {
       return reply.code(429).send({ mensagem: 'Muitas inscrições neste momento. Tente novamente mais tarde.' })
     }
 
-    const registro = montarRegistro(f, marca.termos)
-
-    // Mesma pessoa já na fila (nome + data de nascimento): descarta sem revelar a quem enviou
-    const { rows: [existente] } = await pool.query(
-      `select id from pre_fichas
-        where chave_local(nome_completo) = chave_local($1) and data_nascimento = $2
-          and status in ('aguardando', 'em_contato', 'confirmado')
-        order by id limit 1`, [registro.nome_completo, registro.data_nascimento])
-    if (existente) {
-      await pool.query(
-        `insert into pre_fichas_historico (pre_ficha_id, tipo, observacao, detalhes) values ($1, 'observacao', $2, $3)`,
-        [existente.id, 'Nova pré-ficha enviada para a mesma pessoa (nome e data de nascimento) — descartada como duplicada.',
-          JSON.stringify({ duplicada: true, telefone: registro.telefone, email: registro.email })])
-      req.log.info({ ficha: existente.id }, 'Pré-ficha duplicada descartada')
-      return reply.code(201).send({ ok: true })
-    }
-
-    // Limite por contato: mesmo telefone ou e-mail em 24 h
-    const { rows: [{ n }] } = await pool.query(
-      `select count(*)::int n from pre_fichas
-        where created_at > now() - interval '24 hours'
-          and (regexp_replace(telefone, '\D', '', 'g') = $1 or email = $2)`,
-      [registro.telefone.replace(/\D/g, ''), registro.email])
-    if (n >= config.limiteEnviosPorContatoDia) {
-      return reply.code(429).send({ mensagem: 'Muitas pré-fichas com este telefone ou e-mail hoje. Fale com o acampamento pelo WhatsApp.' })
-    }
-
-    const valores = COLUNAS.map((c) => registro[c])
-    const marcadores = COLUNAS.map((_, i) => `$${i + 1}`)
-    // created_at, status e id NÃO vêm do usuário: são definidos pelo banco.
-    await pool.query(
-      `insert into pre_fichas (${COLUNAS.join(', ')}, ip_origem)
-       values (${marcadores.join(', ')}, $${COLUNAS.length + 1})`,
-      [...valores, req.ip],
-    )
-    return reply.code(201).send({ ok: true })
+    const r = await registrarPreFicha(pool, config, montarRegistro(f, marca.termos), { ip: req.ip, log: req.log })
+    return reply.code(r.codigo).send(r.corpo)
   })
 
   // Identidade do acampamento (nome, cores, textos, declarações, tribos)

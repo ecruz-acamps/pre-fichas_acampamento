@@ -119,6 +119,11 @@ if [ "$MULTI" = 0 ] && [ "$CLOUDFLARE" = 0 ] && [ -z "$DOMINIO" ]; then
   if [ "$PORTA_HTTP" != 80 ]; then echo "→ Porta 80 ocupada por $(quem_usa 80 || echo 'outro programa'): usando a porta $PORTA_HTTP."; fi
 fi
 URL_PUB=""; [ -n "$DOMINIO" ] && URL_PUB="https://${DOMINIO}"
+# Sem domínio: o link do "Esqueci minha senha" usa o IP do servidor
+IP_LOCAL="$(hostname -I 2>/dev/null | awk '{print $1}')"
+if [ -z "$URL_PUB" ] && [ "$MULTI" = 0 ] && [ -n "$IP_LOCAL" ]; then
+  URL_PUB="http://${IP_LOCAL}$([ "$PORTA_HTTP" = 80 ] || echo ":${PORTA_HTTP}")"
+fi
 
 umask 077
 cat > .env <<ENV
@@ -139,7 +144,12 @@ POSTGRES_PASSWORD=${SENHA_DB}
 COOKIE_SEGURO=${COOKIE}
 SESSAO_HORAS=12
 LIMITE_ENVIOS_POR_HORA=30
+CONTA_OBRIGATORIA=true
 ENV
+if [ -n "${SMTP_USUARIO:-}" ]; then
+  { echo "SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}"; echo "SMTP_PORTA=${SMTP_PORTA:-465}"
+    echo "SMTP_USUARIO=${SMTP_USUARIO}"; echo "SMTP_SENHA=${SMTP_SENHA// /}"; echo "SMTP_REMETENTE=${SMTP_USUARIO}"; } >> .env
+fi
 echo "✓ Configuração criada (${PROJETO})"
 
 if [ "$CLOUDFLARE" = 1 ]; then

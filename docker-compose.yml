@@ -55,7 +55,15 @@ services:
       # Nome do acampamento (aplicado só na primeira inicialização; depois, pelo painel)
       NOME_ACAMPAMENTO: ${NOME_ACAMPAMENTO:-}
       MARCA_INICIAL: ${MARCA_INICIAL:-}
-      # Endereço público (prévia de links no WhatsApp)
+      # Contas dos participantes e e-mail (recuperação de senha)
+      CONTA_OBRIGATORIA: ${CONTA_OBRIGATORIA:-true}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORTA: ${SMTP_PORTA:-587}
+      SMTP_SEGURO: ${SMTP_SEGURO:-}
+      SMTP_USUARIO: ${SMTP_USUARIO:-}
+      SMTP_SENHA: ${SMTP_SENHA:-}
+      SMTP_REMETENTE: ${SMTP_REMETENTE:-}
+      # Endereço público (prévia de links no WhatsApp e link de redefinição de senha)
       URL_PUBLICA: ${URL_PUBLICA:-}
       # Aviso de atualização (GitHub)
       ATUALIZACAO_VERIFICAR: ${ATUALIZACAO_VERIFICAR:-true}

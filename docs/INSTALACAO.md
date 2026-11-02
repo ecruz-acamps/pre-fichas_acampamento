@@ -514,6 +514,27 @@ Logs: `sudo journalctl -u pre-fichas -f`.
 
 ---
 
+## 11b. E-mail (Esqueci minha senha e contas antigas)
+
+O link de "Esqueci minha senha" — e a criação de senha das contas antigas importadas — é enviado
+por e-mail. O instalador pergunta um Gmail; para configurar depois, acrescente ao `.env`:
+
+```
+SMTP_HOST=smtp.gmail.com
+SMTP_PORTA=465
+SMTP_USUARIO=inscricoes@gmail.com
+SMTP_SENHA=senhadeappdogoogle
+SMTP_REMETENTE=inscricoes@gmail.com
+```
+
+No Gmail use uma **senha de app** (myaccount.google.com → Segurança → Senhas de app; exige
+verificação em duas etapas na conta Google). Depois: `sudo docker compose up -d`.
+
+**Importar contas antigas:** painel → Configurações → *Contas dos participantes* → planilha CSV com
+as colunas `cpf`, `email`, `nome`, `data_nascimento` (ou `docker compose exec app node server/cli.js
+participantes importar contas.csv`). As contas entram sem senha: a pessoa clica em "Esqueci minha
+senha" e cria a senha pelo link. Nunca é usado o CPF como senha.
+
 ## 12. Solução de problemas
 
 **O site não abre / certificado HTTPS não é emitido**

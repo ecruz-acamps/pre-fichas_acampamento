@@ -10,6 +10,7 @@ export const TIPOS_EVENTO = [
   { valor: 'acampamento', rotulo: 'Acampamento', icone: '⛺' },
   { valor: 'preferencia', rotulo: 'Preferência', icone: '★' },
   { valor: 'conjuge', rotulo: 'Cônjuge', icone: '💍' },
+  { valor: 'edicao', rotulo: 'Edição de dados', icone: '✏️' },
 ]
 
 /** Descrição legível de um evento da trilha de auditoria. */
@@ -40,6 +41,17 @@ export function DescricaoEvento({ e }) {
           {e.observacao && <div className="texto-longo">Motivo: {e.observacao}</div>}
         </>
       )
+    case 'edicao':
+      return (
+        <>
+          <div><strong>Dados alterados pela própria pessoa</strong> (área do participante)</div>
+          <ul className="lista-mudancas">
+            {(d.campos ?? []).map((c) => (
+              <li key={c}><code>{c}</code>: <s>{String(d.antes?.[c] ?? '—')}</s> → <strong>{String(d.depois?.[c] ?? '—')}</strong></li>
+            ))}
+          </ul>
+        </>
+      )
     default:
       return (
         <>
@@ -53,6 +65,7 @@ export function DescricaoEvento({ e }) {
 export function autorEvento(e) {
   if (e.usuario) return e.usuario
   if (e.tipo === 'inscricao') return 'formulário público'
+  if (e.tipo === 'edicao' || /própria pessoa/.test(e.observacao ?? '')) return 'a própria pessoa'
   if (e.tipo === 'fim_da_fila' && /diretamente no banco/.test(e.observacao ?? '')) return 'alteração direta no banco'
   return 'usuário removido'
 }

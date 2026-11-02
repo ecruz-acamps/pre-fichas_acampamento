@@ -64,8 +64,12 @@ function SimNao({ id, rotulo, valor, onChange, erro }) {
 
 /* ---------- formulário ---------- */
 
-export default function FormularioPreFicha({ marca }) {
-  const [f, setF] = useState(INICIAL)
+/**
+ * modo: 'anonimo' (sem conta), 'nova' (inscrição pela conta) ou 'editar' (alterar os próprios dados).
+ */
+export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = null, onConcluido, onCancelar }) {
+  const editar = modo === 'editar'
+  const [f, setF] = useState(() => ({ ...INICIAL, ...(inicial ?? {}), aceites: [], website: '' }))
   const [erros, setErros] = useState({})
   const [enviando, setEnviando] = useState(false)
   const [erroEnvio, setErroEnvio] = useState('')
@@ -77,7 +81,7 @@ export default function FormularioPreFicha({ marca }) {
   const widgetRef = useRef(null)
   const [captchaToken, setCaptchaToken] = useState('')
   useEffect(() => {
-    if (!marca.captcha?.siteKey || !captchaRef.current) return
+    if (modo !== 'anonimo' || !marca.captcha?.siteKey || !captchaRef.current) return
     const desenhar = () => {
       if (widgetRef.current !== null || !window.turnstile) return
       widgetRef.current = window.turnstile.render(captchaRef.current, {
@@ -138,7 +142,7 @@ export default function FormularioPreFicha({ marca }) {
   async function enviar(ev) {
     ev.preventDefault()
     setErroEnvio('')
-    const e = validar(f, marca.termos.length)
+    const e = validar(f, editar ? 0 : marca.termos.length)
     setErros(e)
     const primeiro = Object.keys(e).find((k) => e[k])
     if (primeiro) {
@@ -150,7 +154,9 @@ export default function FormularioPreFicha({ marca }) {
 
     setEnviando(true)
     try {
-      await api.post('/api/pre-fichas', marca.captcha ? { ...f, captcha: captchaToken } : f)
+      if (editar) await api.put('/api/conta/dados', f)
+      else if (modo === 'nova') await api.post('/api/conta/pre-ficha', f)
+      else await api.post('/api/pre-fichas', marca.captcha ? { ...f, captcha: captchaToken } : f)
     } catch (err) {
       setEnviando(false)
       if (marca.captcha && window.turnstile && widgetRef.current !== null) { window.turnstile.reset(widgetRef.current); setCaptchaToken('') }
@@ -159,6 +165,8 @@ export default function FormularioPreFicha({ marca }) {
       } else if (err.dados?.erros) {
         setErros(err.dados.erros)
         setErroEnvio('Confira os campos destacados.')
+      } else if (err.status === 409 || err.status === 401) {
+        setErroEnvio(err.dados?.mensagem || 'Não foi possível enviar.')
       } else if (err.status === 503) {
         setErroEnvio('As inscrições ainda não estão disponíveis. Tente novamente mais tarde.')
       } else if (err.status === 429) {
@@ -169,8 +177,9 @@ export default function FormularioPreFicha({ marca }) {
       return
     }
     setEnviando(false)
-    setEnviado(true)
     window.scrollTo({ top: 0, behavior: 'smooth' })
+    if (editar) return onConcluido?.('Seus dados foram atualizados.')
+    setEnviado(true)
   }
 
   if (enviado) {
@@ -180,6 +189,7 @@ export default function FormularioPreFicha({ marca }) {
         <h2>Pré-ficha enviada!</h2>
         <p>Obrigado, <strong>{f.nome_completo.split(' ')[0]}</strong>!</p>
         <p><TextoMarca texto={marca.mensagemSucesso} /></p>
+        {onConcluido && <div className="acoes"><button className="botao-principal" onClick={() => onConcluido()}>Ir para minha área</button></div>}
         <p className="rodape-texto"><Contatos marca={marca} /></p>
       </div>
     )
@@ -414,7 +424,7 @@ export default function FormularioPreFicha({ marca }) {
         </Campo>
       </section>
 
-      {marca.termos.length > 0 && (
+      {!editar && marca.termos.length > 0 && (
         <section className="termos">
           {marca.termos.map((termo, i) => (
             <label key={i} className={`check ${erros[`aceite_${i}`] ? 'com-erro' : ''}`} id={`aceite_${i}`}>
@@ -433,13 +443,14 @@ export default function FormularioPreFicha({ marca }) {
         </section>
       )}
 
-      {marca.captcha && <div className="captcha" ref={captchaRef} />}
+      {modo === 'anonimo' && marca.captcha && <div className="captcha" ref={captchaRef} />}
       {erroEnvio && <div className="alerta-erro" role="alert">{erroEnvio}</div>}
 
       <div className="acoes">
         <button type="submit" className="botao-principal" disabled={enviando}>
-          {enviando ? 'Enviando…' : 'Enviar ficha de inscrição'}
+          {enviando ? 'Enviando…' : editar ? 'Salvar alterações' : 'Enviar ficha de inscrição'}
         </button>
+        {onCancelar && <button type="button" className="botao-secundario" onClick={onCancelar}>Voltar</button>}
       </div>
 
       <p className="rodape-texto">

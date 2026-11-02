@@ -31,6 +31,8 @@ const FICHA = {
 
 describe('API', { skip: pular }, () => {
   let app, pool, chavesTeste
+  const emailsEnviados = []
+  const emailTeste = { enviar: async (m) => { emailsEnviados.push(m); return true } }
   const H = { 'x-requested-with': 'fetch' }
   const sessoes = {}
 
@@ -55,8 +57,9 @@ describe('API', { skip: pular }, () => {
     const config = {
       ...lerConfig({ DATABASE_URL: URL_TESTE }), cookieSeguro: false, limiteEnviosPorHora: 1000, limiteLoginPorMinuto: 1000,
       limiteEnviosPorContatoDia: 100000, limiteEnviosGlobalHora: 100000,
+      contaObrigatoria: false, urlPublica: 'https://prefichas.teste',
     }
-    app = await construirApp({ pool, config, logger: false, chavesLicenca: chavesTeste })
+    app = await construirApp({ pool, config, logger: false, chavesLicenca: chavesTeste, email: emailTeste })
     await pool.query(
       `insert into usuarios (email, nome, papel, senha_hash, trocar_senha) values
         ('admin@x.com', 'Admin', 'admin', $1, false),
@@ -980,6 +983,109 @@ describe('API', { skip: pular }, () => {
   })
 
   // ------------------------------------------------------------------ site
+
+  // ------------------------------------------------------------------ contas dos participantes
+  describe('contas dos participantes', () => {
+    const CPF = '529.982.247-25'
+    const jar = {}
+    const conta = (quem, method, url, payload) => app.inject({ method, url, payload, headers: { ...H, ...(jar[quem] ? { cookie: jar[quem] } : {}) } })
+    const guardar = (quem, r) => { const c = r.cookies.find((k) => k.name === 'prefichas_conta'); if (c) jar[quem] = `${c.name}=${c.value}` }
+
+    test('formulário sem conta é recusado quando a conta é obrigatória', async () => {
+      const a = await construirApp({ pool, logger: false, chavesLicenca: chavesTeste, config: { ...app.config, contaObrigatoria: true } })
+      const r = await a.inject({ method: 'POST', url: '/api/pre-fichas', payload: { ...FICHA, nome_completo: 'Sem Conta' } })
+      assert.equal(r.statusCode, 401)
+      assert.equal(r.json().precisaConta, true)
+      await a.close()
+    })
+
+    test('cadastro valida CPF, e-mail e senha; não duplica CPF/e-mail', async () => {
+      assert.equal((await conta('x', 'POST', '/api/conta/cadastro', { cpf: '111.111.111-11', email: 'a@a.com', senha: '12345678' })).statusCode, 400)
+      assert.equal((await conta('x', 'POST', '/api/conta/cadastro', { cpf: CPF, email: 'ruim', senha: '123' })).json().erros.email, 'E-mail inválido.')
+      const ok = await conta('ana', 'POST', '/api/conta/cadastro', { cpf: CPF, email: 'Ana@Conta.com', senha: 'senha-da-ana' })
+      assert.equal(ok.statusCode, 201)
+      guardar('ana', ok)
+      assert.equal((await conta('x', 'POST', '/api/conta/cadastro', { cpf: CPF, email: 'outra@conta.com', senha: 'senha-da-ana' })).statusCode, 409)
+      const eu = (await conta('ana', 'GET', '/api/conta/eu')).json()
+      assert.equal(eu.conta.cpf, '52998224725')
+      assert.equal(eu.ficha, null)
+    })
+
+    test('login com CPF ou e-mail; senha errada é recusada; sair encerra', async () => {
+      assert.equal((await conta('x', 'POST', '/api/conta/login', { login: CPF, senha: 'errada-123' })).statusCode, 401)
+      const porCpf = await conta('x', 'POST', '/api/conta/login', { login: '52998224725', senha: 'senha-da-ana' })
+      assert.equal(porCpf.statusCode, 200)
+      const porEmail = await conta('ana2', 'POST', '/api/conta/login', { login: 'ANA@conta.com', senha: 'senha-da-ana' })
+      assert.equal(porEmail.statusCode, 200)
+      guardar('ana2', porEmail)
+      await conta('ana2', 'POST', '/api/conta/sair')
+      assert.equal((await conta('ana2', 'GET', '/api/conta/eu')).json().conta, null)
+      // sem o cabeçalho anti-CSRF
+      const semCabecalho = await app.inject({ method: 'POST', url: '/api/conta/login', payload: { login: CPF, senha: 'senha-da-ana' } })
+      assert.equal(semCabecalho.statusCode, 403)
+    })
+
+    test('inscrição pela conta, edição auditada sem mudar a fila, posição opcional e desistência', async () => {
+      const nova = await conta('ana', 'POST', '/api/conta/pre-ficha', { ...FICHA, nome_completo: 'Ana Conta', email: 'ana@conta.com' })
+      assert.equal(nova.statusCode, 201)
+      assert.equal((await conta('ana', 'POST', '/api/conta/pre-ficha', { ...FICHA, nome_completo: 'Ana Conta' })).statusCode, 409)
+      const { rows: [f] } = await pool.query('select * from pre_fichas where nome_completo = $1', ['Ana Conta'])
+      assert.equal(f.cpf, '52998224725')
+      let eu = (await conta('ana', 'GET', '/api/conta/eu')).json()
+      assert.equal(eu.ficha.status, 'aguardando')
+      assert.equal(eu.ficha.posicao, null) // desligado por padrão
+      assert.equal(eu.dados.nome_completo, 'Ana Conta')
+
+      const ed = await conta('ana', 'PUT', '/api/conta/dados', { ...eu.dados, logradouro: 'Rua Nova', numero: '99' })
+      assert.equal(ed.statusCode, 200)
+      const { rows: [g] } = await pool.query('select logradouro, numero, entrada_fila_em, created_at from pre_fichas where id = $1', [f.id])
+      assert.equal(g.logradouro, 'Rua Nova')
+      assert.equal(g.entrada_fila_em.getTime(), f.entrada_fila_em.getTime())
+      const { rows: [h] } = await pool.query(`select detalhes from pre_fichas_historico where pre_ficha_id = $1 and tipo = 'edicao'`, [f.id])
+      assert.deepEqual(h.detalhes.campos.sort(), ['logradouro', 'numero'])
+      assert.equal(h.detalhes.antes.logradouro, 'Rua A')
+
+      await req('admin', 'PUT', '/api/admin/marca', { ...(await req('admin', 'GET', '/api/admin/marca')).json(), mostrarPosicaoFila: true })
+      invalidarMarca()
+      eu = (await conta('ana', 'GET', '/api/conta/eu')).json()
+      assert.equal(typeof eu.ficha.posicao, 'number')
+
+      assert.equal((await conta('ana', 'POST', '/api/conta/desistir')).statusCode, 200)
+      eu = (await conta('ana', 'GET', '/api/conta/eu')).json()
+      assert.equal(eu.ficha.status, 'desistiu')
+      assert.equal(eu.ficha.ativa, false)
+      // pode se inscrever de novo
+      assert.equal((await conta('ana', 'POST', '/api/conta/pre-ficha', { ...FICHA, nome_completo: 'Ana Conta', email: 'ana@conta.com' })).statusCode, 201)
+      // outra pessoa não vê nada sem login
+      assert.equal((await conta('ninguem', 'PUT', '/api/conta/dados', eu.dados)).statusCode, 401)
+    })
+
+    test('contas antigas importadas criam a senha pelo link do e-mail (uso único)', async () => {
+      const csv = 'nome;cpf;email;data_nascimento\nJoão Antigo;390.533.447-05;joao@antigo.com;10/02/1990\nRuim;123;x@y.com;\n'
+      const imp = await req('admin', 'POST', '/api/admin/participantes/importar', { csv })
+      assert.equal(imp.json().importados, 1)
+      assert.equal(imp.json().erros[0].motivo, 'CPF inválido')
+      assert.equal((await req('equipe', 'POST', '/api/admin/participantes/importar', { csv })).statusCode, 403)
+      // sem senha ainda: login não entra
+      assert.equal((await conta('j', 'POST', '/api/conta/login', { login: '39053344705', senha: '39053344705' })).statusCode, 401)
+
+      emailsEnviados.length = 0
+      const r = await conta('j', 'POST', '/api/conta/esqueci', { login: '390.533.447-05' })
+      assert.equal(r.statusCode, 200)
+      // conta inexistente: mesma resposta, nenhum e-mail
+      assert.equal((await conta('j', 'POST', '/api/conta/esqueci', { login: 'naoexiste@x.com' })).json().mensagem, r.json().mensagem)
+      assert.equal(emailsEnviados.length, 1)
+      assert.equal(emailsEnviados[0].para, 'joao@antigo.com')
+      const token = emailsEnviados[0].texto.match(/redefinir=([\w-]+)/)[1]
+      assert.match(emailsEnviados[0].texto, /https:\/\/prefichas\.teste\/\?redefinir=/)
+
+      const def = await conta('j', 'POST', '/api/conta/redefinir', { token, senha: 'nova-senha-joao' })
+      assert.equal(def.statusCode, 200)
+      assert.equal((await conta('j', 'POST', '/api/conta/redefinir', { token, senha: 'outra-senha-1' })).statusCode, 400)
+      assert.equal((await conta('j', 'POST', '/api/conta/login', { login: 'joao@antigo.com', senha: 'nova-senha-joao' })).statusCode, 200)
+    })
+  })
+
   test('site, cabeçalhos de segurança e logout', async () => {
     const r = await app.inject({ method: 'GET', url: '/api/saude' })
     assert.equal(r.statusCode, 200)
