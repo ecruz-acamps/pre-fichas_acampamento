@@ -93,6 +93,18 @@ services:
       - caddy_data:/data
       - caddy_config:/config
 
+  # Publicação pela Cloudflare (COMPOSE_PROFILES=tunel): HTTPS sem abrir portas no servidor.
+  # O token é criado por scripts/cloudflare-tunel.sh.
+  tunel:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunel"]
+    restart: unless-stopped
+    depends_on:
+      - app
+    command: tunnel --no-autoupdate run
+    environment:
+      TUNNEL_TOKEN: ${TUNEL_TOKEN:-}
+
 volumes:
   pgdata:
   caddy_data:
