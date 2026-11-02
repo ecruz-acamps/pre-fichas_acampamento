@@ -41,6 +41,11 @@ export default async function rotasConta(app) {
   const fichaAtiva = async (id) => (await pool.query(
     `select * from pre_fichas where participante_id = $1 and status = any($2) order by id desc limit 1`, [id, STATUS_ATIVOS])).rows[0]
 
+  // Modalidades que a pessoa já fez (pela conta ou pelo CPF em fichas antigas)
+  const modalidadesFeitas = async (id, cpf) => (await pool.query(
+    `select distinct modalidade from pre_fichas where status = 'participou' and (participante_id = $1 or cpf = $2)`,
+    [id, cpf])).rows.map((r) => r.modalidade)
+
   // ------------------------------------------------------------ situação da conta
   app.get('/api/conta/eu', async (req) => {
     const recuperacao = Boolean(email && config.urlPublica)
@@ -58,7 +63,7 @@ export default async function rotasConta(app) {
         ficha.posicao = f ? Number(f.posicao) : null
       }
     }
-    return { conta: { cpf: p.cpf, email: p.email, nome: p.nome }, dados: p.dados, ficha, mostrarPosicao: marca.mostrarPosicaoFila, recuperacao, contaObrigatoria: config.contaObrigatoria }
+    return { conta: { cpf: p.cpf, email: p.email, nome: p.nome }, dados: p.dados, ficha, modalidadesFeitas: await modalidadesFeitas(id, p.cpf), mostrarPosicao: marca.mostrarPosicaoFila, recuperacao, contaObrigatoria: config.contaObrigatoria }
   })
 
   // ------------------------------------------------------------ criar conta
@@ -173,6 +178,9 @@ export default async function rotasConta(app) {
     const f = normalizarEntrada(req.body)
     const marca = await carregarMarca(pool)
     const erros = validar(f, marca.termos.length)
+    if (!erros.modalidade && (await modalidadesFeitas(id, req.participante.cpf)).includes(f.modalidade)) {
+      erros.modalidade = 'Você já fez esta modalidade. Escolha outra para a qual tenha os requisitos.'
+    }
     if (Object.keys(erros).length) return reply.code(400).send({ mensagem: 'Dados inválidos.', erros })
     const registro = montarRegistro(f, marca.termos)
     const r = await registrarPreFicha(pool, config, registro, { ip: req.ip, log: req.log, participanteId: id, cpf: req.participante.cpf })

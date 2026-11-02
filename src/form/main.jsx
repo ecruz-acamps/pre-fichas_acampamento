@@ -188,7 +188,7 @@ function MinhaArea({ marca, info, recarregar, onSair }) {
   const voltar = (msg = '') => { setAviso(msg); setTela('inicio'); recarregar() }
 
   if (tela === 'inscrever') {
-    return <FormularioPreFicha marca={marca} modo="nova" inicial={inicial} onConcluido={() => voltar()} onCancelar={() => setTela('inicio')} />
+    return <FormularioPreFicha marca={marca} modo="nova" inicial={{ ...inicial, modalidade: '' }} jaFeitas={info.modalidadesFeitas ?? []} onConcluido={() => voltar()} onCancelar={() => setTela('inicio')} />
   }
   if (tela === 'editar') {
     return <FormularioPreFicha marca={marca} modo="editar" inicial={inicial} onConcluido={voltar} onCancelar={() => setTela('inicio')} />
@@ -247,7 +247,10 @@ function MinhaArea({ marca, info, recarregar, onSair }) {
             </button>
             {dados && <button className="botao-secundario" onClick={() => setTela('editar')}>Editar meus dados</button>}
           </div>
-          {dados && <p className="dica">Seus dados anteriores já vêm preenchidos.</p>}
+          {dados && <p className="dica">Seus dados anteriores já vêm preenchidos. Confira o estado civil e escolha a modalidade: quem já fez uma modalidade pode entrar na fila de outra quando tiver os requisitos (ex.: Sênior — casado(a) ou 30 anos ou mais).</p>}
+          {info.modalidadesFeitas?.length > 0 && (
+            <p className="dica">Você já fez: {info.modalidadesFeitas.map((m) => rotuloDe(MODALIDADES, m)).join(', ')}.</p>
+          )}
         </div>
       )}
     </div>

@@ -67,7 +67,7 @@ function SimNao({ id, rotulo, valor, onChange, erro }) {
 /**
  * modo: 'anonimo' (sem conta), 'nova' (inscrição pela conta) ou 'editar' (alterar os próprios dados).
  */
-export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = null, onConcluido, onCancelar }) {
+export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = null, jaFeitas = [], onConcluido, onCancelar }) {
   const editar = modo === 'editar'
   const [f, setF] = useState(() => ({ ...INICIAL, ...(inicial ?? {}), aceites: [], website: '' }))
   const [erros, setErros] = useState({})
@@ -98,7 +98,9 @@ export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = 
   }, [marca.captcha])
 
   const idade = useMemo(() => calcularIdade(f.data_nascimento), [f.data_nascimento])
-  const compativeis = useMemo(() => modalidadesCompativeis(idade, f.estado_civil), [idade, f.estado_civil])
+  const feitas = modo === 'nova' ? jaFeitas : []
+  const compativeis = useMemo(() => modalidadesCompativeis(idade, f.estado_civil).filter((m) => !feitas.includes(m)),
+    [idade, f.estado_civil, feitas.join()]) // eslint-disable-line react-hooks/exhaustive-deps
   const menor = idade != null && idade < 18
 
   const set = (campo) => (valorOuEvento) => {
@@ -389,14 +391,15 @@ export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = 
           <legend>Qual modalidade deseja fazer?<span className="obrigatorio" aria-hidden="true"> *</span></legend>
           <div className="modalidades">
             {MODALIDADES.map((m) => {
-              const desabilitada = idade != null && !compativeis.includes(m.valor)
+              const jaFez = feitas.includes(m.valor)
+              const desabilitada = jaFez || (idade != null && !compativeis.includes(m.valor))
               return (
                 <label key={m.valor}
                   className={`modalidade ${f.modalidade === m.valor ? 'ativa' : ''} ${desabilitada ? 'desabilitada' : ''}`}>
                   <input type="radio" name="modalidade" value={m.valor} disabled={desabilitada}
                     checked={f.modalidade === m.valor} onChange={() => set('modalidade')(m.valor)} />
                   <strong>{m.rotulo}</strong>
-                  <span>{m.faixa}</span>
+                  <span>{jaFez ? 'você já fez' : m.faixa}</span>
                 </label>
               )
             })}

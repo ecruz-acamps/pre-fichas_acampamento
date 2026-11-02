@@ -1060,6 +1060,24 @@ describe('API', { skip: pular }, () => {
       assert.equal((await conta('ninguem', 'PUT', '/api/conta/dados', eu.dados)).statusCode, 401)
     })
 
+    test('quem fez o Juvenil pode entrar na fila do Sênior com os requisitos, mas não repetir o Juvenil', async () => {
+      const r = await conta('bia', 'POST', '/api/conta/cadastro', { cpf: '111.444.777-35', email: 'bia@conta.com', senha: 'senha-da-bia' })
+      guardar('bia', r)
+      const jovem = { ...FICHA, nome_completo: 'Bia Jovem', email: 'bia@conta.com', data_nascimento: '1999-03-01', modalidade: 'juvenil' }
+      assert.equal((await conta('bia', 'POST', '/api/conta/pre-ficha', jovem)).statusCode, 201)
+      await pool.query(`update pre_fichas set status = 'participou' where nome_completo = 'Bia Jovem'`)
+      assert.deepEqual((await conta('bia', 'GET', '/api/conta/eu')).json().modalidadesFeitas, ['juvenil'])
+      // repetir o Juvenil: recusado
+      const repetir = await conta('bia', 'POST', '/api/conta/pre-ficha', jovem)
+      assert.equal(repetir.statusCode, 400)
+      assert.match(repetir.json().erros.modalidade, /já fez/)
+      // Sênior solteira com menos de 30: sem requisito
+      assert.equal((await conta('bia', 'POST', '/api/conta/pre-ficha', { ...jovem, modalidade: 'senior' })).statusCode, 400)
+      // casou: pode entrar na fila do Sênior
+      const casada = { ...jovem, modalidade: 'senior', estado_civil: 'casado' }
+      assert.equal((await conta('bia', 'POST', '/api/conta/pre-ficha', casada)).statusCode, 201)
+    })
+
     test('contas antigas importadas criam a senha pelo link do e-mail (uso único)', async () => {
       const csv = 'nome;cpf;email;data_nascimento\nJoão Antigo;390.533.447-05;joao@antigo.com;10/02/1990\nRuim;123;x@y.com;\n'
       const imp = await req('admin', 'POST', '/api/admin/participantes/importar', { csv })
