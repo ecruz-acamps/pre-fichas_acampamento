@@ -4,7 +4,7 @@ import { carregarMarca, TextoMarca } from '../lib/marca.jsx'
 import { ajustarCor, corTextoSobre } from '../../shared/marca.js'
 
 const CAMPOS_EXPORTADOS = ['nome', 'nomeCurto', 'corPrimaria', 'whatsapp', 'email', 'instagram', 'site',
-  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila', 'edicoesPreferenciaConjuge', 'mostrarPosicaoFila']
+  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila', 'edicoesPreferenciaConjuge', 'preferenciaConjuge', 'mostrarPosicaoFila']
 
 /** Importação de contas antigas (planilha CSV). As pessoas criam a senha pelo "Esqueci minha senha". */
 function ContasAntigas() {
@@ -282,11 +282,15 @@ export default function Configuracoes({ marca, onSalvar }) {
               <input id="cfg-recusas" type="number" min="0" max="10" className="numero-curto" value={m.recusasParaFimDaFila}
                 onChange={(e) => setM({ ...m, recusasParaFimDaFila: e.target.value === '' ? '' : Number(e.target.value) })} />
             </Campo>
-            <Campo id="cfg-pref" rotulo="Edições de preferência para o cônjuge" erro={erros.edicoesPreferenciaConjuge}
+            <label className="check">
+              <input type="checkbox" checked={m.preferenciaConjuge !== false} onChange={(e) => setM({ ...m, preferenciaConjuge: e.target.checked })} />
+              <span><strong>Preferência do cônjuge</strong> ligada — o formulário pergunta se o cônjuge já fez o acampamento e o painel mostra selos ★, filtro e benefícios. Desligada, tudo isso some (os registros antigos ficam guardados).</span>
+            </label>
+            {m.preferenciaConjuge !== false && <Campo id="cfg-pref" rotulo="Edições de preferência para o cônjuge" erro={erros.edicoesPreferenciaConjuge}
               dica="Quem fez o acampamento N dá ao cônjuge preferência nas próximas edições da mesma modalidade. Ex.: 2 → fez o 24º, o cônjuge tem preferência no 25º e no 26º. Use 0 para desligar.">
               <input id="cfg-pref" type="number" min="0" max="10" className="numero-curto" value={m.edicoesPreferenciaConjuge}
                 onChange={(e) => setM({ ...m, edicoesPreferenciaConjuge: e.target.value === '' ? '' : Number(e.target.value) })} />
-            </Campo>
+            </Campo>}
           </section>
 
           <section>

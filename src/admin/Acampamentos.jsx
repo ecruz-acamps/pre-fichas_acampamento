@@ -99,6 +99,7 @@ function DetalheAcampamento({ acampamento: base, marca, onVoltar, onAlterado }) 
   // Candidatos: quem ainda não foi registrado nesta edição. Confirmados primeiro, depois a ordem da fila.
   // Preferência só conta nas edições que ela cobre (ex.: cônjuge fez o 24º → 25º e 26º)
   const temPref = (f) => {
+    if (marca?.preferenciaConjuge === false) return false
     const p = preferenciaAtiva(f)
     return Boolean(p && a && p.modalidade === a.modalidade && a.numero >= p.valida_de && a.numero <= p.valida_ate)
   }
@@ -212,7 +213,7 @@ function DetalheAcampamento({ acampamento: base, marca, onVoltar, onAlterado }) 
 
         <section>
           <h2 className="subtitulo-secao">Registrar quem fez</h2>
-          <p className="dica">Escolha a tribo da pessoa para marcar que ela fez o {nomeAcampamento(a)}. Ela sai da fila de espera. Quem tem ★ preferência (cônjuge) aparece primeiro.</p>
+          <p className="dica">Escolha a tribo da pessoa para marcar que ela fez o {nomeAcampamento(a)}. Ela sai da fila de espera. {marca?.preferenciaConjuge !== false && 'Quem tem ★ preferência (cônjuge) aparece primeiro.'}</p>
           <div className="filtros">
             <input type="search" placeholder="Buscar por nome, cidade, bairro ou telefone" value={busca} onChange={(e) => setBusca(e.target.value)} />
             <label className="check-inline">
@@ -226,7 +227,7 @@ function DetalheAcampamento({ acampamento: base, marca, onVoltar, onAlterado }) 
                 {candidatos.map((f) => (
                   <tr key={f.id}>
                     <td className="posicao">{posicoes.get(f.id) ?? '—'}</td>
-                    <td>{f.nome_completo} <SeloPreferencia ficha={f} /><small className="dica bloco">{f.cidade}/{f.uf}{f.bairro ? ` · ${f.bairro}` : ''}</small></td>
+                    <td>{f.nome_completo} {marca?.preferenciaConjuge !== false && <SeloPreferencia ficha={f} />}<small className="dica bloco">{f.cidade}/{f.uf}{f.bairro ? ` · ${f.bairro}` : ''}</small></td>
                     <td><span className={`selo-status status-${f.status}`}>{rotuloDe(STATUS, f.status)}</span></td>
                     <td><SeletorTribo marca={marca} valor="" onChange={(t) => t && registrar(f.id, t)} /></td>
                   </tr>

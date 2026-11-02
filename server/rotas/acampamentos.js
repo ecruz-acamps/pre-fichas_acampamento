@@ -123,7 +123,7 @@ export default async function rotasAcampamentos(app) {
         await registrarHistorico(db, fichaId, req.usuario.id, f, 'participou', f.observacoes_internas, nota)
       }
       // Regra do cônjuge: quem tem cônjuge vinculado gera a preferência para ele
-      if (!antes) {
+      if (!antes && marca.preferenciaConjuge !== false) {
         await preferenciaPorParticipacao(db, { fichaId, acampamento: a, usuarioId: req.usuario.id, edicoes: marca.edicoesPreferenciaConjuge })
       }
       return { ok: true }

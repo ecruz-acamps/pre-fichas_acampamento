@@ -134,7 +134,7 @@ export default function Detalhe({ ficha: f, marca, usuario, todas = [], posicao,
             <h2>{f.nome_completo}</h2>
             <p className="subtitulo">
               {rotuloDe(MODALIDADES, f.modalidade)}
-              {posicao ? ` · ${posicao}º na fila` : ''} <SeloPreferencia ficha={f} />
+              {posicao ? ` · ${posicao}º na fila` : ''} {marca?.preferenciaConjuge !== false && <SeloPreferencia ficha={f} />}
             </p>
           </div>
           <button className="fechar" onClick={onFechar} aria-label="Fechar">×</button>

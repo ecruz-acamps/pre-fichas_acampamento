@@ -1045,7 +1045,7 @@ describe('API', { skip: pular }, () => {
       assert.deepEqual(h.detalhes.campos.sort(), ['logradouro', 'numero'])
       assert.equal(h.detalhes.antes.logradouro, 'Rua A')
 
-      await req('admin', 'PUT', '/api/admin/marca', { ...(await req('admin', 'GET', '/api/admin/marca')).json(), mostrarPosicaoFila: true })
+      await req('admin', 'PUT', '/api/admin/marca', { ...(await app.inject({ method: 'GET', url: '/api/marca' })).json(), mostrarPosicaoFila: true })
       invalidarMarca()
       eu = (await conta('ana', 'GET', '/api/conta/eu')).json()
       assert.equal(typeof eu.ficha.posicao, 'number')
@@ -1094,6 +1094,20 @@ describe('API', { skip: pular }, () => {
       assert.equal(des.json().ficha.tem_conta, false)
       f = (await req('admin', 'GET', `/api/admin/pre-fichas/${id}/historico`)).json()
       assert.ok(f.some((h) => /vinculada à conta ana@conta.com/.test(h.observacao ?? '')))
+    })
+
+    test('preferência do cônjuge pode ser desligada nas configurações', async () => {
+      const marca = (await app.inject({ method: 'GET', url: '/api/marca' })).json()
+      assert.equal(marca.preferenciaConjuge, true)
+      await req('admin', 'PUT', '/api/admin/marca', { ...marca, preferenciaConjuge: false })
+      invalidarMarca()
+      assert.equal((await app.inject({ method: 'GET', url: '/api/marca' })).json().preferenciaConjuge, false)
+      const id = await idPorNome('Carla Antiga')
+      const r = await req('equipe', 'POST', `/api/admin/pre-fichas/${id}/preferencias`, { modalidade: 'juvenil', acampamento_numero: 10, conjuge_nome: 'Fulano' })
+      assert.equal(r.statusCode, 400)
+      assert.match(r.json().mensagem, /desligada/)
+      await req('admin', 'PUT', '/api/admin/marca', { ...marca, preferenciaConjuge: true })
+      invalidarMarca()
     })
 
     test('contas antigas importadas criam a senha pelo link do e-mail (uso único)', async () => {

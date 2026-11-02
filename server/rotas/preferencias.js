@@ -92,7 +92,8 @@ export default async function rotasPreferencias(app) {
     const conjugeNome = typeof c.conjuge_nome === 'string' ? c.conjuge_nome.trim().slice(0, 150) : ''
     if (!conjugeFichaId && !conjugeNome) return reply.code(400).send({ mensagem: 'Informe o nome do cônjuge.' })
     const observacao = typeof c.observacao === 'string' ? c.observacao.trim().slice(0, 1000) || null : null
-    const { edicoesPreferenciaConjuge: edicoes } = await carregarMarca(pool)
+    const { edicoesPreferenciaConjuge: edicoes, preferenciaConjuge } = await carregarMarca(pool)
+    if (!preferenciaConjuge) return reply.code(400).send({ mensagem: 'A preferência do cônjuge está desligada nas Configurações.' })
 
     const r = await transacao(pool, async (db) => {
       const { rows: [f] } = await db.query('select id from pre_fichas where id = $1 for update', [id])

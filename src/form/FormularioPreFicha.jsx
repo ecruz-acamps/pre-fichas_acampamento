@@ -265,6 +265,7 @@ export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = 
                   value={f.conjuge_telefone} onChange={(e) => set('conjuge_telefone')(mascaraTelefone(e.target.value))} />
               </Campo>
             </div>
+            {marca.preferenciaConjuge !== false && <>
             <fieldset className="campo sim-nao" id="conjuge_fez_acampamento">
               <legend>Seu cônjuge já fez este acampamento?</legend>
               <div className="opcoes-inline">
@@ -283,6 +284,7 @@ export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = 
                   onChange={(e) => set('conjuge_acampamento_numero')(e.target.value.replace(/\D/g, ''))} />
               </Campo>
             )}
+            </>}
           </div>
         )}
       </section>
