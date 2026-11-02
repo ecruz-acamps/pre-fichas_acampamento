@@ -57,6 +57,7 @@ Description=Aguarda pedidos de atualização do painel (${NOME})
 
 [Path]
 PathExists=${PASTA}/atualizacao/pedido/solicitar
+PathExists=${PASTA}/atualizacao/pedido/publicar
 Unit=${UNIDADE}.service
 
 [Install]
@@ -65,5 +66,5 @@ UNIT
 
 systemctl daemon-reload
 systemctl enable --now "${UNIDADE}.path" >/dev/null
-printf '{"instalado_em":"%s","modo":"%s","unidade":"%s"}\n' "$(date -Iseconds)" "$MODO" "$UNIDADE" > atualizacao/estado/atualizador.json
+printf '{"instalado_em":"%s","modo":"%s","unidade":"%s","publicacao":true}\n' "$(date -Iseconds)" "$MODO" "$UNIDADE" > atualizacao/estado/atualizador.json
 echo "✓ Atualização pelo painel ativada (${UNIDADE})."

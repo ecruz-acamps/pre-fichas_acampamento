@@ -43,6 +43,8 @@ export function lerConfig(env = process.env) {
     // Primeira inicialização: nome do acampamento escolhido na instalação (e, opcional,
     // um arquivo de marca completo). Depois disso, tudo é ajustado pelo painel.
     // Contas dos participantes: a página inicial pede login; a inscrição exige conta.
+    // Domínio base da publicação pela Cloudflare (NOME.dominioBase)
+    dominioBase: env.DOMINIO_BASE || 'movimentocampista.com.br',
     contaObrigatoria: bool(env.CONTA_OBRIGATORIA, true),
     // Envio de e-mails (recuperação de senha). Sem SMTP_HOST, a recuperação por e-mail fica desligada.
     smtp: env.SMTP_HOST ? {

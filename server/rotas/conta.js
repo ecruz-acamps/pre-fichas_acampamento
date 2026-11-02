@@ -242,14 +242,14 @@ export default async function rotasConta(app) {
   })
 
   // ------------------------------------------------------------ painel: contas antigas
-  const soAdmin = { onRequest: [app.exigirLogin, app.exigirAdmin] }
-  app.get('/api/admin/participantes/resumo', soAdmin, async () => {
+  const soAdmin = () => ({ onRequest: [app.exigirLogin, app.exigirAdmin] })
+  app.get('/api/admin/participantes/resumo', soAdmin(), async () => {
     const { rows: [r] } = await pool.query(
       `select count(*)::int total, count(*) filter (where senha_hash is null)::int sem_senha,
               count(*) filter (where importado)::int importados from participantes`)
     return { ...r, recuperacao: Boolean(email && config.urlPublica) }
   })
-  app.post('/api/admin/participantes/importar', { ...soAdmin, bodyLimit: 10 * 1024 * 1024 }, async (req, reply) => {
+  app.post('/api/admin/participantes/importar', { ...soAdmin(), bodyLimit: 10 * 1024 * 1024 }, async (req, reply) => {
     const csv = req.body?.csv
     if (typeof csv !== 'string' || !csv.trim()) return reply.code(400).send({ mensagem: 'Envie o conteúdo da planilha (CSV).' })
     const r = await importarParticipantes(pool, csv)

@@ -47,7 +47,13 @@ DOMINIO_BASE="${DOMINIO_BASE-movimentocampista.com.br}"
 CLOUDFLARE=0
 if [ -n "${DOMINIO:-}" ]; then
   : # domínio completo informado por variável: usa como está (HTTPS pelo Caddy)
-elif [ -n "$DOMINIO_BASE" ]; then
+elif [ -n "$DOMINIO_BASE" ] && {
+  if [ -z "${PUBLICAR+x}" ] && [ "$TEM_TTY" = 1 ]; then
+    echo
+    read -r -p "Publicar na internet agora em NOME.${DOMINIO_BASE} pela Cloudflare? [S/n] (dá para ligar ou desligar depois no painel): " PUBLICAR </dev/tty
+  fi
+  case "${PUBLICAR:-s}" in [nN]*) false ;; *) true ;; esac
+}; then
   SUB_PADRAO="${SLUG#acampamento-}"
   if [ -z "${SUBDOMINIO:-}" ] && [ "$TEM_TTY" = 1 ]; then
     read -r -p "Endereço: ____.${DOMINIO_BASE} [${SUB_PADRAO}]: " SUBDOMINIO </dev/tty

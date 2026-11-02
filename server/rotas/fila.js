@@ -69,16 +69,16 @@ export function limparFicha(f) {
 
 export default async function rotasFila(app) {
   const { pool } = app
-  const autenticado = { onRequest: [app.exigirLogin] }
+  const autenticado = () => ({ onRequest: [app.exigirLogin] })
 
   // Pré-fichas visíveis para o usuário, na ordem da fila (data/hora de inscrição).
-  app.get('/api/admin/pre-fichas', autenticado, async (req) => {
+  app.get('/api/admin/pre-fichas', autenticado(), async (req) => {
     const escopo = await nucleosDoUsuario(pool, req.usuario)
     const { rows } = await pool.query(SQL_FICHAS(filtroEscopo(1)), [escopo])
     return rows.map(limparFicha)
   })
 
-  app.get('/api/admin/pre-fichas/:id/historico', autenticado, async (req, reply) => {
+  app.get('/api/admin/pre-fichas/:id/historico', autenticado(), async (req, reply) => {
     const id = Number(req.params.id)
     if (!(await podeVerFicha(pool, req.usuario, id, { leitura: true }))) return reply.code(404).send({ mensagem: 'Pré-ficha não encontrada.' })
     const { rows } = await pool.query(`${SQL_HISTORICO} where h.pre_ficha_id = $1 order by h.criado_em desc, h.id desc`, [id])
@@ -86,7 +86,7 @@ export default async function rotasFila(app) {
   })
 
   // Altera status e observações internas (únicos campos editáveis pela equipe).
-  app.patch('/api/admin/pre-fichas/:id', autenticado, async (req, reply) => {
+  app.patch('/api/admin/pre-fichas/:id', autenticado(), async (req, reply) => {
     const id = Number(req.params.id)
     const corpo = req.body ?? {}
     const temStatus = Object.hasOwn(corpo, 'status')
@@ -117,7 +117,7 @@ export default async function rotasFila(app) {
 
   // A pessoa foi chamada e disse "não". Comentário obrigatório.
   // Ao atingir o limite de recusas seguidas (marca: recusasParaFimDaFila), vai para o fim da fila.
-  app.post('/api/admin/pre-fichas/:id/recusa', autenticado, async (req, reply) => {
+  app.post('/api/admin/pre-fichas/:id/recusa', autenticado(), async (req, reply) => {
     const id = Number(req.params.id)
     const comentario = lerTextoObrigatorio(req.body?.comentario)
     if (!comentario) return reply.code(400).send({ mensagem: 'Escreva um comentário sobre a recusa.' })
@@ -151,7 +151,7 @@ export default async function rotasFila(app) {
   })
 
   // Mover para o fim da fila manualmente (motivo obrigatório; fica na trilha de auditoria)
-  app.post('/api/admin/pre-fichas/:id/fim-da-fila', autenticado, async (req, reply) => {
+  app.post('/api/admin/pre-fichas/:id/fim-da-fila', autenticado(), async (req, reply) => {
     const id = Number(req.params.id)
     const motivo = lerTextoObrigatorio(req.body?.motivo)
     if (!motivo) return reply.code(400).send({ mensagem: 'Informe o motivo.' })
@@ -170,7 +170,7 @@ export default async function rotasFila(app) {
   // Todos os campistas (quem já fez algum acampamento), de TODOS os núcleos, com a ficha
   // completa — campistas não são restritos ao núcleo. `da_minha_area` indica se o
   // coordenador também pode ALTERAR a ficha (só as do seu núcleo).
-  app.get('/api/admin/campistas', autenticado, async (req) => {
+  app.get('/api/admin/campistas', autenticado(), async (req) => {
     const escopo = await nucleosDoUsuario(pool, req.usuario)
     const { rows } = await pool.query(
       SQL_FICHAS('exists (select 1 from participacoes pa where pa.pre_ficha_id = p.id)'))
@@ -184,7 +184,7 @@ export default async function rotasFila(app) {
   })
 
   // Trilha de auditoria geral (respeita a área do coordenador)
-  app.get('/api/admin/auditoria', autenticado, async (req) => {
+  app.get('/api/admin/auditoria', autenticado(), async (req) => {
     const q = req.query ?? {}
     const escopo = await nucleosDoUsuario(pool, req.usuario)
     const filtros = [filtroEscopo(1).replaceAll('p.id', 'h.pre_ficha_id')]

@@ -6,6 +6,86 @@ import { ajustarCor, corTextoSobre } from '../../shared/marca.js'
 const CAMPOS_EXPORTADOS = ['nome', 'nomeCurto', 'corPrimaria', 'whatsapp', 'email', 'instagram', 'site',
   'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila', 'edicoesPreferenciaConjuge', 'preferenciaConjuge', 'mostrarPosicaoFila']
 
+/** Publicação na internet pela Cloudflare: o administrador liga ou desliga. */
+function Publicacao({ nomeCurto }) {
+  const [p, setP] = useState(null)
+  const [sub, setSub] = useState('')
+  const [token, setToken] = useState('')
+  const [erro, setErro] = useState('')
+  const [enviando, setEnviando] = useState(false)
+  const carregar = () => api.get('/api/admin/publicacao/estado').then((r) => {
+    setP(r)
+    setSub((atual) => atual || (r.endereco ? r.endereco.split('.')[0] : sugestao(nomeCurto)))
+    return r
+  }).catch(() => {})
+  useEffect(() => { carregar() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!p?.andamento) return
+    const t = setInterval(carregar, 3000)
+    return () => clearInterval(t)
+  }, [p?.andamento]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  async function pedir(ativo) {
+    setErro(''); setEnviando(true)
+    try {
+      await api.post('/api/admin/publicacao', { ativo, subdominio: sub, token: token || undefined })
+      setToken('')
+      await carregar()
+    } catch (e) { setErro(e.dados?.mensagem || 'Não foi possível enviar o pedido.') } finally { setEnviando(false) }
+  }
+  if (!p) return null
+  const base = p.dominioBase
+  return (
+    <section>
+      <h2>Publicação na internet (Cloudflare)</h2>
+      {!p.disponivel ? (
+        <p className="dica">Para ligar a publicação por aqui, atualize o sistema pelo botão <strong>Atualizações</strong> (o servidor precisa da versão nova do atualizador).</p>
+      ) : (
+        <>
+          <p>
+            Situação: {p.andamento ? <strong>alterando… (pode levar 1 minuto)</strong>
+              : p.ativo ? <strong className="texto-ok">publicado em <a href={`https://${p.endereco}`} target="_blank" rel="noreferrer">https://{p.endereco}</a></strong>
+                : <strong>desligada</strong> }
+          </p>
+          <p className="dica">Ligada, o sistema fica acessível pela internet em <code>NOME.{base}</code> com HTTPS, pelo túnel da Cloudflare — sem usar as portas 80/443 e sem abrir portas no roteador. Desligada, o acesso é só pela rede local (IP do servidor).</p>
+          <div className="linha-form">
+            <label htmlFor="pub-sub" className="sr-only">Endereço</label>
+            <input id="pub-sub" value={sub} maxLength={63} disabled={p.andamento}
+              onChange={(e) => setSub(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))} aria-label="Endereço" />
+            <span>.{base}</span>
+          </div>
+          {p.tokenConfigurado === false && (
+            <div className="campo">
+              <label htmlFor="pub-token">Token da API da Cloudflare (só na primeira vez)</label>
+              <input id="pub-token" type="password" value={token} onChange={(e) => setToken(e.target.value.trim())} autoComplete="off" />
+              <small className="dica">Crie em dash.cloudflare.com → Perfil → Tokens de API, com as permissões <strong>Conta › Cloudflare Tunnel › Editar</strong> e <strong>Zona › DNS › Editar</strong> ({base}). Fica guardado só no servidor.</small>
+            </div>
+          )}
+          <div className="botoes-area">
+            <button type="button" className="botao-principal pequeno" disabled={enviando || p.andamento || !sub} onClick={() => pedir(true)}>
+              {p.ativo ? 'Trocar endereço / republicar' : 'Ligar publicação'}
+            </button>
+            {p.ativo && (
+              <button type="button" className="botao-secundario" disabled={enviando || p.andamento}
+                onClick={() => window.confirm('Desligar a publicação? O sistema deixa de abrir pela internet (só pela rede local).') && pedir(false)}>
+                Desligar publicação
+              </button>
+            )}
+          </div>
+          {erro && <div className="alerta-erro">{erro}</div>}
+          {p.ultimo && !p.andamento && p.ultimo.sucesso === false && <div className="alerta-erro">{p.ultimo.mensagem}</div>}
+          {p.log?.length > 0 && (
+            <details><summary className="dica">Detalhes da última alteração</summary><pre className="log-curto">{p.log.join('\n')}</pre></details>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
+const sugestao = (nome = '') => nome.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  .replace(/^acampamento\s+/, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 63)
+
 /** Importação de contas antigas (planilha CSV). As pessoas criam a senha pelo "Esqueci minha senha". */
 function ContasAntigas() {
   const [resumo, setResumo] = useState(null)
@@ -326,6 +406,7 @@ export default function Configuracoes({ marca, onSalvar }) {
 
         <aside className="config-previa"><Previa m={m} logoUrl={logoUrl} /></aside>
       </div>
+      <div className="cartao config-publicacao"><Publicacao nomeCurto={m.nomeCurto || m.nome} /></div>
     </>
   )
 }

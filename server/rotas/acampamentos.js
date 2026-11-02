@@ -26,9 +26,9 @@ export default async function rotasAcampamentos(app) {
   const exigirGestao = async (req, reply) => {
     if (!['admin', 'equipe'].includes(req.usuario?.papel)) return reply.code(403).send({ mensagem: 'Sem permissão.' })
   }
-  const gestao = { onRequest: [app.exigirLogin, exigirGestao] }
+  const gestao = () => ({ onRequest: [app.exigirLogin, exigirGestao] })
 
-  app.get('/api/admin/acampamentos', gestao, async () => {
+  app.get('/api/admin/acampamentos', gestao(), async () => {
     const { rows } = await pool.query(
       `select a.*,
          (select count(*)::int from participacoes pa where pa.acampamento_id = a.id) as participantes,
@@ -39,7 +39,7 @@ export default async function rotasAcampamentos(app) {
     return rows
   })
 
-  app.post('/api/admin/acampamentos', gestao, async (req, reply) => {
+  app.post('/api/admin/acampamentos', gestao(), async (req, reply) => {
     const v = validarAcampamento(req.body)
     if (v.erro) return reply.code(400).send({ mensagem: v.erro })
     try {
@@ -54,7 +54,7 @@ export default async function rotasAcampamentos(app) {
     }
   })
 
-  app.patch('/api/admin/acampamentos/:id', gestao, async (req, reply) => {
+  app.patch('/api/admin/acampamentos/:id', gestao(), async (req, reply) => {
     const v = validarAcampamento(req.body)
     if (v.erro) return reply.code(400).send({ mensagem: v.erro })
     try {
@@ -70,7 +70,7 @@ export default async function rotasAcampamentos(app) {
     }
   })
 
-  app.delete('/api/admin/acampamentos/:id', gestao, async (req, reply) => {
+  app.delete('/api/admin/acampamentos/:id', gestao(), async (req, reply) => {
     const id = Number(req.params.id)
     const { rows: [{ n }] } = await pool.query('select count(*)::int n from participacoes where acampamento_id = $1', [id])
     if (n > 0) return reply.code(400).send({ mensagem: 'Remova os participantes antes de excluir o acampamento.' })
@@ -79,7 +79,7 @@ export default async function rotasAcampamentos(app) {
     return { ok: true }
   })
 
-  app.get('/api/admin/acampamentos/:id', gestao, async (req, reply) => {
+  app.get('/api/admin/acampamentos/:id', gestao(), async (req, reply) => {
     const id = Number(req.params.id)
     const { rows: [a] } = await pool.query('select * from acampamentos where id = $1', [id])
     if (!a) return reply.code(404).send({ mensagem: 'Acampamento não encontrado.' })
@@ -95,7 +95,7 @@ export default async function rotasAcampamentos(app) {
   })
 
   // Marca que a pessoa fez o acampamento (e a cor da tribo). A ficha sai da fila.
-  app.put('/api/admin/acampamentos/:id/participantes/:fichaId', gestao, async (req, reply) => {
+  app.put('/api/admin/acampamentos/:id/participantes/:fichaId', gestao(), async (req, reply) => {
     const id = Number(req.params.id)
     const fichaId = Number(req.params.fichaId)
     const tribo = typeof req.body?.tribo === 'string' && req.body.tribo.trim() ? req.body.tribo.trim() : null
@@ -133,7 +133,7 @@ export default async function rotasAcampamentos(app) {
   })
 
   // Desfaz o registro (ex.: marcado por engano). A ficha volta como "Confirmado".
-  app.delete('/api/admin/acampamentos/:id/participantes/:fichaId', gestao, async (req, reply) => {
+  app.delete('/api/admin/acampamentos/:id/participantes/:fichaId', gestao(), async (req, reply) => {
     const id = Number(req.params.id)
     const fichaId = Number(req.params.fichaId)
     const resultado = await transacao(pool, async (db) => {

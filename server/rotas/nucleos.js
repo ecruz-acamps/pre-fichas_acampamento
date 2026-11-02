@@ -27,11 +27,11 @@ const MELHOR_GRAFIA = (campo) => `(select g from unnest(array_agg(${campo})) g w
 
 export default async function rotasNucleos(app) {
   const { pool } = app
-  const autenticado = { onRequest: [app.exigirLogin] }
-  const soAdmin = { onRequest: [app.exigirLogin, app.exigirAdmin] }
+  const autenticado = () => ({ onRequest: [app.exigirLogin] })
+  const soAdmin = () => ({ onRequest: [app.exigirLogin, app.exigirAdmin] })
 
   // Núcleos com suas áreas, coordenadores e quantas pessoas estão na fila
-  app.get('/api/admin/nucleos', autenticado, async (req) => {
+  app.get('/api/admin/nucleos', autenticado(), async (req) => {
     const escopo = await nucleosDoUsuario(pool, req.usuario)
     const { rows } = await pool.query(
       `select n.id, n.nome,
@@ -76,10 +76,10 @@ export default async function rotasNucleos(app) {
     }
   }
 
-  app.post('/api/admin/nucleos', soAdmin, (req, reply) => gravar(req, reply))
-  app.put('/api/admin/nucleos/:id', soAdmin, (req, reply) => gravar(req, reply, Number(req.params.id)))
+  app.post('/api/admin/nucleos', soAdmin(), (req, reply) => gravar(req, reply))
+  app.put('/api/admin/nucleos/:id', soAdmin(), (req, reply) => gravar(req, reply, Number(req.params.id)))
 
-  app.delete('/api/admin/nucleos/:id', soAdmin, async (req, reply) => {
+  app.delete('/api/admin/nucleos/:id', soAdmin(), async (req, reply) => {
     const r = await pool.query('delete from nucleos where id = $1', [Number(req.params.id)])
     if (!r.rowCount) return reply.code(404).send({ mensagem: 'Núcleo não encontrado.' })
     return { ok: true }
@@ -89,7 +89,7 @@ export default async function rotasNucleos(app) {
 
   // Bairros da cidade: os que aparecem nas fichas + os já cadastrados em algum núcleo,
   // com o núcleo atual de cada um e quantas fichas há em cada bairro.
-  app.get('/api/admin/nucleos/divisao', soAdmin, async (req, reply) => {
+  app.get('/api/admin/nucleos/divisao', soAdmin(), async (req, reply) => {
     const uf = String(req.query.uf ?? '').toUpperCase()
     const cidade = String(req.query.cidade ?? '').trim()
     if (!UFS.includes(uf) || !cidade) return reply.code(400).send({ mensagem: 'Informe UF e cidade.' })
@@ -119,7 +119,7 @@ export default async function rotasNucleos(app) {
 
   // Salva a divisão: cada bairro vai para no máximo um núcleo. Substitui as áreas
   // daquela cidade (inclusive "cidade inteira") nos núcleos; outras cidades não mudam.
-  app.put('/api/admin/nucleos/divisao', soAdmin, async (req, reply) => {
+  app.put('/api/admin/nucleos/divisao', soAdmin(), async (req, reply) => {
     const uf = String(req.body?.uf ?? '').toUpperCase()
     const cidade = String(req.body?.cidade ?? '').trim()
     const atribuicoes = Array.isArray(req.body?.atribuicoes) ? req.body.atribuicoes : null
@@ -154,7 +154,7 @@ export default async function rotasNucleos(app) {
   })
 
   // Cidades e bairros que aparecem nas fichas (para montar as áreas dos núcleos)
-  app.get('/api/admin/localidades', soAdmin, async () => {
+  app.get('/api/admin/localidades', soAdmin(), async () => {
     const { rows } = await pool.query(
       `select uf, ${MELHOR_GRAFIA('cidade')} as cidade, ${MELHOR_GRAFIA('bairro')} as bairro,
               count(*)::int as fichas,
