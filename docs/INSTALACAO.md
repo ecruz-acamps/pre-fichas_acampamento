@@ -152,7 +152,7 @@ Ele instala o que faltar (git, curl, Docker), baixa o sistema em `/opt/prefichas
 Sem perguntas (automação): `curl -fsSL …/instalar.sh | sudo NOME="Acampamento Exemplo" DOMINIO= ADMIN_EMAIL=voce@email.com ADMIN_NOME="Seu Nome" bash`
 
 Se as portas 80/443 já estiverem em uso por outro programa, o instalador mostra qual é e usa uma
-porta livre (ex.: 8080) sem HTTPS — veja a seção de problemas comuns.
+porta livre (padrão 8180) sem HTTPS — veja a seção de problemas comuns.
 
 ### 4.2 Jeito manual (assistente)
 

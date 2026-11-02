@@ -15,6 +15,7 @@
 #   --admin EMAIL      e-mail do primeiro administrador
 #   --nome-admin NOME  nome do primeiro administrador
 #   --chave XXX-0000   chave de ativação (se omitida, é pedida no fim; ENTER ativa depois pelo painel)
+#   --porta-http N     porta pública do site (padrão 80; se ocupada, 8180 ou a próxima livre)
 #   --porta N          porta local da aplicação (padrão 3000; vários acampamentos: 3001, 3002...)
 #   --marca ARQ        (avançado) arquivo de marca completo, ver marcas/modelo.json
 #   --multi            vários acampamentos atrás de um proxy compartilhado (sem Caddy próprio)
@@ -22,7 +23,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-NOME="" DOMINIO="-" ADMIN="" NOME_ADMIN="" PORTA="3000" MULTI=0 FORCAR=0 CHAVE="" MARCA=""
+PORTA_WEB="${PORTA_HTTP:-}" NOME="" DOMINIO="-" ADMIN="" NOME_ADMIN="" PORTA="3000" MULTI=0 FORCAR=0 CHAVE="" MARCA=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --nome) NOME="$2"; shift 2 ;;
@@ -30,6 +31,7 @@ while [ $# -gt 0 ]; do
     --admin) ADMIN="$2"; shift 2 ;;
     --nome-admin) NOME_ADMIN="$2"; shift 2 ;;
     --porta) PORTA="$2"; shift 2 ;;
+    --porta-http) PORTA_WEB="$2"; shift 2 ;;
     --chave) CHAVE="$2"; shift 2 ;;
     --marca) MARCA="$2"; shift 2 ;;
     --multi) MULTI=1; shift ;;
@@ -101,8 +103,13 @@ elif [ -n "$DOMINIO" ]; then
 fi
 if [ "$MULTI" = 0 ] && [ -z "$DOMINIO" ]; then
   SITE=":80"; COOKIE="false"
-  PORTA_HTTP=$(porta_ocupada 80 && porta_livre_a_partir 8080 || echo 80)
-  PORTA_HTTPS=$(porta_livre_a_partir 8443)
+  if [ -n "$PORTA_WEB" ]; then
+    porta_ocupada "$PORTA_WEB" && { echo "A porta $PORTA_WEB já está em uso por $(quem_usa "$PORTA_WEB" || echo 'outro programa')."; exit 1; }
+    PORTA_HTTP="$PORTA_WEB"
+  else
+    PORTA_HTTP=$(porta_ocupada 80 && porta_livre_a_partir 8180 || echo 80)
+  fi
+  PORTA_HTTPS=$(porta_livre_a_partir 8543)
   if [ "$PORTA_HTTP" != 80 ]; then echo "→ Porta 80 ocupada por $(quem_usa 80 || echo 'outro programa'): usando a porta $PORTA_HTTP."; fi
 fi
 URL_PUB=""; [ -n "$DOMINIO" ] && URL_PUB="https://${DOMINIO}"

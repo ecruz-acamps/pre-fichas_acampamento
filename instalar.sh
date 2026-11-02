@@ -46,6 +46,10 @@ perguntar ADMIN_EMAIL "E-mail do administrador"
 perguntar ADMIN_NOME "Nome do administrador"
 [ -n "${ADMIN_EMAIL:-}" ] && [ -n "${ADMIN_NOME:-}" ] || erro "Informe e-mail e nome do administrador."
 CHAVE="${CHAVE:-}"
+if [ -z "${PORTA_HTTP:-}" ] && [ -z "$DOMINIO" ] && [ "$TEM_TTY" = 1 ]; then
+  read -r -p "Porta do site (ENTER = automática: 80, ou 8180 se a 80 estiver ocupada): " PORTA_HTTP </dev/tty
+fi
+PORTA_HTTP="${PORTA_HTTP:-}"
 
 SLUG="$(printf '%s' "$NOME" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null || printf '%s' "$NOME")"
 SLUG="$(printf '%s' "$SLUG" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '-' | sed 's/-\+/-/g; s/^-//; s/-$//')"
@@ -87,4 +91,5 @@ etapa "Instalando o acampamento"
 cd "$PASTA"
 ARGS=(--nome "$NOME" --dominio "$DOMINIO" --admin "$ADMIN_EMAIL" --nome-admin "$ADMIN_NOME")
 [ -n "$CHAVE" ] && ARGS+=(--chave "$CHAVE")
+[ -n "$PORTA_HTTP" ] && ARGS+=(--porta-http "$PORTA_HTTP")
 ./scripts/novo-acampamento.sh "${ARGS[@]}"

@@ -250,7 +250,7 @@ formulário e do painel.
 - **Com domínio** (ex.: `prefichas.seuacampamento.com.br` apontando para o servidor): HTTPS automático.
 - **Sem domínio**: deixe em branco e acesse por `http://IP-DO-SERVIDOR`.
 - **Porta 80/443 já ocupada** por outro programa: o instalador avisa quem está usando e instala
-  numa porta livre (ex.: `http://IP:8080`).
+  numa porta livre (padrão `http://IP:8180`; escolha outra na pergunta "Porta do site").
 
 Guia completo e instalação manual: [`docs/INSTALACAO.md`](docs/INSTALACAO.md).
 
