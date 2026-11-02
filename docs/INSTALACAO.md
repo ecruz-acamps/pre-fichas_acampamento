@@ -45,7 +45,7 @@ Tudo roda em containers **Docker**, criados por um assistente (`scripts/novo-aca
   | Memória | 1 GB | 2 GB (+0,5 GB por acampamento extra) |
   | Disco | 10 GB | 20 GB (backups crescem com o tempo) |
 
-- **Um domínio** (ou subdomínio) para o formulário, ex.: `app.acampamentosaopadrepio.com.br`.
+- **Um domínio** (ou subdomínio) para o formulário, ex.: `prefichas.acampamento-a.com.br`.
   Sem domínio também funciona dentro de uma rede interna (seção 7), mas sem HTTPS.
 - **Portas 80 e 443** liberadas para a internet (no firewall do servidor e no roteador/provedor).
 - **A chave de ativação** do sistema (formato `XXX-0000`), fornecida pelo responsável pela
@@ -136,40 +136,39 @@ getent hosts app.seudominio.com.br     # deve mostrar o IP do servidor
 
 ## 4. Instalar um acampamento
 
-### 4.1 Baixar o código
-
-Use uma pasta por acampamento — o nome da pasta ajuda a identificar:
+### 4.1 Jeito fácil: um único comando
 
 ```bash
-sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/prefichas-sao-padre-pio
-cd /opt/prefichas-sao-padre-pio
+curl -fsSL https://raw.githubusercontent.com/ecruz-acamps/pre-fichas_acampamento/main/instalar.sh | sudo bash
 ```
 
-### 4.2 (Se for um acampamento novo) criar a marca
+Ele instala o que faltar (git, curl, Docker), baixa o sistema em `/opt/prefichas-NOME` e pergunta:
 
-O repositório já traz `marcas/sao-padre-pio.json` e `marcas/beata-albertina.json`. Para outro
-acampamento, copie e edite (nome, cor, WhatsApp, tribos — veja [`marcas/README.md`](../marcas/README.md)):
+1. **Nome do acampamento** (ex.: "Acampamento Exemplo") — aparece no formulário e no painel;
+2. **Domínio** com HTTPS (ex.: `prefichas.seuacampamento.com.br`) — deixe vazio para usar pelo IP;
+3. **E-mail e nome do administrador**;
+4. **Chave de ativação** (ENTER = ativar depois pelo painel).
+
+Sem perguntas (automação): `curl -fsSL …/instalar.sh | sudo NOME="Acampamento Exemplo" DOMINIO= ADMIN_EMAIL=voce@email.com ADMIN_NOME="Seu Nome" bash`
+
+Se as portas 80/443 já estiverem em uso por outro programa, o instalador mostra qual é e usa uma
+porta livre (ex.: 8080) sem HTTPS — veja a seção de problemas comuns.
+
+### 4.2 Jeito manual (assistente)
 
 ```bash
-sudo cp marcas/sao-padre-pio.json marcas/meu-acampamento.json
-sudo nano marcas/meu-acampamento.json
-```
-
-A logo pode ser enviada depois pelo painel. Tudo isso também pode ser ajustado depois em
-**Configurações**, então não precisa estar perfeito agora.
-
-### 4.3 Rodar o assistente
-
-```bash
+sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/prefichas-meu-acampamento
+cd /opt/prefichas-meu-acampamento
 sudo ./scripts/novo-acampamento.sh \
-    --marca marcas/sao-padre-pio.json \
-    --dominio app.seudominio.com.br \
+    --nome "Acampamento Exemplo" \
+    --dominio prefichas.seudominio.com.br \
     --admin seu-email@exemplo.com \
     --nome-admin "Seu Nome"
 ```
 
 (Se omitir alguma opção, o assistente pergunta no terminal. A chave de ativação também pode ser
-informada já no comando, com `--chave XXX-0000`.)
+informada já no comando, com `--chave XXX-0000`. Logo, cores e tribos: painel → **Configurações**
+ou um arquivo baseado em [`marcas/modelo.json`](../marcas/modelo.json) com `--marca`.)
 
 O assistente:
 
@@ -177,10 +176,10 @@ O assistente:
 2. baixa as imagens, gera a aplicação e sobe banco + aplicação + Caddy — **a primeira vez leva
    alguns minutos**;
 3. espera a aplicação responder e cria as tabelas do banco automaticamente;
-4. aplica a marca do acampamento;
+4. grava o nome do acampamento;
 5. cria o **primeiro administrador** e mostra uma **senha temporária**;
-1. ativa a **atualização pelo painel** (serviço do systemd que executa o botão "Atualizar agora");
-6. pede a **chave de ativação** (`XXX-0000`). Se você ainda não tiver a chave, aperte ENTER:
+6. ativa a **atualização pelo painel** (serviço do systemd que executa o botão "Atualizar agora");
+7. pede a **chave de ativação** (`XXX-0000`). Se você ainda não tiver a chave, aperte ENTER:
    o painel vai pedi-la no primeiro acesso.
 
 ```
@@ -191,7 +190,7 @@ Senha temporária: abcd-2345-efgh
 Chave de ativação (formato XXX-0000) — ENTER para ativar depois pelo painel: ●●●-●●●●
 ✓ Sistema ativado.
 
-✓ Acampamento São Padre Pio instalado.
+✓ Acampamento Exemplo instalado.
   Formulário: https://app.seudominio.com.br/    Painel: https://app.seudominio.com.br/admin/
 ```
 
@@ -264,17 +263,17 @@ sudo apt update && sudo apt install -y caddy
 ### 6.2 Instalar cada acampamento com `--multi` e uma porta diferente
 
 ```bash
-sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/prefichas-sao-padre-pio
-cd /opt/prefichas-sao-padre-pio
+sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/prefichas-acampamento-a
+cd /opt/prefichas-acampamento-a
 sudo ./scripts/novo-acampamento.sh --multi --porta 3001 \
-    --marca marcas/sao-padre-pio.json --dominio app.acampamentosaopadrepio.com.br \
-    --admin admin@saopadrepio.com.br --nome-admin "Coordenação São Padre Pio"
+    --nome "Acampamento A" --dominio prefichas.acampamento-a.com.br \
+    --admin admin@acampamento-a.com.br --nome-admin "Coordenação A"
 
-sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/prefichas-beata-albertina
-cd /opt/prefichas-beata-albertina
+sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/prefichas-acampamento-b
+cd /opt/prefichas-acampamento-b
 sudo ./scripts/novo-acampamento.sh --multi --porta 3002 \
-    --marca marcas/beata-albertina.json --dominio prefichas.beataalbertina.com.br \
-    --admin admin@beataalbertina.com.br --nome-admin "Coordenação Beata Albertina"
+    --nome "Acampamento B" --dominio prefichas.acampamento-b.com.br \
+    --admin admin@acampamento-b.com.br --nome-admin "Coordenação B"
 ```
 
 Com `--multi`, o acampamento **não** sobe Caddy próprio; a aplicação fica disponível só dentro do
@@ -286,12 +285,12 @@ O assistente imprime o bloco de cada domínio. Edite `/etc/caddy/Caddyfile` (mod
 [`deploy/Caddyfile.multi`](../deploy/Caddyfile.multi)):
 
 ```
-app.acampamentosaopadrepio.com.br {
+prefichas.acampamento-a.com.br {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:3001
 }
 
-prefichas.beataalbertina.com.br {
+prefichas.acampamento-b.com.br {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:3002
 }
@@ -318,7 +317,7 @@ Para usar só dentro da rede da paróquia/casa de retiro, acessando pelo IP do s
 
 ```bash
 sudo ./scripts/novo-acampamento.sh --dominio :80 \
-    --marca marcas/sao-padre-pio.json --admin seu-email@exemplo.com --nome-admin "Seu Nome"
+    --nome "Acampamento Exemplo" --admin seu-email@exemplo.com --nome-admin "Seu Nome"
 ```
 
 Acesse `http://IP-DO-SERVIDOR/` e `http://IP-DO-SERVIDOR/admin/`. Nesse modo não há HTTPS:
@@ -333,7 +332,7 @@ use apenas em rede confiável. (Para HTTPS com certificado interno, veja `deploy
 Dentro da pasta do acampamento:
 
 ```bash
-cd /opt/prefichas-sao-padre-pio
+cd /opt/prefichas-acampamento-a
 sudo ./scripts/backup.sh
 ```
 
@@ -349,8 +348,8 @@ sudo crontab -e
 Acrescente (um por acampamento, em horários diferentes):
 
 ```
-0 2 * * * cd /opt/prefichas-sao-padre-pio && ./scripts/backup.sh >> /var/log/prefichas-backup.log 2>&1
-15 2 * * * cd /opt/prefichas-beata-albertina && ./scripts/backup.sh >> /var/log/prefichas-backup.log 2>&1
+0 2 * * * cd /opt/prefichas-acampamento-a && ./scripts/backup.sh >> /var/log/prefichas-backup.log 2>&1
+15 2 * * * cd /opt/prefichas-acampamento-b && ./scripts/backup.sh >> /var/log/prefichas-backup.log 2>&1
 ```
 
 ### 8.3 Copiar os backups para fora do servidor
@@ -359,7 +358,7 @@ Backup no mesmo disco não protege contra falha do disco, roubo ou perda do serv
 para outro lugar — por exemplo, para outro computador com `rsync` (também no cron):
 
 ```
-30 3 * * * rsync -a /opt/prefichas-sao-padre-pio/backups/ usuario@outro-servidor:/backups/prefichas-sao-padre-pio/
+30 3 * * * rsync -a /opt/prefichas-acampamento-a/backups/ usuario@outro-servidor:/backups/prefichas-acampamento-a/
 ```
 
 Ou copie periodicamente para um HD externo / nuvem da organização. Os backups contêm dados
@@ -370,7 +369,7 @@ pessoais (LGPD): guarde-os em local protegido.
 > ⚠️ Substitui **todos** os dados atuais pelos do backup.
 
 ```bash
-cd /opt/prefichas-sao-padre-pio
+cd /opt/prefichas-acampamento-a
 sudo ./scripts/restaurar.sh backups/prefichas-2026-11-01_020000.dump
 ```
 
@@ -417,7 +416,7 @@ pedir pelo site é "atualize para a versão oficial do GitHub".
 ### Pelo terminal (alternativa)
 
 ```bash
-cd /opt/prefichas-sao-padre-pio
+cd /opt/prefichas-acampamento-a
 sudo ./scripts/atualizar.sh
 ```
 
@@ -477,7 +476,7 @@ sudo tee /etc/pre-fichas.env > /dev/null <<'EOF'
 DATABASE_URL=postgres://prefichas:SENHA@localhost:5432/prefichas
 HOST=127.0.0.1
 PORTA=3000
-MARCA_INICIAL=marcas/sao-padre-pio.json
+NOME_ACAMPAMENTO=Acampamento Exemplo
 EOF
 sudo chmod 600 /etc/pre-fichas.env
 
@@ -514,6 +513,13 @@ Logs: `sudo journalctl -u pre-fichas -f`.
 - Confira as portas 80 e 443: `sudo ufw status` e o firewall/roteador do provedor.
 - Veja o log do Caddy: `sudo docker compose logs caddy` (ou `sudo journalctl -u caddy` no modo vários acampamentos).
 - Cloudflare: deixe o registro como "DNS only" até emitir.
+
+**"address already in use" / "failed to bind host port 0.0.0.0:80"**
+- Outro programa já usa a porta 80 (ou 443). Veja qual: `sudo ss -ltnp | grep -E ':(80|443) '`.
+- O instalador de um comando já detecta isso e usa outra porta. Numa instalação manual, coloque
+  no `.env` `PORTA_HTTP=8080` e `PORTA_HTTPS=8443` (e `DOMINIO=:80`, `COOKIE_SEGURO=false`) e rode
+  `sudo docker compose up -d`. Para ter HTTPS com domínio, libere as portas 80/443 (pare o outro
+  programa) ou use o modo `--multi` atrás do proxy que já existe.
 
 **"502 Bad Gateway"**
 - A aplicação não está respondendo: `sudo docker compose ps` e `sudo docker compose logs app`.
@@ -584,8 +590,8 @@ sudo docker compose exec app node server/cli.js redefinir-senha seu-email@exempl
 > ⚠️ Apaga definitivamente os dados do acampamento. Faça e guarde um backup antes.
 
 ```bash
-cd /opt/prefichas-sao-padre-pio
+cd /opt/prefichas-acampamento-a
 sudo ./scripts/backup.sh
 sudo docker compose down -v          # remove containers e o banco de dados
-cd / && sudo rm -rf /opt/prefichas-sao-padre-pio
+cd / && sudo rm -rf /opt/prefichas-acampamento-a
 ```

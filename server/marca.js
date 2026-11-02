@@ -70,11 +70,19 @@ export function temaCss(marca) {
  * Na primeira inicialização (marca ainda não configurada), aplica o arquivo
  * indicado em MARCA_INICIAL. Depois disso, as mudanças são feitas pelo painel.
  */
-export async function aplicarMarcaInicial(pool, arquivo, log) {
-  if (!arquivo) return
+export async function aplicarMarcaInicial(pool, arquivo, log, nome = null) {
+  if (!arquivo && !nome) return
   const { rows: [r] } = await pool.query(`select dados = '{}'::jsonb as vazia from marca where id`)
   if (!r?.vazia) return
+  if (!arquivo) {
+    // Só o nome escolhido na instalação; o resto fica no padrão (ajustável no painel)
+    const { erros } = await salvarMarca(pool, { nome: nome.slice(0, 120), nomeCurto: nome.replace(/^acampamento\s+/i, '').slice(0, 60) })
+    if (erros) throw new Error(`NOME_ACAMPAMENTO inválido: ${JSON.stringify(erros)}`)
+    log.info(`Nome do acampamento definido: ${nome}`)
+    return
+  }
   const { logo, ...dados } = JSON.parse(await readFile(arquivo, 'utf8'))
+  if (nome) { dados.nome = nome; dados.nomeCurto = nome.replace(/^acampamento\s+/i, '') }
   const { erros } = await salvarMarca(pool, dados)
   if (erros) throw new Error(`MARCA_INICIAL inválida (${arquivo}): ${JSON.stringify(erros)}`)
   if (logo) {

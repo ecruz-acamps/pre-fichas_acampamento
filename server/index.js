@@ -9,7 +9,7 @@ const pool = criarPool(config.databaseUrl)
 const app = await construirApp({ pool, config })
 
 await migrar(pool, app.log)
-await aplicarMarcaInicial(pool, config.marcaInicial, app.log)
+await aplicarMarcaInicial(pool, config.marcaInicial, app.log, config.nomeInicial)
 
 const limpeza = setInterval(() => limparSessoesExpiradas(pool).catch((e) => app.log.error(e)), 60 * 60 * 1000)
 limpeza.unref()

@@ -6,12 +6,12 @@
 #
 # O próprio scripts/novo-acampamento.sh mostra o bloco a acrescentar aqui.
 
-app.acampamentosaopadrepio.com.br {
+prefichas.acampamento-a.com.br {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:3001
 }
 
-prefichas.beataalbertina.com.br {
+prefichas.acampamento-b.com.br {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:3002
 }
