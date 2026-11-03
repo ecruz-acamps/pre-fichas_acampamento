@@ -48,8 +48,8 @@ VERSAO_BRANCH="$BRANCH"
 export VERSAO_COMMIT VERSAO_DATA VERSAO_BRANCH
 
 if [ "$MODO" = "docker" ]; then
-  echo "→ Reconstruindo e reiniciando (pode levar alguns minutos)…"
-  if [ "${SEM_BUILD:-0}" = 1 ]; then docker compose up -d; else docker compose up -d --build; fi
+  echo "→ Atualizando os containers…"
+  ./scripts/subir-app.sh
   PORTA="$(grep -E '^PORTA_LOCAL=' .env | cut -d= -f2 || true)"
   PORTA="${PORTA:-3000}"
 else

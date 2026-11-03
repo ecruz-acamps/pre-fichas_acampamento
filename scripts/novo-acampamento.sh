@@ -167,7 +167,7 @@ VERSAO_BRANCH="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
 export VERSAO_COMMIT VERSAO_DATA VERSAO_BRANCH
 
 echo "→ Preparando e iniciando o sistema (na primeira vez leva alguns minutos)…"
-if [ "${SEM_BUILD:-0}" = 1 ]; then docker compose up -d; else docker compose up -d --build; fi
+./scripts/subir-app.sh
 
 echo -n "→ Aguardando o sistema iniciar"
 for _ in $(seq 1 90); do

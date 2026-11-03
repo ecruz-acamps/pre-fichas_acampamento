@@ -143,3 +143,29 @@ com L1), ETag no HTML e em `/api/marca` (BE-09), cache de CEP com coalescência 
 2. **Etapa 2 (2–3 dias)**: P3, P4, P5, P6 — fila paginada e painel leve (o maior ganho para os usuários).
 3. **Etapa 3**: G3–G7, G9, G10, L2.
 4. **Etapa 4**: L1 (imagem pronta), depois rodar `/analise-performance` de novo e comparar.
+
+---
+
+## Resultado das melhorias (implementadas em 2026-11-03)
+
+Medido com os mesmos dados sintéticos (20 mil fichas):
+
+| Medida | Antes | Depois |
+|---|---|---|
+| Abrir a Fila no painel | 22,2 s | **1,0 s** |
+| Dados baixados pela Fila | 25,8 MB | **0,44 MB** (resumida + compressão) |
+| Busca na Fila (por tecla) | 4,1–5,1 s | **0,06–0,1 s** |
+| Memória do navegador no painel | 116 MB | **31 MB** |
+| Nós na página da Fila | 340 mil | **3,5 mil** (200 linhas por vez) |
+| Formulário no 4G fraco (LCP) | 2,58 s | **1,55 s** |
+| Consulta da lista no banco | 2,2 s (JIT) | JIT desligado + núcleos agrupados |
+| Painel inicial (JS) | 115 KB | **67 KB** |
+| Trocar de aba no painel | baixava tudo de novo | **1 download** para todas as abas |
+
+Itens feitos: P1–P8, L1 (imagem pronta com reconstrução local de reserva), G1–G8, G10, BE-10, BE-11,
+INF-09 (limpeza de imagens). Não feitos (baixo impacto agora): L2 parcial (CSS separado do painel e marca
+embutida no HTML — o LCP já ficou abaixo da meta com a compressão), G9, ajuste fino do PostgreSQL, ETag.
+
+Segurança preservada: a lista resumida e a ficha completa seguem as mesmas regras de acesso (coordenador só
+vê fichas da sua área; testes cobrem), a lista em memória do painel é apagada ao sair/expirar/entrar, as
+sessões continuam barrando usuário desativado e as senhas continuam com scrypt.

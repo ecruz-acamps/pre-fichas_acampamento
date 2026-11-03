@@ -44,7 +44,8 @@ services:
         VERSAO_COMMIT: ${VERSAO_COMMIT:-}
         VERSAO_DATA: ${VERSAO_DATA:-}
         VERSAO_BRANCH: ${VERSAO_BRANCH:-}
-    image: ${COMPOSE_PROJECT_NAME:-pre-fichas}-app:latest
+    # Imagem pronta do GitHub (IMAGEM_APP, definida por scripts/subir-app.sh) ou a gerada aqui
+    image: ${IMAGEM_APP:-${COMPOSE_PROJECT_NAME:-pre-fichas}-app:latest}
     restart: unless-stopped
     logging: *logs
     mem_limit: ${MEMORIA_APP:-768m}

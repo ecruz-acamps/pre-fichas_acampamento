@@ -537,6 +537,17 @@ as colunas `cpf`, `email`, `nome`, `data_nascimento` (ou `docker compose exec ap
 participantes importar contas.csv`). As contas entram sem senha: a pessoa clica em "Esqueci minha
 senha" e cria a senha pelo link. Nunca é usado o CPF como senha.
 
+## 11c. Atualização rápida (imagem pronta)
+
+A cada mudança na `main`, o GitHub gera a imagem pronta do sistema (`ghcr.io/ecruz-acamps/pre-fichas_acampamento`).
+A instalação e o botão **Atualizar agora** baixam essa imagem em vez de recompilar tudo no servidor
+(mais rápido e sem pesar na CPU durante as inscrições). Se a imagem não estiver disponível, o sistema
+reconstrói no servidor como antes.
+
+**Uma vez só (dono do repositório):** depois da primeira publicação, em GitHub → seu perfil → *Packages* →
+`pre-fichas_acampamento` → *Package settings* → *Change visibility* → **Public**. Sem isso os servidores
+não conseguem baixar a imagem e continuam reconstruindo localmente (funciona, só é mais lento).
+
 ## 12. Solução de problemas
 
 **O site não abre / certificado HTTPS não é emitido**
