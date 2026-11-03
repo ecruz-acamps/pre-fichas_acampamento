@@ -129,6 +129,18 @@ export default async function rotasFila(app) {
     return rows.map(limparFicha)
   })
 
+  // Impressão da ficha: quem pode ver a ficha completa pode imprimir; fica registrado na trilha
+  app.post('/api/admin/pre-fichas/:id/impressao', { ...autenticado(), config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const id = Number(req.params.id)
+    if (!Number.isInteger(id) || !(await podeVerFicha(pool, req.usuario, id, { leitura: true }))) {
+      return reply.code(404).send({ mensagem: 'Pré-ficha não encontrada.' })
+    }
+    await pool.query(
+      `insert into pre_fichas_historico (pre_ficha_id, usuario_id, tipo, observacao) values ($1, $2, 'observacao', 'Ficha impressa.')`,
+      [id, req.usuario.id])
+    return { ok: true }
+  })
+
   // Ficha completa (ao abrir o detalhe). Mesma regra do histórico: núcleo do coordenador ou campista.
   app.get('/api/admin/pre-fichas/:id', autenticado(), async (req, reply) => {
     const id = Number(req.params.id)

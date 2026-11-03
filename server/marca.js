@@ -13,10 +13,13 @@ let cache = null
 export async function carregarMarca(pool) {
   if (cache) return cache
   const { rows: [r] } = await pool.query(
-    `select dados, logo is not null as tem_logo, logo_tipo, atualizado_em from marca where id`)
+    `select dados, logo is not null as tem_logo, logo_impressao is not null as tem_logo_impressao, logo_tipo, atualizado_em from marca where id`)
   const { marca } = validarMarca({ ...MARCA_PADRAO, ...(r?.dados ?? {}) })
   const versao = createHash('sha1').update(String(r?.atualizado_em ?? '')).digest('hex').slice(0, 10)
-  cache = { ...marca, logoUrl: r?.tem_logo ? `/api/marca/logo?v=${versao}` : null, versao }
+  cache = {
+    ...marca, logoUrl: r?.tem_logo ? `/api/marca/logo?v=${versao}` : null,
+    logoImpressaoUrl: r?.tem_logo_impressao ? `/api/marca/logo-impressao?v=${versao}` : null, versao,
+  }
   return cache
 }
 
@@ -52,6 +55,19 @@ export async function salvarLogo(pool, buffer, tipo) {
 export async function removerLogo(pool) {
   await pool.query('update marca set logo = null, logo_tipo = null, atualizado_em = now() where id')
   invalidarMarca()
+}
+
+/** Logo do cabeçalho da impressão (buffer null = remover). */
+export async function salvarLogoImpressao(pool, buffer, tipo) {
+  await pool.query('update marca set logo_impressao = $1, logo_impressao_tipo = $2, atualizado_em = now() where id',
+    [buffer, buffer ? tipo : null])
+  invalidarMarca()
+}
+
+export async function lerLogoImpressao(pool) {
+  const { rows: [r] } = await pool.query(
+    'select logo_impressao as logo, logo_impressao_tipo as logo_tipo from marca where id and logo_impressao is not null')
+  return r ?? null
 }
 
 export async function lerLogo(pool) {

@@ -39,6 +39,10 @@ export const MARCA_PADRAO = {
   preferenciaConjuge: true,
   // Área do participante: mostrar a posição na fila (desligado = mostra só a situação)
   mostrarPosicaoFila: false,
+  // Cabeçalho da ficha impressa (vazio = usa o nome do acampamento)
+  impressaoTitulo: 'Ficha de pré-inscrição',
+  impressaoSubtitulo: '',
+  impressaoTextoDireita: '',
 }
 
 const COR = /^#[0-9a-fA-F]{6}$/
@@ -46,6 +50,7 @@ const COR = /^#[0-9a-fA-F]{6}$/
 const LIMITES = {
   nome: 120, nomeCurto: 60, whatsapp: 20, email: 200, instagram: 100, site: 200,
   tituloFormulario: 120, textoFormulario: 1500, mensagemSucesso: 1500,
+  impressaoTitulo: 80, impressaoSubtitulo: 120, impressaoTextoDireita: 120,
 }
 
 /** Valida e normaliza a marca. Retorna { marca, erros }. */

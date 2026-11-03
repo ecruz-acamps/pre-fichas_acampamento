@@ -3,6 +3,7 @@ import { api } from '../lib/api.js'
 import { CorTribo } from '../lib/marca.jsx'
 import { DescricaoEvento, SeloTipo, autorEvento } from './EventoAuditoria.jsx'
 import ConjugePreferencia from './ConjugePreferencia.jsx'
+import FichaImpressao from './FichaImpressao.jsx'
 import { SeloPreferencia } from './Preferencia.jsx'
 import { ESTADOS_CIVIS, MODALIDADES, SEXOS, STATUS, rotuloDe } from '../../shared/opcoes.js'
 import { calcularIdade, formatarData, formatarDataHora, linkWhatsApp, mascaraCep, mascaraCpf, simNao } from '../../shared/util.js'
@@ -128,6 +129,14 @@ export default function Detalhe({ ficha: resumo, marca, usuario, todas = [], pos
     }
   }
 
+  // Impressão: registra na trilha de auditoria (dados pessoais) e abre a impressão do navegador
+  async function imprimir() {
+    try { await api.post(`/api/admin/pre-fichas/${f.id}/impressao`) } catch (e) {
+      if (e.status === 404 || e.status === 403) return alert('Sem permissão para imprimir esta ficha.')
+    }
+    window.print()
+  }
+
   async function salvar() {
     setSalvando(true)
     await onSalvar({ status, observacoes_internas: obs.trim() || null })
@@ -148,8 +157,12 @@ export default function Detalhe({ ficha: resumo, marca, usuario, todas = [], pos
               {posicao ? ` · ${posicao}º na fila` : ''} {marca?.preferenciaConjuge !== false && <SeloPreferencia ficha={f} />}
             </p>
           </div>
-          <button className="fechar" onClick={onFechar} aria-label="Fechar">×</button>
+          <div className="topo-botoes">
+            <button className="botao-secundario" onClick={imprimir} disabled={!completa} title="Imprimir a pré-ficha">🖨 Imprimir</button>
+            <button className="fechar" onClick={onFechar} aria-label="Fechar">×</button>
+          </div>
         </header>
+        {completa && <FichaImpressao f={f} marca={marca} posicao={posicao} nomeNucleo={nomeNucleo} usuario={usuario} />}
 
         <div className="modal-corpo">
           <section className="posicao-fila">
