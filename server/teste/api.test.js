@@ -309,6 +309,13 @@ describe('API', { skip: pular }, () => {
       assert.equal((await req('coord', 'GET', `/api/admin/pre-fichas/${fora}/historico`)).statusCode, 404)
       // ficha completa: mesma regra (fora da área = não encontrada)
       assert.equal((await req('coord', 'GET', `/api/admin/pre-fichas/${fora}`)).statusCode, 404)
+      // impressão: mesma regra; dentro da área fica registrada na trilha
+      assert.equal((await req('coord', 'POST', `/api/admin/pre-fichas/${fora}/impressao`)).statusCode, 404)
+      const naArea = await idPorNome('Segundo Juvenil')
+      assert.equal((await req('coord', 'POST', `/api/admin/pre-fichas/${naArea}/impressao`)).statusCode, 200)
+      assert.equal((await req('equipe', 'POST', `/api/admin/pre-fichas/${fora}/impressao`)).statusCode, 200)
+      const hist = (await req('coord', 'GET', `/api/admin/pre-fichas/${naArea}/historico`)).json()
+      assert.ok(hist.some((h) => h.observacao === 'Ficha impressa.' && h.usuario === 'Coordenadora'))
       assert.equal((await req('coord', 'GET', '/api/admin/pre-fichas?completo=1')).json().some((f) => f.id === fora), false)
       const dentro = await idPorNome('Segundo Juvenil')
       assert.equal((await req('coord', 'PATCH', `/api/admin/pre-fichas/${dentro}`, { observacoes_internas: 'ok' })).statusCode, 200)

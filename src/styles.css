@@ -519,3 +519,28 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
 .log-curto { font-size: 0.78rem; background: #f6f4f1; padding: 8px; border-radius: 6px; white-space: pre-wrap; max-height: 220px; overflow: auto; }
 .texto-ok { color: var(--ok); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+/* ---------- impressão da pré-ficha ---------- */
+.topo-botoes { display: flex; gap: 8px; align-items: center; }
+.ficha-impressao { display: none; }
+@media print {
+  @page { size: A4; margin: 14mm 12mm; }
+  body > *:not(.ficha-impressao) { display: none !important; }
+  body { background: #fff !important; }
+  .ficha-impressao { display: block; color: #000; font-size: 10.5pt; line-height: 1.35; }
+  .imp-topo { display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #000; padding-bottom: 8px; margin-bottom: 10px; }
+  .imp-topo img { max-height: 52px; max-width: 120px; object-fit: contain; }
+  .imp-topo h1 { font-size: 16pt; margin: 0; }
+  .imp-acampamento { margin: 0; font-weight: 500; }
+  .imp-num { margin-left: auto; font-weight: 700; }
+  .ficha-impressao section { break-inside: avoid; margin-bottom: 8px; }
+  .ficha-impressao h2 { font-size: 11pt; margin: 8px 0 4px; padding: 2px 0; border-bottom: 1px solid #999; text-transform: uppercase; letter-spacing: .03em; }
+  .imp-grade { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 12px; }
+  .imp-item { display: flex; flex-direction: column; }
+  .imp-item.largo { grid-column: 1 / -1; }
+  .imp-rotulo { font-size: 8pt; color: #444; text-transform: uppercase; }
+  .imp-valor { white-space: pre-wrap; }
+  .imp-termos { margin: 0; padding-left: 0; list-style: none; font-size: 9pt; }
+  .imp-termos li { margin-bottom: 3px; }
+  .imp-rodape { margin-top: 12px; border-top: 1px solid #999; padding-top: 6px; font-size: 8pt; color: #333; }
+}
