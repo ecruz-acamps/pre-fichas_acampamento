@@ -8,12 +8,14 @@ import { criarProtecaoLogin } from '../protecao.js'
 import { carregarMarca } from '../marca.js'
 import { licencaAtivada } from '../licenca.js'
 import { registrarPreFicha } from './publico.js'
+import { transacao } from '../db.js'
 import {
   COOKIE_CONTA, STATUS_ATIVOS, buscarPorLogin, buscarSessaoConta, criarRedefinicao, criarSessaoConta,
   encerrarSessaoConta, encerrarSessoesConta, importarParticipantes, usarRedefinicao,
 } from '../participantes.js'
 
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+const STATUS_NA_FILA_CONTA = ['aguardando', 'em_contato']
 // Campos da ficha que a pessoa pode alterar depois (a data da inscrição e a fila nunca mudam)
 const EDITAVEIS = Object.keys(montarRegistro(normalizarEntrada({ data_nascimento: '2000-01-01' }))).filter((c) => c !== 'termos_aceitos')
 const DADOS_GUARDADOS = (f) => { const { aceites, website, ...resto } = f; return resto } // eslint-disable-line no-unused-vars
@@ -24,6 +26,7 @@ export default async function rotasConta(app) {
   const email = app.email
   const limite = { rateLimit: { max: config.limiteLoginPorMinuto, timeWindow: '1 minute' } }
   const ocupado = (reply) => reply.code(503).send({ mensagem: 'Servidor ocupado. Tente novamente em alguns segundos.' })
+  const hashLimitado = (senha) => protecao.limitar(() => gerarHash(senha))
   const conferir = (senha, h) => protecao.limitar(() => (h ? verificarSenha(senha, h) : verificarSenhaFicticia(senha)))
   const opcoesCookie = () => ({ path: '/', httpOnly: true, sameSite: 'lax', secure: config.cookieSeguro, maxAge: config.sessaoHoras * 3600 })
 
@@ -59,8 +62,12 @@ export default async function rotasConta(app) {
     if (ultima) {
       ficha = { ...ultima, rotulo: rotuloDe(STATUS, ultima.status), ativa: STATUS_ATIVOS.includes(ultima.status), posicao: null }
       if (marca.mostrarPosicaoFila) {
-        const { rows: [f] } = await pool.query('select posicao from fila_espera where id = $1', [ultima.id])
-        ficha.posicao = f ? Number(f.posicao) : null
+        const { rows: [f] } = await pool.query(
+          `select count(*) + 1 as posicao from pre_fichas q, pre_fichas f
+            where f.id = $1 and f.status in ('aguardando', 'em_contato')
+              and q.modalidade = f.modalidade and q.status in ('aguardando', 'em_contato')
+              and (q.entrada_fila_em, q.id) < (f.entrada_fila_em, f.id)`, [ultima.id])
+        ficha.posicao = STATUS_NA_FILA_CONTA.includes(ultima.status) && f ? Number(f.posicao) : null
       }
     }
     return { conta: { cpf: p.cpf, email: p.email, nome: p.nome }, dados: p.dados, ficha, modalidadesFeitas: await modalidadesFeitas(id, p.cpf), mostrarPosicao: marca.mostrarPosicaoFila, recuperacao, contaObrigatoria: config.contaObrigatoria }
@@ -86,7 +93,7 @@ export default async function rotasConta(app) {
       })
     }
     const { rows: [nova] } = await pool.query(
-      'insert into participantes (cpf, email, senha_hash) values ($1, $2, $3) returning id', [cpf, mail, await gerarHash(senha)])
+      'insert into participantes (cpf, email, senha_hash) values ($1, $2, $3) returning id', [cpf, mail, await hashLimitado(senha)])
     await entrar(reply, nova.id)
     return reply.code(201).send({ ok: true })
   })
@@ -149,7 +156,7 @@ export default async function rotasConta(app) {
     if (fraca) return reply.code(400).send({ mensagem: fraca })
     const id = await usarRedefinicao(pool, req.body?.token)
     if (!id) return reply.code(400).send({ mensagem: 'Link inválido ou vencido. Peça um novo em "Esqueci minha senha".' })
-    await pool.query('update participantes set senha_hash = $1 where id = $2', [await gerarHash(senha), id])
+    await pool.query('update participantes set senha_hash = $1 where id = $2', [await hashLimitado(senha), id])
     await encerrarSessoesConta(pool, id)
     await entrar(reply, id)
     return { ok: true }
@@ -163,7 +170,7 @@ export default async function rotasConta(app) {
     let ok
     try { ok = await conferir(String(req.body?.senhaAtual ?? ''), p.senha_hash) } catch (e) { if (e.code === 'OCUPADO') return ocupado(reply); throw e }
     if (!ok) return reply.code(400).send({ mensagem: 'A senha atual está incorreta.' })
-    await pool.query('update participantes set senha_hash = $1 where id = $2', [await gerarHash(nova), req.participante.id])
+    await pool.query('update participantes set senha_hash = $1 where id = $2', [await hashLimitado(nova), req.participante.id])
     return { ok: true }
   })
 
@@ -234,10 +241,12 @@ export default async function rotasConta(app) {
   app.post('/api/conta/desistir', { onRequest: [logado], config: limite }, async (req, reply) => {
     const ficha = await fichaAtiva(req.participante.id)
     if (!ficha) return reply.code(400).send({ mensagem: 'Você não tem pré-ficha na fila.' })
-    await pool.query(`update pre_fichas set status = 'desistiu', atualizado_em = now() where id = $1`, [ficha.id])
-    await pool.query(
-      `insert into pre_fichas_historico (pre_ficha_id, tipo, status_anterior, status_novo, observacao) values ($1, 'status', $2, 'desistiu', $3)`,
-      [ficha.id, ficha.status, 'Desistência registrada pela própria pessoa (área do participante).'])
+    await transacao(pool, async (db) => {
+      await db.query(`update pre_fichas set status = 'desistiu', atualizado_em = now() where id = $1`, [ficha.id])
+      await db.query(
+        `insert into pre_fichas_historico (pre_ficha_id, tipo, status_anterior, status_novo, observacao) values ($1, 'status', $2, 'desistiu', $3)`,
+        [ficha.id, ficha.status, 'Desistência registrada pela própria pessoa (área do participante).'])
+    })
     return { ok: true }
   })
 

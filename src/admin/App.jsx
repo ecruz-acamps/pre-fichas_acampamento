@@ -1,14 +1,14 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { api } from '../lib/api.js'
 import { carregarMarca } from '../lib/marca.jsx'
 import Login from './Login.jsx'
 import Fila from './Fila.jsx'
 import Resumo from './Resumo.jsx'
-import Acampamentos from './Acampamentos.jsx'
-import Nucleos from './Nucleos.jsx'
-import Usuarios from './Usuarios.jsx'
-import Configuracoes from './Configuracoes.jsx'
-import Auditoria from './Auditoria.jsx'
+const Acampamentos = lazy(() => import('./Acampamentos.jsx')) // carregada só quando abrir a tela
+const Nucleos = lazy(() => import('./Nucleos.jsx')) // carregada só quando abrir a tela
+const Usuarios = lazy(() => import('./Usuarios.jsx')) // carregada só quando abrir a tela
+const Configuracoes = lazy(() => import('./Configuracoes.jsx')) // carregada só quando abrir a tela
+const Auditoria = lazy(() => import('./Auditoria.jsx')) // carregada só quando abrir a tela
 import Nomes from './Nomes.jsx'
 import AlterarSenha from './AlterarSenha.jsx'
 import Ativacao from './Ativacao.jsx'
@@ -131,11 +131,13 @@ export default function App() {
       {atual === 'fila' && <Fila {...props} />}
       {atual === 'nomes' && <Nomes {...props} />}
       {atual === 'resumo' && <Resumo {...props} />}
+      <Suspense fallback={<p className="carregando">Carregando…</p>}>
       {atual === 'acampamentos' && <Acampamentos {...props} />}
       {atual === 'auditoria' && <Auditoria {...props} />}
       {atual === 'nucleos' && <Nucleos {...props} onAlterar={recarregarNucleos} />}
       {atual === 'usuarios' && <Usuarios {...props} usuarioAtual={usuario} />}
       {atual === 'configuracoes' && <Configuracoes {...props} onSalvar={(m) => setMarca(m)} />}
+      </Suspense>
       {atual === 'senha' && <AlterarSenha usuario={usuario} onUsuario={setUsuario} onConcluir={() => setTela('fila')} />}
 
       <footer className="rodape-painel">

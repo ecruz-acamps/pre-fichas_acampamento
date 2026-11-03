@@ -15,14 +15,19 @@ export async function criarSessao(pool, usuarioId, horas) {
 /** Retorna o usuário da sessão (e renova a validade), ou null. */
 export async function buscarSessao(pool, token, horas) {
   if (!token) return null
-  const { rows } = await pool.query(
-    `update sessoes s set expira_em = now() + make_interval(hours => $2)
-       from usuarios u
-      where s.id = $1 and s.expira_em > now() and u.id = s.usuario_id and u.ativo
-      returning u.id, u.email, u.nome, u.papel, u.trocar_senha, u.totp_ativo`,
-    [hashToken(token), horas],
+  const id = hashToken(token)
+  const { rows: [u] } = await pool.query(
+    `select u.id, u.email, u.nome, u.papel, u.trocar_senha, u.totp_ativo,
+            s.expira_em < now() + make_interval(hours => $2) / 2 as renovar
+       from sessoes s join usuarios u on u.id = s.usuario_id
+      where s.id = $1 and s.expira_em > now() and u.ativo`,
+    [id, horas],
   )
-  return rows[0] ?? null
+  if (!u) return null
+  // Renova a validade só depois de metade do prazo: evita uma escrita no banco a cada clique
+  if (u.renovar) await pool.query('update sessoes set expira_em = now() + make_interval(hours => $2) where id = $1', [id, horas])
+  delete u.renovar
+  return u
 }
 
 export async function encerrarSessao(pool, token) {
