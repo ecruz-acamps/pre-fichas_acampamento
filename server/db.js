@@ -8,8 +8,17 @@ pg.types.setTypeParser(20, (v) => Number(v))
 const lerArrayBigint = pg.types.getTypeParser(1016)
 pg.types.setTypeParser(1016, (v) => lerArrayBigint(v).map((x) => (x === null ? null : Number(x))))
 
-export function criarPool(databaseUrl) {
-  return new pg.Pool({ connectionString: databaseUrl, max: 10 })
+export function criarPool(databaseUrl, { max = Number(process.env.DB_POOL_MAX) || 10 } = {}) {
+  return new pg.Pool({
+    connectionString: databaseUrl,
+    max,
+    // Sem conexão livre em 5 s: erro rápido (503) em vez de ficar preso na fila
+    connectionTimeoutMillis: 5000,
+    idleTimeoutMillis: 30_000,
+    // JIT desligado: consultas curtas (sistema transacional) ficavam até 3x mais lentas compilando.
+    // statement_timeout: nenhuma consulta segura uma conexão por mais de 15 s.
+    options: '-c jit=off -c statement_timeout=15000',
+  })
 }
 
 const PASTA_MIGRACOES = new URL('./migrations/', import.meta.url)
@@ -19,6 +28,7 @@ export async function migrar(pool, log = console) {
   const cliente = await pool.connect()
   try {
     // Evita que duas instâncias apliquem migrações ao mesmo tempo.
+    await cliente.query('set statement_timeout = 0') // migrações podem demorar em bases grandes
     await cliente.query('select pg_advisory_lock(727274)')
     await cliente.query(`create table if not exists schema_migrations (
       nome text primary key, aplicada_em timestamptz not null default now())`)

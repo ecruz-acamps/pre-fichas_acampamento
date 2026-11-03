@@ -22,14 +22,17 @@ const acampamentosTexto = (parts) => (parts ?? [])
  *   - todos os campistas (quem já fez o acampamento), de todos os núcleos.
  */
 export default function Nomes({ usuario, marca, nucleos }) {
-  const { linhas: fichas, setLinhas, recarregar } = useFichas()
+  const { linhas: fichas, setLinhas, recarregar: recarregarFichas } = useFichas()
+  const recarregar = async () => { const l = await recarregarFichas(); setVersaoCampistas((v) => v + 1); return l }
   const [campistas, setCampistas] = useState([])
   const [tipo, setTipo] = useState('todos')
   const [busca, setBusca] = useState('')
   const [selecionada, setSelecionada] = useState(null)
   const coordenador = usuario.papel === 'coordenador'
 
-  useEffect(() => { api.get('/api/admin/campistas').then(setCampistas).catch(() => setCampistas([])) }, [fichas])
+  // Campistas: carrega ao abrir e quando a lista for recarregada (não a cada alteração local)
+  const [versaoCampistas, setVersaoCampistas] = useState(0)
+  useEffect(() => { api.get('/api/admin/campistas').then(setCampistas).catch(() => setCampistas([])) }, [versaoCampistas])
 
   const posicoes = useMemo(() => calcularPosicoes(fichas), [fichas])
   const nomesNucleos = useMemo(() => {

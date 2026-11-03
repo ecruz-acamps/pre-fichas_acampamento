@@ -8,10 +8,20 @@
 # Vários acampamentos no mesmo servidor: veja "Vários acampamentos" no README.
 name: ${COMPOSE_PROJECT_NAME:-pre-fichas}
 
+# Logs com tamanho limitado (sem isso o disco enche aos poucos e o banco para)
+x-logs: &logs
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    logging: *logs
+    mem_limit: ${MEMORIA_BANCO:-1g}
+    shm_size: 256mb
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-prefichas}
       POSTGRES_USER: ${POSTGRES_USER:-prefichas}
@@ -34,12 +44,17 @@ services:
         VERSAO_COMMIT: ${VERSAO_COMMIT:-}
         VERSAO_DATA: ${VERSAO_DATA:-}
         VERSAO_BRANCH: ${VERSAO_BRANCH:-}
-    image: ${COMPOSE_PROJECT_NAME:-pre-fichas}-app:latest
+    # Imagem pronta do GitHub (IMAGEM_APP, definida por scripts/subir-app.sh) ou a gerada aqui
+    image: ${IMAGEM_APP:-${COMPOSE_PROJECT_NAME:-pre-fichas}-app:latest}
     restart: unless-stopped
+    logging: *logs
+    mem_limit: ${MEMORIA_APP:-768m}
     depends_on:
       db:
         condition: service_healthy
     environment:
+      NODE_OPTIONS: --max-old-space-size=512
+      UV_THREADPOOL_SIZE: "8"
       DATABASE_URL: postgres://${POSTGRES_USER:-prefichas}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-prefichas}
       COOKIE_SEGURO: ${COOKIE_SEGURO:-true}
       PROXIES_CONFIAVEIS: "1"
@@ -90,8 +105,11 @@ services:
     image: caddy:2-alpine
     profiles: ["caddy"]
     restart: unless-stopped
+    logging: *logs
+    mem_limit: 256m
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     ports:
       - "${PORTA_HTTP:-80}:80"
       - "${PORTA_HTTPS:-443}:443"
@@ -108,8 +126,11 @@ services:
     image: cloudflare/cloudflared:latest
     profiles: ["tunel"]
     restart: unless-stopped
+    logging: *logs
+    mem_limit: 256m
     depends_on:
-      - app
+      app:
+        condition: service_healthy
     command: tunnel --no-autoupdate run
     environment:
       TUNNEL_TOKEN: ${TUNEL_TOKEN:-}

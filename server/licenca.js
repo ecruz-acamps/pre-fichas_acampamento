@@ -53,11 +53,14 @@ const mascarar = (chave) => {
 
 // Situação em memória (muda só uma vez por instalação)
 let ativada = null
+let conferidaEm = 0
 
 export async function licencaAtivada(pool) {
   if (ativada === true) return true
+  if (ativada === false && Date.now() - conferidaEm < 10_000) return false
   const { rows: [r] } = await pool.query('select ativada_em is not null as ativa from licenca where id')
   ativada = Boolean(r?.ativa)
+  conferidaEm = Date.now()
   return ativada
 }
 

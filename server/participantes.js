@@ -17,12 +17,15 @@ export async function criarSessaoConta(pool, participanteId, horas) {
 
 export async function buscarSessaoConta(pool, token, horas) {
   if (!token) return null
-  const { rows } = await pool.query(
-    `update participantes_sessoes s set expira_em = now() + make_interval(hours => $2)
-       from participantes p
-      where s.id = $1 and s.expira_em > now() and p.id = s.participante_id
-      returning p.id, p.cpf, p.email, p.nome`, [hash(token), horas])
-  return rows[0] ?? null
+  const id = hash(token)
+  const { rows: [p] } = await pool.query(
+    `select p.id, p.cpf, p.email, p.nome, s.expira_em < now() + make_interval(hours => $2) / 2 as renovar
+       from participantes_sessoes s join participantes p on p.id = s.participante_id
+      where s.id = $1 and s.expira_em > now()`, [id, horas])
+  if (!p) return null
+  if (p.renovar) await pool.query('update participantes_sessoes set expira_em = now() + make_interval(hours => $2) where id = $1', [id, horas])
+  delete p.renovar
+  return p
 }
 
 export async function encerrarSessaoConta(pool, token) {

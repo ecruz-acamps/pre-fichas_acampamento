@@ -1,0 +1,44 @@
+# Publica a imagem pronta do sistema no GitHub Container Registry a cada mudança na main.
+# Os servidores baixam essa imagem na atualização (rápido) em vez de reconstruir tudo
+# (npm + build do site) com a CPU do servidor. Se a imagem não estiver disponível,
+# os scripts reconstroem localmente como antes.
+name: Imagem Docker
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  imagem:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dados da versão
+        id: versao
+        run: |
+          echo "data=$(git log -1 --format=%cI)" >> "$GITHUB_OUTPUT"
+          echo "nome=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            VERSAO_COMMIT=${{ github.sha }}
+            VERSAO_DATA=${{ steps.versao.outputs.data }}
+            VERSAO_BRANCH=main
+          tags: |
+            ${{ steps.versao.outputs.nome }}:${{ github.sha }}
+            ${{ steps.versao.outputs.nome }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

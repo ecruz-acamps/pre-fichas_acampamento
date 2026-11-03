@@ -8,20 +8,38 @@ const COLUNAS = Object.keys(montarRegistro(normalizarEntrada({ data_nascimento: 
 const cacheCep = new Map()
 const CACHE_MAX = 2000
 
+// Consultas em andamento (várias pessoas digitando o mesmo CEP = uma consulta só)
+const emAndamento = new Map()
+// ViaCEP fora do ar: responde rápido por 60 s em vez de esperar 5 s a cada consulta
+let viaCepForaAte = 0
+
 async function consultarViaCep(baseUrl, cep) {
   if (cacheCep.has(cep)) return cacheCep.get(cep)
-  const resposta = await fetch(`${baseUrl}/${cep}/json/`, { signal: AbortSignal.timeout(5000) })
-  if (!resposta.ok) throw new Error(`ViaCEP respondeu ${resposta.status}`)
-  const dados = await resposta.json()
-  const endereco = dados.erro ? null : {
-    logradouro: dados.logradouro || '',
-    bairro: dados.bairro || '',
-    cidade: dados.localidade || '',
-    uf: dados.uf || '',
-  }
-  if (cacheCep.size >= CACHE_MAX) cacheCep.delete(cacheCep.keys().next().value)
-  cacheCep.set(cep, endereco)
-  return endereco
+  if (Date.now() < viaCepForaAte) throw new Error('ViaCEP indisponível (aguardando)')
+  if (emAndamento.has(cep)) return emAndamento.get(cep)
+  const consulta = (async () => {
+    try {
+      const resposta = await fetch(`${baseUrl}/${cep}/json/`, { signal: AbortSignal.timeout(5000) })
+      if (!resposta.ok) throw new Error(`ViaCEP respondeu ${resposta.status}`)
+      const dados = await resposta.json()
+      const endereco = dados.erro ? null : {
+        logradouro: dados.logradouro || '',
+        bairro: dados.bairro || '',
+        cidade: dados.localidade || '',
+        uf: dados.uf || '',
+      }
+      if (cacheCep.size >= CACHE_MAX) cacheCep.delete(cacheCep.keys().next().value)
+      cacheCep.set(cep, endereco)
+      return endereco
+    } catch (e) {
+      viaCepForaAte = Date.now() + 60_000
+      throw e
+    } finally {
+      emAndamento.delete(cep)
+    }
+  })()
+  emAndamento.set(cep, consulta)
+  return consulta
 }
 
 // Limite geral de envios por hora (todos os IPs somados)
