@@ -1,4 +1,4 @@
-import { conferirImagem, LOGO_MAX_BYTES, removerLogo, salvarLogo, salvarMarca, TIPOS_LOGO } from '../marca.js'
+import { conferirImagem, LOGO_MAX_BYTES, removerLogo, salvarLogo, salvarLogoImpressao, salvarMarca, TIPOS_LOGO } from '../marca.js'
 
 export default async function rotasMarca(app) {
   const { pool } = app
@@ -22,6 +22,20 @@ export default async function rotasMarca(app) {
       return reply.code(400).send({ mensagem: 'Envie uma imagem PNG, JPG, WEBP ou SVG de até 1 MB.' })
     }
     await salvarLogo(pool, req.body, tipo)
+    return { ok: true }
+  })
+
+  // Logo do cabeçalho da ficha impressa (ex.: brasão da paróquia)
+  app.put('/api/admin/marca/logo-impressao', { ...soAdmin(), bodyLimit: LOGO_MAX_BYTES }, async (req, reply) => {
+    const tipo = String(req.headers['content-type'] ?? '').split(';')[0].trim()
+    if (!Buffer.isBuffer(req.body) || !conferirImagem(req.body, tipo)) {
+      return reply.code(400).send({ mensagem: 'Envie uma imagem PNG, JPG, WEBP ou SVG de até 1 MB.' })
+    }
+    await salvarLogoImpressao(pool, req.body, tipo)
+    return { ok: true }
+  })
+  app.delete('/api/admin/marca/logo-impressao', soAdmin(), async () => {
+    await salvarLogoImpressao(pool, null, null)
     return { ok: true }
   })
 

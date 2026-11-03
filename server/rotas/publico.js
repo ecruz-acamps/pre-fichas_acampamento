@@ -1,5 +1,5 @@
 import { montarRegistro, normalizarEntrada, validar } from '../../shared/validacao.js'
-import { carregarMarca, lerLogo, temaCss } from '../marca.js'
+import { carregarMarca, lerLogo, lerLogoImpressao, temaCss } from '../marca.js'
 import { licencaAtivada } from '../licenca.js'
 
 const COLUNAS = Object.keys(montarRegistro(normalizarEntrada({ data_nascimento: '2000-01-01' })))
@@ -170,8 +170,8 @@ export default async function rotasPublicas(app) {
     return reply.type('text/css; charset=utf-8').send(temaCss(marca))
   })
 
-  app.get('/api/marca/logo', async (req, reply) => {
-    const logo = await lerLogo(pool)
+  for (const [rota, ler] of [['/api/marca/logo', lerLogo], ['/api/marca/logo-impressao', lerLogoImpressao]]) app.get(rota, async (req, reply) => {
+    const logo = await ler(pool)
     if (!logo) return reply.code(404).send({ mensagem: 'Sem logo.' })
     reply.header('Cache-Control', req.query.v ? 'public, max-age=31536000, immutable' : 'no-cache')
     // SVG aberto diretamente não pode executar nada

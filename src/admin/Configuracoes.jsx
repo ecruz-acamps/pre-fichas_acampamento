@@ -4,7 +4,7 @@ import { carregarMarca, TextoMarca } from '../lib/marca.jsx'
 import { ajustarCor, corTextoSobre } from '../../shared/marca.js'
 
 const CAMPOS_EXPORTADOS = ['nome', 'nomeCurto', 'corPrimaria', 'whatsapp', 'email', 'instagram', 'site',
-  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila', 'edicoesPreferenciaConjuge', 'preferenciaConjuge', 'mostrarPosicaoFila']
+  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila', 'edicoesPreferenciaConjuge', 'preferenciaConjuge', 'mostrarPosicaoFila', 'impressaoTitulo', 'impressaoSubtitulo', 'impressaoTextoDireita']
 
 /** Publicação na internet pela Cloudflare: o administrador liga ou desliga. */
 function Publicacao({ nomeCurto }) {
@@ -161,6 +161,8 @@ export default function Configuracoes({ marca, onSalvar }) {
   const [mensagem, setMensagem] = useState(null)
   const [salvando, setSalvando] = useState(false)
   const [logoUrl, setLogoUrl] = useState(null)
+  const [logoImpUrl, setLogoImpUrl] = useState(null)
+  const arquivoLogoImp = useRef(null)
   const arquivoLogo = useRef(null)
   const arquivoMarca = useRef(null)
 
@@ -168,6 +170,7 @@ export default function Configuracoes({ marca, onSalvar }) {
     if (marca && !m) {
       setM(Object.fromEntries(CAMPOS_EXPORTADOS.map((c) => [c, marca[c]])))
       setLogoUrl(marca.logoUrl)
+      setLogoImpUrl(marca.logoImpressaoUrl)
     }
   }, [marca, m])
 
@@ -179,6 +182,7 @@ export default function Configuracoes({ marca, onSalvar }) {
   async function atualizarMarcaGlobal() {
     const nova = await carregarMarca(true)
     setLogoUrl(nova.logoUrl)
+    setLogoImpUrl(nova.logoImpressaoUrl)
     onSalvar(nova)
   }
 
@@ -210,6 +214,23 @@ export default function Configuracoes({ marca, onSalvar }) {
     } catch (err) {
       aviso('erro', err.dados?.mensagem || 'Não foi possível enviar a logo.')
     }
+  }
+
+  async function enviarLogoImp(e) {
+    const arquivo = e.target.files?.[0]
+    e.target.value = ''
+    if (!arquivo) return
+    if (arquivo.size > 1024 * 1024) return aviso('erro', 'A imagem deve ter no máximo 1 MB.')
+    try {
+      await api.enviarArquivo('/api/admin/marca/logo-impressao', arquivo)
+      await atualizarMarcaGlobal()
+      aviso('ok', 'Logo da impressão atualizado.')
+    } catch (err) { aviso('erro', err.dados?.mensagem || 'Não foi possível enviar a imagem.') }
+  }
+  async function removerLogoImp() {
+    if (!confirm('Remover o logo da impressão?')) return
+    await api.delete('/api/admin/marca/logo-impressao')
+    await atualizarMarcaGlobal()
   }
 
   async function removerLogo() {
@@ -371,6 +392,40 @@ export default function Configuracoes({ marca, onSalvar }) {
               <input id="cfg-pref" type="number" min="0" max="10" className="numero-curto" value={m.edicoesPreferenciaConjuge}
                 onChange={(e) => setM({ ...m, edicoesPreferenciaConjuge: e.target.value === '' ? '' : Number(e.target.value) })} />
             </Campo>}
+          </section>
+
+          <section>
+            <h2>Impressão da ficha</h2>
+            <p className="dica">Cabeçalho da pré-ficha impressa pelo painel (botão 🖨 Imprimir no detalhe da ficha).</p>
+            <div className="previa-impressao">
+              <div className="pi-esq">{logoImpUrl ? <img src={logoImpUrl} alt="" /> : <span className="dica">logo da esquerda</span>}</div>
+              <div className="pi-centro">
+                <small>{(m.impressaoSubtitulo || m.nome || '').toUpperCase()}</small>
+                <strong>{(m.impressaoTitulo || 'Ficha de pré-inscrição').toUpperCase()}</strong>
+              </div>
+              <div className="pi-dir">{logoUrl && <img src={logoUrl} alt="" />}<span>{m.impressaoTextoDireita || m.nome}</span></div>
+            </div>
+            <Campo id="cfg-imp-titulo" rotulo="Título" erro={erros.impressaoTitulo}>
+              <input id="cfg-imp-titulo" value={m.impressaoTitulo ?? ''} maxLength={80} onChange={set('impressaoTitulo')} placeholder="Ficha de pré-inscrição" />
+            </Campo>
+            <Campo id="cfg-imp-sub" rotulo="Linha acima do título" erro={erros.impressaoSubtitulo}
+              dica="Ex.: Acampamento São Pe. Pio de Pietrelcina. Em branco = nome do acampamento.">
+              <input id="cfg-imp-sub" value={m.impressaoSubtitulo ?? ''} maxLength={120} onChange={set('impressaoSubtitulo')} />
+            </Campo>
+            <Campo id="cfg-imp-dir" rotulo="Texto ao lado do logo (direita)" erro={erros.impressaoTextoDireita}
+              dica='Ex.: Acampamento São Padre Pio (sai como "ACAMPAMENTO" e o nome embaixo). Em branco = nome do acampamento. O logo da direita é o logo principal.'>
+              <input id="cfg-imp-dir" value={m.impressaoTextoDireita ?? ''} maxLength={120} onChange={set('impressaoTextoDireita')} />
+            </Campo>
+            <div className="campo">
+              <label>Logo da esquerda (opcional, ex.: brasão da paróquia)</label>
+              <div className="logo-config">
+                {logoImpUrl ? <img src={logoImpUrl} alt="Logo da impressão" /> : <span className="dica">Sem imagem</span>}
+                <button type="button" className="botao-secundario" onClick={() => arquivoLogoImp.current.click()}>{logoImpUrl ? 'Trocar' : 'Enviar imagem'}</button>
+                {logoImpUrl && <button type="button" className="link perigo" onClick={removerLogoImp}>remover</button>}
+                <input ref={arquivoLogoImp} type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml" hidden onChange={enviarLogoImp} />
+              </div>
+              <small className="dica">PNG, JPG, WEBP ou SVG até 1 MB. Os textos são salvos com o botão "Salvar configurações".</small>
+            </div>
           </section>
 
           <section>

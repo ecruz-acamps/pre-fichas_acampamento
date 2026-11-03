@@ -1030,6 +1030,24 @@ describe('API', { skip: pular }, () => {
       assert.ok(logo.rawPayload.equals(PNG))
       assert.match((await app.inject({ method: 'GET', url: '/' })).body, /<link rel="icon" href="\/api\/marca\/logo\?v=/)
     })
+
+    test('cabeçalho da impressão: textos e logo da esquerda configuráveis (só administrador)', async () => {
+      const enviar = (quem, corpo, tipo) => app.inject({ method: 'PUT', url: '/api/admin/marca/logo-impressao',
+        headers: { ...como(quem), 'content-type': tipo }, payload: corpo })
+      assert.equal((await enviar('equipe', PNG, 'image/png')).statusCode, 403)
+      assert.equal((await enviar('admin', Buffer.from('<svg onload="alert(1)"></svg>'), 'image/svg+xml')).statusCode, 400)
+      assert.equal((await enviar('admin', PNG, 'image/png')).statusCode, 200)
+      const atual = (await app.inject({ method: 'GET', url: '/api/marca' })).json()
+      assert.match(atual.logoImpressaoUrl, /^\/api\/marca\/logo-impressao\?v=/)
+      assert.ok((await app.inject({ method: 'GET', url: atual.logoImpressaoUrl })).rawPayload.equals(PNG))
+      assert.equal(atual.impressaoTitulo, 'Ficha de pré-inscrição')
+      const r = await req('admin', 'PUT', '/api/admin/marca', { ...atual, impressaoTitulo: 'Ficha de inscrição', impressaoSubtitulo: 'Acampamento Teste' })
+      assert.equal(r.statusCode, 200)
+      assert.equal(r.json().impressaoTitulo, 'Ficha de inscrição')
+      assert.equal((await req('admin', 'PUT', '/api/admin/marca', { ...atual, impressaoTitulo: 'x'.repeat(81) })).statusCode, 400)
+      assert.equal((await app.inject({ method: 'DELETE', url: '/api/admin/marca/logo-impressao', headers: como('admin') })).statusCode, 200)
+      assert.equal((await app.inject({ method: 'GET', url: '/api/marca' })).json().logoImpressaoUrl, null)
+    })
   })
 
   // ------------------------------------------------------------------ site
