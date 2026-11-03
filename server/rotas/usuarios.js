@@ -28,7 +28,7 @@ async function gravarNucleos(db, usuarioId, nucleos) {
 
 export default async function rotasUsuarios(app) {
   const { pool } = app
-  const soAdmin = { onRequest: [app.exigirLogin, app.exigirAdmin] }
+  const soAdmin = () => ({ onRequest: [app.exigirLogin, app.exigirAdmin] })
 
   async function contarOutrosAdminsAtivos(id) {
     const { rows: [r] } = await pool.query(
@@ -36,13 +36,13 @@ export default async function rotasUsuarios(app) {
     return r.n
   }
 
-  app.get('/api/admin/usuarios', soAdmin, async () => {
+  app.get('/api/admin/usuarios', soAdmin(), async () => {
     const { rows } = await pool.query(SQL_USUARIOS('true'))
     return rows
   })
 
   // Cria usuário com senha temporária (mostrada uma única vez ao admin)
-  app.post('/api/admin/usuarios', soAdmin, async (req, reply) => {
+  app.post('/api/admin/usuarios', soAdmin(), async (req, reply) => {
     const email = String(req.body?.email ?? '').trim().toLowerCase()
     const nome = String(req.body?.nome ?? '').trim()
     const papel = req.body?.papel ?? 'equipe'
@@ -71,7 +71,7 @@ export default async function rotasUsuarios(app) {
     }
   })
 
-  app.patch('/api/admin/usuarios/:id', soAdmin, async (req, reply) => {
+  app.patch('/api/admin/usuarios/:id', soAdmin(), async (req, reply) => {
     const id = Number(req.params.id)
     const { nome, papel, ativo } = req.body ?? {}
     const nucleos = lerNucleos(req.body?.nucleos)
@@ -102,7 +102,7 @@ export default async function rotasUsuarios(app) {
     return { usuario: u }
   })
 
-  app.post('/api/admin/usuarios/:id/redefinir-senha', soAdmin, async (req, reply) => {
+  app.post('/api/admin/usuarios/:id/redefinir-senha', soAdmin(), async (req, reply) => {
     const id = Number(req.params.id)
     const senhaTemporaria = gerarSenhaTemporaria()
     const { rows: [u] } = await pool.query(

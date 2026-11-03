@@ -64,6 +64,8 @@ echo -n "→ Aguardando a aplicação voltar"
 for _ in $(seq 1 60); do
   if curl -fsS "http://127.0.0.1:${PORTA}/api/saude" >/dev/null 2>&1; then
     echo " ✓"
+    # Mantém o serviço do servidor em dia (novas funções do painel, ex.: publicação)
+    [ "$(id -u)" = 0 ] && ./scripts/instalar-atualizador.sh >/dev/null 2>&1 || true
     echo "✓ Atualizado para ${VERSAO_COMMIT:0:7} ($(git log -1 --format=%s))."
     exit 0
   fi

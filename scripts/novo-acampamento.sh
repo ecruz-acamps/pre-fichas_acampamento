@@ -145,6 +145,8 @@ COOKIE_SEGURO=${COOKIE}
 SESSAO_HORAS=12
 LIMITE_ENVIOS_POR_HORA=30
 CONTA_OBRIGATORIA=true
+DOMINIO_BASE=${DOMINIO_BASE:-movimentocampista.com.br}
+ENDERECO_PUBLICO=$([ "$CLOUDFLARE" = 1 ] && echo "$DOMINIO")
 ENV
 if [ -n "${SMTP_USUARIO:-}" ]; then
   { echo "SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}"; echo "SMTP_PORTA=${SMTP_PORTA:-465}"
@@ -179,7 +181,13 @@ SAIDA_ADMIN="$(docker compose exec -T app node server/cli.js criar-admin "$ADMIN
 SENHA_TEMP="$(printf '%s\n' "$SAIDA_ADMIN" | sed -n 's/^Senha temporária: //p')"
 
 # Atualização pelo painel (botão "Atualizar agora")
-./scripts/instalar-atualizador.sh >/dev/null 2>&1 && echo "✓ Atualização pelo painel ativada" \
+./scripts/instalar-atualizador.sh >/dev/null 2>&1 && echo "✓ Atualização pelo painel ativada" && {
+  # situação inicial da publicação (o painel liga/desliga depois)
+  TK=false; grep -qs '^CF_API_TOKEN=.' /etc/prefichas/cloudflare.env && TK=true
+  printf '{"ativo":%s,"endereco":"%s","sucesso":true,"mensagem":"Instalação","token_configurado":%s,"dominio_base":"%s","em":"%s"}\n' \
+    "$([ "$CLOUDFLARE" = 1 ] && echo true || echo false)" "$([ "$CLOUDFLARE" = 1 ] && echo "$DOMINIO")" "$TK" \
+    "${DOMINIO_BASE:-movimentocampista.com.br}" "$(date -Iseconds)" > atualizacao/estado/publicacao.json 2>/dev/null || true
+} \
   || echo "⚠ Não foi possível ativar a atualização pelo painel (use ./scripts/atualizar.sh)."
 
 # Ativação

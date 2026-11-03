@@ -513,3 +513,9 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
 .selo-conta { background: var(--cor-clara); color: var(--cor); border-radius: 999px; padding: 2px 10px; font-size: 0.85rem; }
 .acoes-conta { margin: -4px 0 16px; }
 .acoes-conta .linha-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.config-publicacao { margin-top: 24px; }
+.config-publicacao .linha-form { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.config-publicacao .linha-form input { max-width: 220px; }
+.log-curto { font-size: 0.78rem; background: #f6f4f1; padding: 8px; border-radius: 6px; white-space: pre-wrap; max-height: 220px; overflow: auto; }
+.texto-ok { color: var(--ok); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }

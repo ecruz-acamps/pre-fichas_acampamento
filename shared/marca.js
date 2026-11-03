@@ -35,6 +35,8 @@ export const MARCA_PADRAO = {
   recusasParaFimDaFila: 2,
   // Quantas edições seguintes o cônjuge de quem fez o acampamento tem preferência (0 = desligado)
   edicoesPreferenciaConjuge: 2,
+  // Liga/desliga a função de preferência do cônjuge (pergunta no formulário, selos, filtros e benefícios)
+  preferenciaConjuge: true,
   // Área do participante: mostrar a posição na fila (desligado = mostra só a situação)
   mostrarPosicaoFila: false,
 }
@@ -83,6 +85,7 @@ export function validarMarca(entrada) {
     else m.edicoesPreferenciaConjuge = n
   }
 
+  if (bruto.preferenciaConjuge !== undefined) m.preferenciaConjuge = bruto.preferenciaConjuge === true
   if (bruto.mostrarPosicaoFila !== undefined) m.mostrarPosicaoFila = bruto.mostrarPosicaoFila === true
 
   if (bruto.termos !== undefined) {

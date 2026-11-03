@@ -12,7 +12,8 @@ export default function ConjugePreferencia({ ficha: f, todas, marca, podeGerir, 
   const [form, setForm] = useState(null)
   const [erro, setErro] = useState('')
   const [enviando, setEnviando] = useState(false)
-  const edicoes = marca?.edicoesPreferenciaConjuge ?? 2
+  const ligada = marca?.preferenciaConjuge !== false
+  const edicoes = ligada ? (marca?.edicoesPreferenciaConjuge ?? 2) : 0
   const declarou = f.conjuge_nome || f.conjuge_telefone || f.conjuge_fez_acampamento !== null
 
   const sugestoes = useMemo(() => (f.conjuge_id ? [] : sugerirConjuges(f, todas)), [f, todas])
@@ -68,7 +69,7 @@ export default function ConjugePreferencia({ ficha: f, todas, marca, podeGerir, 
 
   return (
     <section className="bloco-conjuge">
-      <h3>Cônjuge e preferência</h3>
+      <h3>{ligada ? 'Cônjuge e preferência' : 'Cônjuge'}</h3>
 
       {declarou && (
         <p className="declarado">
@@ -107,15 +108,15 @@ export default function ConjugePreferencia({ ficha: f, todas, marca, podeGerir, 
                 {o.nome_completo} <small className="dica">{o.cidade}/{o.uf}{ultimaParticipacao(o) ? ` · fez o ${ultimaParticipacao(o).numero}º` : ''}</small>
               </button>
             ))}
-            <small className="dica bloco">
+            {ligada && <small className="dica bloco">
               Com os cônjuges vinculados, quando um fizer o acampamento o outro ganha a preferência automaticamente
               {edicoes ? ` (${edicoes} edições seguintes)` : ''}.
-            </small>
+            </small>}
           </>
         ) : <p className="dica">Nenhum cônjuge vinculado.</p>}
       </div>
 
-      {f.preferencias?.length > 0 && (
+      {ligada && f.preferencias?.length > 0 && (
         <ul className="lista-preferencias">
           {f.preferencias.map((p) => (
             <li key={p.id} className={`pref-${p.situacao}`}>
@@ -136,7 +137,7 @@ export default function ConjugePreferencia({ ficha: f, todas, marca, podeGerir, 
       {podeGerir && !form && edicoes > 0 && (
         <button className="botao-secundario" onClick={abrirFormulario}>Registrar preferência de cônjuge</button>
       )}
-      {form && (
+      {ligada && form && (
         <form className="form-acao" onSubmit={registrar}>
           <div className="linha">
             <div className="campo">

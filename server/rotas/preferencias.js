@@ -10,12 +10,12 @@ export default async function rotasPreferencias(app) {
   const exigirGestao = async (req, reply) => {
     if (!['admin', 'equipe'].includes(req.usuario?.papel)) return reply.code(403).send({ mensagem: 'Sem permissão.' })
   }
-  const gestao = { onRequest: [app.exigirLogin, exigirGestao] }
+  const gestao = () => ({ onRequest: [app.exigirLogin, exigirGestao] })
   const fichaAtualizada = async (id) => limparFicha((await pool.query(SQL_FICHAS('p.id = $1'), [id])).rows[0])
 
   // Vincula uma pré-ficha (ex.: feita antes das contas) à conta da pessoa, pelo CPF da conta.
   // cpf = null desvincula. A equipe confere a identidade antes (ex.: pelo telefone).
-  app.put('/api/admin/pre-fichas/:id/conta', gestao, async (req, reply) => {
+  app.put('/api/admin/pre-fichas/:id/conta', gestao(), async (req, reply) => {
     const id = Number(req.params.id)
     const cpf = req.body?.cpf === null ? null : String(req.body?.cpf ?? '').replace(/\D/g, '')
     if (!Number.isInteger(id)) return reply.code(400).send({ mensagem: 'Pré-ficha inválida.' })
@@ -41,7 +41,7 @@ export default async function rotasPreferencias(app) {
   })
 
   // Vincula (ou desvincula, com conjuge_id = null) as fichas de dois cônjuges.
-  app.put('/api/admin/pre-fichas/:id/conjuge', gestao, async (req, reply) => {
+  app.put('/api/admin/pre-fichas/:id/conjuge', gestao(), async (req, reply) => {
     const id = Number(req.params.id)
     const conjugeId = req.body?.conjuge_id === null ? null : Number(req.body?.conjuge_id)
     if (conjugeId !== null && (!Number.isInteger(conjugeId) || conjugeId === id)) {
@@ -82,7 +82,7 @@ export default async function rotasPreferencias(app) {
   })
 
   // Registra a preferência manualmente (ex.: o cônjuge fez o acampamento antes do sistema existir)
-  app.post('/api/admin/pre-fichas/:id/preferencias', gestao, async (req, reply) => {
+  app.post('/api/admin/pre-fichas/:id/preferencias', gestao(), async (req, reply) => {
     const id = Number(req.params.id)
     const c = req.body ?? {}
     const numero = Number(c.acampamento_numero)
@@ -92,7 +92,8 @@ export default async function rotasPreferencias(app) {
     const conjugeNome = typeof c.conjuge_nome === 'string' ? c.conjuge_nome.trim().slice(0, 150) : ''
     if (!conjugeFichaId && !conjugeNome) return reply.code(400).send({ mensagem: 'Informe o nome do cônjuge.' })
     const observacao = typeof c.observacao === 'string' ? c.observacao.trim().slice(0, 1000) || null : null
-    const { edicoesPreferenciaConjuge: edicoes } = await carregarMarca(pool)
+    const { edicoesPreferenciaConjuge: edicoes, preferenciaConjuge } = await carregarMarca(pool)
+    if (!preferenciaConjuge) return reply.code(400).send({ mensagem: 'A preferência do cônjuge está desligada nas Configurações.' })
 
     const r = await transacao(pool, async (db) => {
       const { rows: [f] } = await db.query('select id from pre_fichas where id = $1 for update', [id])
@@ -107,7 +108,7 @@ export default async function rotasPreferencias(app) {
     return reply.code(201).send({ ficha: await fichaAtualizada(id) })
   })
 
-  app.post('/api/admin/preferencias/:id/revogar', gestao, async (req, reply) => {
+  app.post('/api/admin/preferencias/:id/revogar', gestao(), async (req, reply) => {
     const motivo = typeof req.body?.motivo === 'string' ? req.body.motivo.trim().slice(0, 1000) : ''
     if (!motivo) return reply.code(400).send({ mensagem: 'Informe o motivo.' })
     const id = Number(req.params.id)

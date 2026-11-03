@@ -56,3 +56,49 @@ export function solicitarAtualizacao(pasta, usuario) {
   }
   return { ok: true }
 }
+
+// ---------------------------------------------------------------- publicação na internet
+/** Situação da publicação pela Cloudflare (escrita pelo servidor em estado/publicacao.json). */
+export function estadoPublicacao(pasta) {
+  if (!pasta) return { disponivel: false }
+  const estadoDir = join(pasta, 'estado')
+  const instalacao = lerJson(join(estadoDir, 'atualizador.json'))
+  const ultimo = lerJson(join(estadoDir, 'publicacao.json'))
+  const executando = existsSync(join(estadoDir, 'publicacao-andamento.json'))
+  const pendente = existsSync(join(pasta, 'pedido', 'publicar'))
+  return {
+    disponivel: Boolean(instalacao?.publicacao),
+    ativo: ultimo?.ativo ?? false,
+    endereco: ultimo?.endereco || null,
+    tokenConfigurado: ultimo?.token_configurado ?? null,
+    ultimo,
+    andamento: pendente || executando,
+    log: ultimasLinhas(join(estadoDir, 'log-publicacao.txt'), 30),
+  }
+}
+
+const SUBDOMINIO = /^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$/
+const TOKEN_CF = /^[A-Za-z0-9_-]{20,200}$/
+
+/** Grava o pedido para o servidor ligar/desligar a publicação. */
+export function solicitarPublicacao(pasta, { ativo, subdominio, token }) {
+  const s = estadoPublicacao(pasta)
+  if (!s.disponivel) {
+    return { erro: 'Esta instalação ainda não aceita ligar a publicação pelo painel. Atualize o sistema (botão Atualizações) e tente de novo.' }
+  }
+  if (s.andamento) return { erro: 'Já existe uma alteração da publicação em andamento.' }
+  if (typeof ativo !== 'boolean') return { erro: 'Escolha ligar ou desligar.' }
+  const sub = typeof subdominio === 'string' ? subdominio.trim().toLowerCase() : ''
+  if (ativo && !SUBDOMINIO.test(sub)) return { erro: 'Endereço inválido: use letras minúsculas, números e hífen (ex.: sao-pedro).' }
+  const tok = typeof token === 'string' ? token.trim() : ''
+  if (tok && !TOKEN_CF.test(tok)) return { erro: 'Token da Cloudflare em formato inválido.' }
+  if (ativo && !tok && s.tokenConfigurado === false) return { erro: 'Informe o token da API da Cloudflare (só na primeira vez).' }
+  const pedidoDir = join(pasta, 'pedido')
+  try {
+    gravar(join(pedidoDir, 'publicacao.json'), JSON.stringify({ ativo, subdominio: ativo ? sub : '', ...(tok ? { token: tok } : {}) }))
+    writeFileSync(join(pedidoDir, 'publicar'), new Date().toISOString())
+  } catch (e) {
+    return { erro: `Não foi possível registrar o pedido (${e.code ?? e.message}).` }
+  }
+  return { ok: true }
+}

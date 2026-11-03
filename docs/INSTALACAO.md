@@ -149,13 +149,15 @@ Ele instala o que faltar (git, curl, Docker), baixa o sistema em `/opt/prefichas
 3. **E-mail e nome do administrador**;
 4. **Chave de ativação** (ENTER = ativar depois pelo painel).
 
-**Endereço automático na Cloudflare:** o instalador sugere `NOME.movimentocampista.com.br`
+**Publicação na Cloudflare (opcional):** o instalador pergunta se você quer publicar agora; se sim, sugere `NOME.movimentocampista.com.br`
 (pode trocar o NOME) e publica sozinho pelo **Cloudflare Tunnel**: cria o DNS e o HTTPS, sem
 usar as portas 80/443 e sem abrir portas no roteador. Na 1ª instalação ele pede um token da API
 da Cloudflare (crie em *dash.cloudflare.com → Perfil → Tokens de API* com as permissões
 **Conta › Cloudflare Tunnel › Editar** e **Zona › DNS › Editar** para `movimentocampista.com.br`);
 o token fica guardado em `/etc/prefichas/cloudflare.env` (só o root lê) e não é pedido de novo.
 Outro domínio: `DOMINIO_BASE=outro.com.br`; sem Cloudflare (acesso pelo IP): `DOMINIO_BASE=`.
+
+**Ligar ou desligar depois, pelo painel:** Configurações → *Publicação na internet (Cloudflare)*. Escolha o endereço (`NOME.movimentocampista.com.br`) e clique em **Ligar publicação**; para tirar do ar, **Desligar publicação** (o sistema continua acessível pela rede local, pelo IP). O token da Cloudflare é pedido ali na primeira vez e fica guardado só no servidor.
 
 Sem perguntas (automação): `curl -fsSL …/instalar.sh | sudo NOME="Acampamento Exemplo" DOMINIO= ADMIN_EMAIL=voce@email.com ADMIN_NOME="Seu Nome" bash`
 

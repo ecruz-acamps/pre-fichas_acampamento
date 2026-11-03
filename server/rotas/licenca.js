@@ -2,7 +2,7 @@ import { ativarLicenca, licencaAtivada, situacaoLicenca } from '../licenca.js'
 
 export default async function rotasLicenca(app) {
   const { pool } = app
-  const soAdmin = { onRequest: [app.exigirLogin, app.exigirAdmin] }
+  const soAdmin = () => ({ onRequest: [app.exigirLogin, app.exigirAdmin] })
 
   // O formulário público consulta para saber se pode receber inscrições.
   app.get('/api/licenca', async (req, reply) => {
@@ -10,11 +10,11 @@ export default async function rotasLicenca(app) {
     return { ativada: await licencaAtivada(pool) }
   })
 
-  app.get('/api/admin/licenca', soAdmin, async () => situacaoLicenca(pool))
+  app.get('/api/admin/licenca', soAdmin(), async () => situacaoLicenca(pool))
 
   // Poucas tentativas por minuto: dificulta adivinhar a chave.
   app.post('/api/admin/licenca/ativar', {
-    ...soAdmin,
+    ...soAdmin(),
     config: { rateLimit: { max: 5, timeWindow: '1 minute' } },
   }, async (req, reply) => {
     if (await licencaAtivada(pool)) return { ok: true, jaAtivada: true }

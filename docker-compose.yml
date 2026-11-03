@@ -56,6 +56,7 @@ services:
       NOME_ACAMPAMENTO: ${NOME_ACAMPAMENTO:-}
       MARCA_INICIAL: ${MARCA_INICIAL:-}
       # Contas dos participantes e e-mail (recuperação de senha)
+      DOMINIO_BASE: ${DOMINIO_BASE:-movimentocampista.com.br}
       CONTA_OBRIGATORIA: ${CONTA_OBRIGATORIA:-true}
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORTA: ${SMTP_PORTA:-587}

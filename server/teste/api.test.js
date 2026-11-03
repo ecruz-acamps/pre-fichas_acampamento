@@ -750,6 +750,35 @@ describe('API', { skip: pular }, () => {
       assert.match(r3.erro, /ATUALIZACAO_TOKEN/)
     })
 
+    test('publicação na Cloudflare: o painel liga/desliga gravando um pedido validado', async () => {
+      const pasta = mkdtempSync(join(tmpdir(), 'atualizador-'))
+      mkdirSync(join(pasta, 'pedido')); mkdirSync(join(pasta, 'estado'))
+      const a = await appCom({ versao: '2.0.0', commit: SHA_A }, { pastaControle: pasta })
+      const post = (quem, corpo) => a.inject({ method: 'POST', url: '/api/admin/publicacao', headers: como(quem), payload: corpo })
+      // atualizador antigo (sem publicação): explica que precisa atualizar
+      writeFileSync(join(pasta, 'estado', 'atualizador.json'), JSON.stringify({ instalado_em: 'x' }))
+      assert.match((await post('admin', { ativo: true, subdominio: 'sao-pedro' })).json().mensagem, /Atualize o sistema/)
+      writeFileSync(join(pasta, 'estado', 'atualizador.json'), JSON.stringify({ instalado_em: 'x', publicacao: true }))
+      writeFileSync(join(pasta, 'estado', 'publicacao.json'), JSON.stringify({ ativo: false, token_configurado: false }))
+      assert.equal((await post('equipe', { ativo: true, subdominio: 'sao-pedro' })).statusCode, 403)
+      assert.match((await post('admin', { ativo: true, subdominio: 'São Pedro!' })).json().mensagem, /Endereço inválido/)
+      assert.match((await post('admin', { ativo: true, subdominio: 'sao-pedro' })).json().mensagem, /token/)
+      assert.match((await post('admin', { ativo: true, subdominio: 'sao-pedro', token: 'x; rm -rf /' })).json().mensagem, /formato inválido/)
+      const ok = await post('admin', { ativo: true, subdominio: 'sao-pedro', token: 'A'.repeat(40) })
+      assert.equal(ok.statusCode, 200)
+      assert.deepEqual(JSON.parse(readFileSync(join(pasta, 'pedido', 'publicacao.json'), 'utf8')), { ativo: true, subdominio: 'sao-pedro', token: 'A'.repeat(40) })
+      assert.ok(existsSync(join(pasta, 'pedido', 'publicar')))
+      assert.equal((await post('admin', { ativo: false })).statusCode, 409) // já em andamento
+      // consultas de andamento não herdam o limite de outras rotas (o painel consulta a cada 3 s)
+      for (let i = 0; i < 12; i++) {
+        assert.equal((await a.inject({ method: 'GET', url: '/api/admin/atualizacao/progresso', headers: como('admin') })).statusCode, 200)
+      }
+      const e = (await a.inject({ method: 'GET', url: '/api/admin/publicacao/estado', headers: como('admin') })).json()
+      await a.close()
+      assert.equal(e.andamento, true)
+      assert.equal(e.dominioBase, 'movimentocampista.com.br')
+    })
+
     test('botão "Atualizar agora": sem atualizador instalado explica como ativar', async () => {
       const pasta = mkdtempSync(join(tmpdir(), 'atualizador-'))
       mkdirSync(join(pasta, 'pedido')); mkdirSync(join(pasta, 'estado'))
@@ -1045,7 +1074,7 @@ describe('API', { skip: pular }, () => {
       assert.deepEqual(h.detalhes.campos.sort(), ['logradouro', 'numero'])
       assert.equal(h.detalhes.antes.logradouro, 'Rua A')
 
-      await req('admin', 'PUT', '/api/admin/marca', { ...(await req('admin', 'GET', '/api/admin/marca')).json(), mostrarPosicaoFila: true })
+      await req('admin', 'PUT', '/api/admin/marca', { ...(await app.inject({ method: 'GET', url: '/api/marca' })).json(), mostrarPosicaoFila: true })
       invalidarMarca()
       eu = (await conta('ana', 'GET', '/api/conta/eu')).json()
       assert.equal(typeof eu.ficha.posicao, 'number')
@@ -1094,6 +1123,20 @@ describe('API', { skip: pular }, () => {
       assert.equal(des.json().ficha.tem_conta, false)
       f = (await req('admin', 'GET', `/api/admin/pre-fichas/${id}/historico`)).json()
       assert.ok(f.some((h) => /vinculada à conta ana@conta.com/.test(h.observacao ?? '')))
+    })
+
+    test('preferência do cônjuge pode ser desligada nas configurações', async () => {
+      const marca = (await app.inject({ method: 'GET', url: '/api/marca' })).json()
+      assert.equal(marca.preferenciaConjuge, true)
+      await req('admin', 'PUT', '/api/admin/marca', { ...marca, preferenciaConjuge: false })
+      invalidarMarca()
+      assert.equal((await app.inject({ method: 'GET', url: '/api/marca' })).json().preferenciaConjuge, false)
+      const id = await idPorNome('Carla Antiga')
+      const r = await req('equipe', 'POST', `/api/admin/pre-fichas/${id}/preferencias`, { modalidade: 'juvenil', acampamento_numero: 10, conjuge_nome: 'Fulano' })
+      assert.equal(r.statusCode, 400)
+      assert.match(r.json().mensagem, /desligada/)
+      await req('admin', 'PUT', '/api/admin/marca', { ...marca, preferenciaConjuge: true })
+      invalidarMarca()
     })
 
     test('contas antigas importadas criam a senha pelo link do e-mail (uso único)', async () => {

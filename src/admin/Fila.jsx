@@ -89,7 +89,9 @@ export default function Fila({ usuario, marca, nucleos }) {
   const [cidade, setCidade] = useState('')
   const [bairro, setBairro] = useState('')
   const [busca, setBusca] = useState('')
-  const [preferencia, setPreferencia] = useState('')
+  const [preferenciaEscolhida, setPreferencia] = useState('')
+  const prefLigada = marca?.preferenciaConjuge !== false
+  const preferencia = prefLigada ? preferenciaEscolhida : ''
   const [ordem, setOrdem] = useState('fila')
   const [selecionada, setSelecionada] = useState(null)
 
@@ -164,7 +166,7 @@ export default function Fila({ usuario, marca, nucleos }) {
         <h1>Fila de espera</h1>
         <p className="subtitulo">
           {contagemFila.todas} pessoa(s) aguardando · ordem de entrada na fila (data da inscrição, ou de quando foi para o fim da fila)
-          {comPreferencia > 0 && <> · <button className="link inline" onClick={() => setPreferencia('ativa')}>★ {comPreferencia} com preferência</button></>}
+          {prefLigada && comPreferencia > 0 && <> · <button className="link inline" onClick={() => setPreferencia('ativa')}>★ {comPreferencia} com preferência</button></>}
           {coordenador && nucleos.length > 0 && ` · ${nucleos.map((n) => n.nome).join(', ')}`}
         </p>
       </div>
@@ -189,13 +191,13 @@ export default function Fila({ usuario, marca, nucleos }) {
           <option value="todos">Todos os status</option>
           {STATUS.map((s) => <option key={s.valor} value={s.valor}>{s.rotulo}</option>)}
         </select>
-        <select value={preferencia} onChange={(e) => setPreferencia(e.target.value)} aria-label="Preferência"
+        {prefLigada && <select value={preferencia} onChange={(e) => setPreferencia(e.target.value)} aria-label="Preferência"
           className={preferencia ? 'filtro-ativo' : ''}>
           <option value="">Preferência: todas as fichas</option>
           <option value="ativa">★ Com preferência ativa (cônjuge)</option>
           <option value="validar">Declarou que o cônjuge fez — a validar</option>
           <option value="sem">Sem preferência</option>
-        </select>
+        </select>}
         <select value={ordem} onChange={(e) => setOrdem(e.target.value)} aria-label="Ordenar">
           <option value="fila">Ordem: posição na fila</option>
           <option value="nome">Ordem: nome (A–Z)</option>
@@ -252,7 +254,7 @@ export default function Fila({ usuario, marca, nucleos }) {
                     {l.nome_completo}
                     {l.tem_conta && <span className="selo-conta" title={`Tem conta${l.conta_email ? `: ${l.conta_email}` : ''}`}> 🔑</span>}
                     {duplicados.has(l.id) && <span className="selo alerta" title="Mesmo e-mail ou telefone de outra ficha">possível duplicado</span>}
-                    <SeloPreferencia ficha={l} />
+                    {prefLigada && <SeloPreferencia ficha={l} />}
                     {l.recusas_seguidas > 0 && (
                       <span className="selo recusa" title="Recusas seguidas ao ser chamada">
                         {l.recusas_seguidas} recusa{l.recusas_seguidas > 1 ? 's' : ''}
