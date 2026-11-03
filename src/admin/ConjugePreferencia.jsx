@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useDeferredValue, useMemo, useState } from 'react'
 import { api } from '../lib/api.js'
 import { MODALIDADES, rotuloDe } from '../../shared/opcoes.js'
 import { formatarDataHora, mascaraTelefone } from '../../shared/util.js'
@@ -17,11 +17,12 @@ export default function ConjugePreferencia({ ficha: f, todas, marca, podeGerir, 
   const declarou = f.conjuge_nome || f.conjuge_telefone || f.conjuge_fez_acampamento !== null
 
   const sugestoes = useMemo(() => (f.conjuge_id ? [] : sugerirConjuges(f, todas)), [f, todas])
+  const buscaAdiada = useDeferredValue(busca)
   const resultados = useMemo(() => {
-    const t = normalizar(busca.trim())
+    const t = normalizar(buscaAdiada.trim())
     if (t.length < 3) return []
     return todas.filter((o) => o.id !== f.id && normalizar(o.nome_completo).includes(t)).slice(0, 8)
-  }, [busca, todas, f.id])
+  }, [buscaAdiada, todas, f.id])
 
   async function executar(fn) {
     setErro(''); setEnviando(true)

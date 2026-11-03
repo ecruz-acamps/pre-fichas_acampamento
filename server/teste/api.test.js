@@ -290,12 +290,26 @@ describe('API', { skip: pular }, () => {
       assert.deepEqual(r.json().map((f) => f.nome_completo).sort(), ['Maria Silva', 'Segundo Juvenil'])
       assert.deepEqual(r.json()[0].nucleos, [nucleoId])
       assert.equal(r.json()[0].cidade_chave, undefined)
+      // lista resumida (sem textos longos); completa só no detalhe ou na exportação
+      assert.equal(r.json()[0].motivo, undefined)
+      assert.equal(r.json()[0].ip_origem, undefined)
+      const id = r.json()[0].id
+      const det = (await req('coord', 'GET', `/api/admin/pre-fichas/${id}`)).json()
+      assert.equal(typeof det.motivo, 'string')
+      assert.equal(det.ip_origem, undefined)
+      const comp = (await req('coord', 'GET', '/api/admin/pre-fichas?completo=1')).json()
+      assert.equal(comp.length, 2)
+      assert.equal(typeof comp[0].motivo, 'string')
+      assert.equal(comp[0].ip_origem, undefined)
     })
 
     test('coordenadora não altera nem vê histórico de ficha fora da área', async () => {
       const fora = await idPorNome('Terceiro Juvenil')
       assert.equal((await req('coord', 'PATCH', `/api/admin/pre-fichas/${fora}`, { status: 'em_contato' })).statusCode, 404)
       assert.equal((await req('coord', 'GET', `/api/admin/pre-fichas/${fora}/historico`)).statusCode, 404)
+      // ficha completa: mesma regra (fora da área = não encontrada)
+      assert.equal((await req('coord', 'GET', `/api/admin/pre-fichas/${fora}`)).statusCode, 404)
+      assert.equal((await req('coord', 'GET', '/api/admin/pre-fichas?completo=1')).json().some((f) => f.id === fora), false)
       const dentro = await idPorNome('Segundo Juvenil')
       assert.equal((await req('coord', 'PATCH', `/api/admin/pre-fichas/${dentro}`, { observacoes_internas: 'ok' })).statusCode, 200)
     })

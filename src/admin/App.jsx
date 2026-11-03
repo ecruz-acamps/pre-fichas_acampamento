@@ -12,6 +12,7 @@ import Auditoria from './Auditoria.jsx'
 import Nomes from './Nomes.jsx'
 import AlterarSenha from './AlterarSenha.jsx'
 import Ativacao from './Ativacao.jsx'
+import { limparCacheFichas } from './Fila.jsx'
 import { BotaoAtualizacao, DialogoAtualizacao } from './Atualizacoes.jsx'
 
 // Telas do painel e quem pode ver cada uma
@@ -41,6 +42,7 @@ export default function App() {
       setUsuario(r.usuario ?? null)
       setLicencaAtivada(r.licencaAtivada !== false)
     } catch {
+      limparCacheFichas()
       setUsuario(null)
     }
   }, [])
@@ -68,20 +70,21 @@ export default function App() {
   }, [])
 
   useEffect(() => {
-    const expirou = () => setUsuario(null)
+    const expirou = () => { limparCacheFichas(); setUsuario(null) }
     window.addEventListener('sessao-expirada', expirou)
     return () => window.removeEventListener('sessao-expirada', expirou)
   }, [])
 
   async function sair() {
     await api.post('/api/auth/logout').catch(() => {})
+    limparCacheFichas()
     setUsuario(null)
     setTela('fila')
   }
 
   if (usuario === undefined) return <main className="pagina estreita"><p className="carregando">Carregando…</p></main>
   if (!usuario) {
-    return <Login marca={marca} onEntrar={(r) => { setUsuario(r.usuario); setLicencaAtivada(r.licencaAtivada !== false); setTela('fila') }} />
+    return <Login marca={marca} onEntrar={(r) => { limparCacheFichas(); setUsuario(r.usuario); setLicencaAtivada(r.licencaAtivada !== false); setTela('fila') }} />
   }
   if (usuario.trocar_senha) {
     return <AlterarSenha primeiroAcesso onConcluir={() => setUsuario({ ...usuario, trocar_senha: false })} onSair={sair} />

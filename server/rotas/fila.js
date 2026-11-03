@@ -1,6 +1,6 @@
 import { STATUS } from '../../shared/opcoes.js'
 import { transacao } from '../db.js'
-import { filtroEscopo, nucleosDoUsuario, podeVerFicha } from '../escopo.js'
+import { nucleosDoUsuario, podeVerFicha } from '../escopo.js'
 import { carregarMarca } from '../marca.js'
 
 const STATUS_VALIDOS = STATUS.map((s) => s.valor)
@@ -59,6 +59,55 @@ export const SQL_FICHAS = (where) => `
    where ${where}
    order by p.entrada_fila_em, p.id`
 
+// Colunas da lista do painel (o detalhe completo vem de GET /api/admin/pre-fichas/:id).
+const COLUNAS_LISTA = `p.id, p.created_at, p.entrada_fila_em, p.status, p.modalidade, p.nome_completo, p.data_nascimento,
+  p.estado_civil, p.sexo, p.telefone, p.email, p.cidade, p.bairro, p.uf, p.paroquia, p.recusas_seguidas, p.cpf,
+  p.conjuge_nome, p.conjuge_telefone, p.conjuge_fez_acampamento, p.conjuge_acampamento_numero, p.conjuge_id`
+
+/**
+ * Lista de fichas para o painel. Núcleos, participações e preferências são calculados UMA vez
+ * (agrupados) em vez de uma subconsulta por linha. completo = true traz todas as colunas (exportação).
+ */
+export const SQL_LISTA = (where, { completo = false } = {}) => `
+  with n as (
+    select p.id, array_agg(distinct a.nucleo_id order by a.nucleo_id) as nucleos
+      from pre_fichas p join nucleo_areas a
+        on a.uf = p.uf and a.cidade_chave = p.cidade_chave and (a.bairro_chave is null or a.bairro_chave = p.bairro_chave)
+     group by p.id),
+  part as (
+    select pa.pre_ficha_id, json_agg(json_build_object(
+             'acampamento_id', a.id, 'numero', a.numero, 'modalidade', a.modalidade,
+             'data_inicio', a.data_inicio, 'tribo', pa.tribo) order by a.data_inicio nulls last, a.numero) as lista
+      from participacoes pa join acampamentos a on a.id = pa.acampamento_id
+     group by pa.pre_ficha_id),
+  pref as (
+    select ps.pre_ficha_id, json_agg(json_build_object(
+             'id', ps.id, 'origem', ps.origem, 'modalidade', ps.modalidade, 'acampamento_numero', ps.acampamento_numero,
+             'valida_de', ps.valida_de, 'valida_ate', ps.valida_ate, 'situacao', ps.situacao,
+             'conjuge_ficha_id', ps.conjuge_ficha_id, 'conjuge_nome', coalesce(c.nome_completo, ps.conjuge_nome),
+             'observacao', ps.observacao, 'criado_em', ps.criado_em, 'motivo_revogacao', ps.motivo_revogacao)
+             order by ps.criado_em desc) as lista
+      from preferencias_situacao ps left join pre_fichas c on c.id = ps.conjuge_ficha_id
+     group by ps.pre_ficha_id)
+  select ${completo ? 'p.*, u.nome as atualizado_por_nome' : COLUNAS_LISTA},
+         coalesce(n.nucleos, '{}') as nucleos,
+         coalesce(part.lista, '[]') as participacoes,
+         coalesce(pref.lista, '[]') as preferencias,
+         cj.nome_completo as conjuge_vinculado_nome,
+         (p.participante_id is not null) as tem_conta, pc.email as conta_email
+    from pre_fichas p
+    left join n on n.id = p.id
+    left join part on part.pre_ficha_id = p.id
+    left join pref on pref.pre_ficha_id = p.id
+    left join pre_fichas cj on cj.id = p.conjuge_id
+    left join participantes pc on pc.id = p.participante_id
+    ${completo ? 'left join usuarios u on u.id = p.atualizado_por' : ''}
+   where ${where}
+   order by p.entrada_fila_em, p.id`
+
+/** Filtro do escopo do coordenador sobre a lista ($n = array de núcleos ou null). */
+const escopoLista = (n) => `($${n}::bigint[] is null or n.nucleos && $${n}::bigint[])`
+
 export function limparFicha(f) {
   if (!f) return f
   delete f.ip_origem
@@ -72,10 +121,22 @@ export default async function rotasFila(app) {
   const autenticado = () => ({ onRequest: [app.exigirLogin] })
 
   // Pré-fichas visíveis para o usuário, na ordem da fila (data/hora de inscrição).
+  // ?completo=1 traz todas as colunas (exportação). O padrão é a lista resumida.
   app.get('/api/admin/pre-fichas', autenticado(), async (req) => {
     const escopo = await nucleosDoUsuario(pool, req.usuario)
-    const { rows } = await pool.query(SQL_FICHAS(filtroEscopo(1)), [escopo])
+    const completo = req.query?.completo === '1'
+    const { rows } = await pool.query(SQL_LISTA(escopoLista(1), { completo }), [escopo])
     return rows.map(limparFicha)
+  })
+
+  // Ficha completa (ao abrir o detalhe). Mesma regra do histórico: núcleo do coordenador ou campista.
+  app.get('/api/admin/pre-fichas/:id', autenticado(), async (req, reply) => {
+    const id = Number(req.params.id)
+    if (!Number.isInteger(id) || !(await podeVerFicha(pool, req.usuario, id, { leitura: true }))) {
+      return reply.code(404).send({ mensagem: 'Pré-ficha não encontrada.' })
+    }
+    const { rows: [ficha] } = await pool.query(SQL_FICHAS('p.id = $1'), [id])
+    return limparFicha(ficha)
   })
 
   app.get('/api/admin/pre-fichas/:id/historico', autenticado(), async (req, reply) => {
@@ -172,8 +233,7 @@ export default async function rotasFila(app) {
   // coordenador também pode ALTERAR a ficha (só as do seu núcleo).
   app.get('/api/admin/campistas', autenticado(), async (req) => {
     const escopo = await nucleosDoUsuario(pool, req.usuario)
-    const { rows } = await pool.query(
-      SQL_FICHAS('exists (select 1 from participacoes pa where pa.pre_ficha_id = p.id)'))
+    const { rows } = await pool.query(SQL_LISTA('part.pre_ficha_id is not null'))
     const { rows: ns } = await pool.query('select id, nome from nucleos')
     const nomes = new Map(ns.map((n) => [n.id, n.nome]))
     return rows.map((f) => ({
@@ -187,7 +247,11 @@ export default async function rotasFila(app) {
   app.get('/api/admin/auditoria', autenticado(), async (req) => {
     const q = req.query ?? {}
     const escopo = await nucleosDoUsuario(pool, req.usuario)
-    const filtros = [filtroEscopo(1).replaceAll('p.id', 'h.pre_ficha_id')]
+    // Escopo do coordenador verificado por ficha (pela chave primária), sem varrer todas as fichas
+    const filtros = [`($1::bigint[] is null or exists (
+      select 1 from pre_fichas pe join nucleo_areas a
+        on a.uf = pe.uf and a.cidade_chave = pe.cidade_chave and (a.bairro_chave is null or a.bairro_chave = pe.bairro_chave)
+       where pe.id = h.pre_ficha_id and a.nucleo_id = any($1::bigint[])))`]
     const valores = [escopo]
     const add = (sql, valor) => { valores.push(valor); filtros.push(sql.replace('?', `$${valores.length}`)) }
     const tipos = String(q.tipo ?? '').split(',').filter((t) => TIPOS_AUDITORIA.includes(t))

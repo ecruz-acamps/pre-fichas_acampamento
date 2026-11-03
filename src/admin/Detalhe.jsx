@@ -67,7 +67,18 @@ function ContaParticipante({ f, podeGerir, onFichaAtualizada }) {
   )
 }
 
-export default function Detalhe({ ficha: f, marca, usuario, todas = [], posicao, nomeNucleo, onFechar, onSalvar, onFilaAlterada, onFichaAtualizada, somenteLeitura = false }) {
+// Campos que só a ficha completa tem certeza de trazer atualizados
+const pick = (c) => ({ observacoes_internas: c.observacoes_internas, atualizado_em: c.atualizado_em, atualizado_por_nome: c.atualizado_por_nome })
+
+export default function Detalhe({ ficha: resumo, marca, usuario, todas = [], posicao, nomeNucleo, onFechar, onSalvar, onFilaAlterada, onFichaAtualizada, somenteLeitura = false }) {
+  // A lista traz só o resumo; os dados completos (endereço, motivo, termos…) vêm ao abrir
+  const [completa, setCompleta] = useState(null)
+  useEffect(() => {
+    let ativo = true
+    api.get(`/api/admin/pre-fichas/${resumo.id}`).then((c) => ativo && setCompleta(c)).catch(() => {})
+    return () => { ativo = false }
+  }, [resumo.id, resumo.status, resumo.entrada_fila_em, resumo.recusas_seguidas, resumo.conjuge_id, resumo.atualizado_em])
+  const f = completa?.id === resumo.id ? { ...completa, ...resumo, ...pick(completa) } : resumo
   const [status, setStatus] = useState(f.status)
   const [obs, setObs] = useState(f.observacoes_internas || '')
   const [salvando, setSalvando] = useState(false)

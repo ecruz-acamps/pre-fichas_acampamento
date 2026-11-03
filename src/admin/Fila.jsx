@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api.js'
 import { MODALIDADES, STATUS, STATUS_NA_FILA, rotuloDe } from '../../shared/opcoes.js'
 import { calcularIdade, chaveLocal, formatarDataHora, linkWhatsApp, melhorGrafia, somenteDigitos } from '../../shared/util.js'
@@ -42,26 +42,55 @@ export function opcoesLocais(linhas, campo) {
 
 const normalizar = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
+// Lista compartilhada entre as telas (Fila, Nomes, Resumo, Acampamentos): baixa uma vez e
+// reaproveita ao trocar de aba. "Atualizar" (ou uma alteração) busca de novo.
+const cacheFichas = { lista: null, pedido: null, ouvintes: new Set() }
+const avisar = () => cacheFichas.ouvintes.forEach((f) => f(cacheFichas.lista))
+export function limparCacheFichas() { cacheFichas.lista = null; cacheFichas.pedido = null }
+
 export function useFichas() {
-  const [linhas, setLinhas] = useState([])
-  const [carregando, setCarregando] = useState(true)
+  const [linhas, setLinhasLocal] = useState(cacheFichas.lista ?? [])
+  const [carregando, setCarregando] = useState(!cacheFichas.lista)
   const [erro, setErro] = useState('')
+  useEffect(() => {
+    cacheFichas.ouvintes.add(setLinhasLocal)
+    return () => { cacheFichas.ouvintes.delete(setLinhasLocal) }
+  }, [])
+  const setLinhas = useCallback((valor) => {
+    cacheFichas.lista = typeof valor === 'function' ? valor(cacheFichas.lista ?? []) : valor
+    avisar()
+  }, [])
   const recarregar = useCallback(async () => {
     setCarregando(true); setErro('')
     try {
-      const lista = await api.get('/api/admin/pre-fichas')
-      setLinhas(lista)
+      cacheFichas.pedido ??= api.get('/api/admin/pre-fichas')
+      const lista = await cacheFichas.pedido
+      cacheFichas.lista = lista
+      avisar()
       return lista
     } catch (e) {
       console.error(e)
       setErro('Não foi possível carregar as pré-fichas. Tente novamente.')
     } finally {
+      cacheFichas.pedido = null
       setCarregando(false)
     }
   }, [])
-  useEffect(() => { recarregar() }, [recarregar])
+  useEffect(() => { if (!cacheFichas.lista) recarregar() }, [recarregar])
   return { linhas, setLinhas, carregando, erro, recarregar }
 }
+
+// Texto de busca de cada ficha, normalizado uma vez por carga (não a cada tecla)
+const indiceBusca = new WeakMap()
+function textoBusca(l) {
+  let t = indiceBusca.get(l)
+  if (t === undefined) {
+    t = normalizar([l.nome_completo, l.email, l.cidade, l.bairro, l.paroquia].join(' '))
+    indiceBusca.set(l, t)
+  }
+  return t
+}
+const POR_PAGINA = 200
 
 /** Filtro de núcleo usado na fila e no resumo. */
 export function filtrarNucleo(linhas, nucleo) {
@@ -89,6 +118,8 @@ export default function Fila({ usuario, marca, nucleos }) {
   const [cidade, setCidade] = useState('')
   const [bairro, setBairro] = useState('')
   const [busca, setBusca] = useState('')
+  const buscaAdiada = useDeferredValue(busca)
+  const [limite, setLimite] = useState(POR_PAGINA)
   const [preferenciaEscolhida, setPreferencia] = useState('')
   const prefLigada = marca?.preferenciaConjuge !== false
   const preferencia = prefLigada ? preferenciaEscolhida : ''
@@ -116,8 +147,8 @@ export default function Fila({ usuario, marca, nucleos }) {
   }, [porLugar])
 
   const visiveis = useMemo(() => {
-    const termo = normalizar(busca.trim())
-    const termoDigitos = somenteDigitos(busca)
+    const termo = normalizar(buscaAdiada.trim())
+    const termoDigitos = somenteDigitos(buscaAdiada)
     return porLugar.filter((l) => {
       if (modalidade !== 'todas' && l.modalidade !== modalidade) return false
       if (filtroStatus === 'fila' && !STATUS_NA_FILA.includes(l.status)) return false
@@ -126,10 +157,13 @@ export default function Fila({ usuario, marca, nucleos }) {
       if (preferencia === 'validar' && !declarouSemValidar(l)) return false
       if (preferencia === 'sem' && preferenciaAtiva(l)) return false
       if (!termo) return true
-      return [l.nome_completo, l.email, l.cidade, l.bairro, l.paroquia].some((v) => normalizar(v).includes(termo)) ||
+      return textoBusca(l).includes(termo) ||
         (termoDigitos.length >= 4 && (somenteDigitos(l.telefone).includes(termoDigitos) || (l.cpf ?? '').includes(termoDigitos)))
     })
-  }, [porLugar, modalidade, filtroStatus, busca, preferencia])
+  }, [porLugar, modalidade, filtroStatus, buscaAdiada, preferencia])
+
+  // Mostra 200 linhas por vez (desenhar milhares de linhas travava a tela)
+  useEffect(() => { setLimite(POR_PAGINA) }, [modalidade, filtroStatus, buscaAdiada, preferencia, nucleo, cidade, bairro, ordem])
 
   const ordenadas = useMemo(() => (ordem === 'nome'
     ? [...visiveis].sort((a, b) => a.nome_completo.localeCompare(b.nome_completo, 'pt-BR', { sensitivity: 'base' }))
@@ -215,7 +249,13 @@ export default function Fila({ usuario, marca, nucleos }) {
           {bairros.map((b) => <option key={b.chave} value={b.chave}>{b.nome} ({b.total})</option>)}
         </select>
         <button className="botao-secundario" onClick={recarregar} disabled={carregando}>{carregando ? 'Atualizando…' : 'Atualizar'}</button>
-        <button className="botao-secundario" onClick={() => exportarCsv(visiveis, posicoes, nomeNucleo)} disabled={!visiveis.length}>
+        <button className="botao-secundario" onClick={async () => {
+          // A planilha usa todas as colunas: busca a versão completa só na hora de exportar
+          try {
+            const completas = new Map((await api.get('/api/admin/pre-fichas?completo=1')).map((f) => [f.id, f]))
+            exportarCsv(ordenadas.map((l) => completas.get(l.id) ?? l), posicoes, nomeNucleo)
+          } catch { alert('Não foi possível exportar. Tente novamente.') }
+        }} disabled={!visiveis.length}>
           Exportar CSV
         </button>
       </div>
@@ -237,7 +277,7 @@ export default function Fila({ usuario, marca, nucleos }) {
             </tr>
           </thead>
           <tbody>
-            {ordenadas.map((l) => {
+            {ordenadas.slice(0, limite).map((l) => {
               const wa = linkWhatsApp(l.telefone)
               return (
                 <tr key={l.id} onClick={() => setSelecionada(l)} className="clicavel">
@@ -282,6 +322,13 @@ export default function Fila({ usuario, marca, nucleos }) {
           </tbody>
         </table>
       </div>
+      {ordenadas.length > limite && (
+        <div className="acoes">
+          <button className="botao-secundario" onClick={() => setLimite((n) => n + POR_PAGINA)}>
+            Mostrar mais ({limite} de {ordenadas.length})
+          </button>
+        </div>
+      )}
 
       {selecionada && (
         <Detalhe

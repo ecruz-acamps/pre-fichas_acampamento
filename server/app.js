@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs'
+import zlib from 'node:zlib'
 import Fastify from 'fastify'
 import cookie from '@fastify/cookie'
+import compress from '@fastify/compress'
 import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
 import estaticos from '@fastify/static'
@@ -40,6 +42,9 @@ export async function construirApp({ pool, config, logger = true, chavesLicenca 
   app.decorateRequest('usuario', null)
 
   await app.register(cookie)
+  // Compressão (a lista do painel fica ~8x menor). Proxies (Caddy/Cloudflare) não comprimem de novo.
+  await app.register(compress, { global: true, threshold: 1024, encodings: ['br', 'gzip'],
+    brotliOptions: { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 4 } } })
   await app.register(rateLimit, { global: false })
   await app.register(helmet, {
     contentSecurityPolicy: {
