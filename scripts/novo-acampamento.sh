@@ -18,6 +18,8 @@
 #   --porta-http N     porta pública do site (padrão 80; se ocupada, 8180 ou a próxima livre)
 #   --porta N          porta local da aplicação (padrão 3000; vários acampamentos: 3001, 3002...)
 #   --marca ARQ        (avançado) arquivo de marca completo, ver marcas/modelo.json
+#   --compartilhado    publica o --dominio pelo proxy HTTPS compartilhado da VM (vários acampamentos
+#                      diretos no mesmo servidor; ver scripts/proxy-compartilhado.sh)
 #   --cloudflare       publica o --dominio pelo Cloudflare Tunnel (HTTPS sem usar portas 80/443;
 #                      precisa de CF_API_TOKEN ou /etc/prefichas/cloudflare.env)
 #   --multi            vários acampamentos atrás de um proxy compartilhado (sem Caddy próprio)
@@ -25,7 +27,7 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-PORTA_WEB="${PORTA_HTTP:-}" NOME="" DOMINIO="-" ADMIN="" NOME_ADMIN="" PORTA="3000" MULTI=0 CLOUDFLARE=0 FORCAR=0 CHAVE="" MARCA=""
+PORTA_WEB="${PORTA_HTTP:-}" NOME="" DOMINIO="-" ADMIN="" NOME_ADMIN="" PORTA="3000" MULTI=0 CLOUDFLARE=0 COMPARTILHADO=0 FORCAR=0 CHAVE="" MARCA=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --nome) NOME="$2"; shift 2 ;;
@@ -38,6 +40,7 @@ while [ $# -gt 0 ]; do
     --marca) MARCA="$2"; shift 2 ;;
     --multi) MULTI=1; shift ;;
     --cloudflare) CLOUDFLARE=1; shift ;;
+    --compartilhado) COMPARTILHADO=1; shift ;;
     --forcar) FORCAR=1; shift ;;
     -h|--help) sed -n '2,22p' "$0"; exit 0 ;;
     *) echo "Opção desconhecida: $1"; exit 1 ;;
@@ -61,6 +64,17 @@ porta_ocupada() {
 }
 quem_usa() { ss -ltnpH "sport = :$1" 2>/dev/null | grep -o 'users:(("[^"]*"' | head -1 | sed 's/users:(("//; s/"$//'; }
 porta_livre_a_partir() { local p="$1"; while porta_ocupada "$p"; do p=$((p + 1)); done; echo "$p"; }
+# Porta local já reservada por OUTRA instância da VM (mesmo que esteja parada)
+porta_reservada() {
+  local f
+  for f in /opt/prefichas-*/.env; do
+    [ -f "$f" ] || continue
+    [ "$(dirname "$f")" = "$(pwd)" ] && continue
+    grep -qx "PORTA_LOCAL=$1" "$f" && return 0
+  done
+  return 1
+}
+porta_local_livre() { local p="$1"; while porta_ocupada "$p" || porta_reservada "$p"; do p=$((p + 1)); done; echo "$p"; }
 
 command -v docker >/dev/null || { echo "Docker não encontrado. Use o instalador: instalar.sh"; exit 1; }
 docker compose version >/dev/null 2>&1 || { echo "Plugin 'docker compose' não encontrado."; exit 1; }
@@ -90,10 +104,15 @@ else SENHA_DB="$(head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n')"; fi
 
 # ---- Portas -----------------------------------------------------------------
 PERFIS="caddy" COOKIE="true" PORTA_HTTP=80 PORTA_HTTPS=443 SITE="${DOMINIO}"
-PORTA=$(porta_livre_a_partir "$PORTA")
+# Porta local: com outras instâncias na VM, começa em 3001 e pula as já reservadas
+ls /opt/prefichas-*/.env >/dev/null 2>&1 && [ "$PORTA" = 3000 ] && PORTA=3001
+PORTA=$(porta_local_livre "$PORTA")
 if [ "$CLOUDFLARE" = 1 ]; then
   [ -n "$DOMINIO" ] || { echo "--cloudflare precisa de --dominio (ex.: nome.movimentocampista.com.br)."; exit 1; }
   PERFIS="tunel"
+elif [ "$COMPARTILHADO" = 1 ]; then
+  [ -n "$DOMINIO" ] || { echo "--compartilhado precisa de --dominio (ex.: prefichas.seuacampamento.com.br)."; exit 1; }
+  PERFIS=""; MULTI=1
 elif [ "$MULTI" = 1 ]; then
   PERFIS=""
 elif [ -n "$DOMINIO" ]; then
@@ -145,6 +164,7 @@ COOKIE_SEGURO=${COOKIE}
 SESSAO_HORAS=12
 LIMITE_ENVIOS_POR_HORA=30
 CONTA_OBRIGATORIA=true
+PUBLICACAO=$( [ "$CLOUDFLARE" = 1 ] && echo cloudflare || { [ "$COMPARTILHADO" = 1 ] && echo direta; } || { [ "$MULTI" = 1 ] && echo proxy-externo; } || { [ -n "$DOMINIO" ] && echo propria; } || echo local)
 DOMINIO_BASE=${DOMINIO_BASE:-movimentocampista.com.br}
 ENDERECO_PUBLICO=$([ "$CLOUDFLARE" = 1 ] && echo "$DOMINIO")
 ENV
@@ -176,6 +196,12 @@ for _ in $(seq 1 90); do
 done
 curl -fsS "http://127.0.0.1:${PORTA}/api/saude" >/dev/null || { echo; echo "✗ O sistema não respondeu. Veja: docker compose logs app"; exit 1; }
 
+if [ "$COMPARTILHADO" = 1 ]; then
+  echo "→ Publicando ${DOMINIO} no proxy compartilhado da VM…"
+  ./scripts/proxy-compartilhado.sh adicionar "$DOMINIO" "$PORTA" || {
+    echo "⚠ Não foi possível publicar no proxy compartilhado. Veja: ./scripts/proxy-compartilhado.sh listar"; }
+fi
+
 echo
 SAIDA_ADMIN="$(docker compose exec -T app node server/cli.js criar-admin "$ADMIN" "$NOME_ADMIN")"
 SENHA_TEMP="$(printf '%s\n' "$SAIDA_ADMIN" | sed -n 's/^Senha temporária: //p')"
@@ -204,6 +230,7 @@ done
 
 IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 if [ -n "$DOMINIO" ]; then BASE="https://${DOMINIO}"
+elif [ "$COMPARTILHADO" = 1 ]; then BASE="https://${DOMINIO}"
 elif [ "$MULTI" = 1 ]; then BASE="(configure o proxy para 127.0.0.1:${PORTA})"
 elif [ "$PORTA_HTTP" = 80 ]; then BASE="http://${IP:-IP-DO-SERVIDOR}"
 else BASE="http://${IP:-IP-DO-SERVIDOR}:${PORTA_HTTP}"; fi
@@ -219,7 +246,7 @@ echo "  Senha temporária: ${SENHA_TEMP:-veja acima}   (será pedida uma nova no
 [ "$ATIVADO" = 1 ] || echo "  Ativação:    o painel vai pedir a chave XXX-0000 no 1º acesso"
 echo "  Pasta:       $(pwd)"
 echo "════════════════════════════════════════════════════════════"
-if [ "$MULTI" = 1 ]; then
+if [ "$MULTI" = 1 ] && [ "$COMPARTILHADO" = 0 ]; then
   echo "Acrescente ao Caddyfile do proxy compartilhado (deploy/Caddyfile.multi):"
   echo "${DOMINIO:-seu.dominio} {"; echo "	encode zstd gzip"; echo "	reverse_proxy 127.0.0.1:${PORTA}"; echo "}"
 fi

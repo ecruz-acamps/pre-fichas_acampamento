@@ -588,6 +588,30 @@ sudo ./scripts/vpn-fortinet.sh fechar-ssh   # 22 só a partir das redes da VPN; 
 **Emergência** (VPN fora do ar e SSH fechado): use o console da VM no provedor ou hipervisor e rode
 `sudo ./scripts/vpn-fortinet.sh abrir-ssh`.
 
+## 11e. Vários acampamentos na mesma VM (híbrido)
+
+Cada acampamento pode ser publicado de um jeito diferente na mesma VM. Rode o comando único uma vez para
+cada acampamento e escolha:
+
+1. **Cloudflare**: `NOME.movimentocampista.com.br`, pelo túnel. Não usa as portas 80/443.
+2. **Direto**: domínio próprio com registro A apontando para o IP público da VM. Todos os acampamentos
+   diretos usam **um único proxy HTTPS compartilhado** (`/opt/prefichas-proxy`, nas portas 80/443),
+   e o certificado de cada domínio é automático.
+3. **Só rede local**: pelo IP, numa porta livre (8180, 8181…), sem HTTPS.
+
+O instalador escolhe sozinho uma **porta local livre** para cada acampamento (3001, 3002…), sem repetir
+portas de outras instâncias, mesmo das que estiverem paradas. Cada acampamento tem banco, usuários,
+backups e marca próprios.
+
+```bash
+sudo /opt/prefichas-NOME/scripts/proxy-compartilhado.sh listar     # domínios diretos publicados
+```
+
+**Atenção:** acampamentos instalados antes desta versão no modo direto têm o próprio Caddy nas portas
+80/443, e isso impede o proxy compartilhado de subir. Para migrar um deles:
+`docker compose stop caddy`, coloque `COMPOSE_PROFILES=` no `.env`, rode `docker compose up -d` e depois
+`sudo ./scripts/proxy-compartilhado.sh adicionar DOMINIO PORTA_LOCAL`.
+
 ## 12. Solução de problemas
 
 **O site não abre / certificado HTTPS não é emitido**

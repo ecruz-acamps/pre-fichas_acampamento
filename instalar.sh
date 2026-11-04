@@ -41,39 +41,61 @@ perguntar NOME "Nome do acampamento (ex.: Acampamento Exemplo)"
 SLUG="$(printf '%s' "$NOME" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null || printf '%s' "$NOME")"
 SLUG="$(printf '%s' "$SLUG" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '-' | sed 's/-\+/-/g; s/^-//; s/-$//')"
 
-# Endereço: SUBDOMINIO.DOMINIO_BASE publicado pela Cloudflare (padrão movimentocampista.com.br).
-# DOMINIO_BASE= (vazio) instala sem Cloudflare, acessando pelo IP.
+# ---- Como publicar (pode ser diferente para cada acampamento da mesma VM) ----
+#   cloudflare : NOME.DOMINIO_BASE pelo túnel da Cloudflare (não abre portas)
+#   direta     : domínio próprio apontando para o IP da VM, pelo proxy HTTPS compartilhado (80/443)
+#   local      : só na rede local, pelo IP (sem HTTPS)
+# Variáveis: PUBLICACAO=cloudflare|direta|local, DOMINIO (direta), SUBDOMINIO e DOMINIO_BASE (cloudflare).
 DOMINIO_BASE="${DOMINIO_BASE-movimentocampista.com.br}"
-CLOUDFLARE=0
-if [ -n "${DOMINIO:-}" ]; then
-  : # domínio completo informado por variável: usa como está (HTTPS pelo Caddy)
-elif [ -n "$DOMINIO_BASE" ] && {
-  if [ -z "${PUBLICAR+x}" ] && [ "$TEM_TTY" = 1 ]; then
+if [ -z "${PUBLICACAO:-}" ]; then
+  if [ -n "${DOMINIO:-}" ]; then PUBLICACAO=direta
+  elif [ "${PUBLICAR:-}" = n ] || [ "${PUBLICAR:-}" = N ] || [ -z "$DOMINIO_BASE" ]; then PUBLICACAO=local
+  elif [ "$TEM_TTY" = 1 ]; then
     echo
-    read -r -p "Publicar na internet agora em NOME.${DOMINIO_BASE} pela Cloudflare? [S/n] (dá para ligar ou desligar depois no painel): " PUBLICAR </dev/tty
+    echo "Como publicar este acampamento?"
+    echo "  1) Cloudflare — ${DOMINIO_BASE:+NOME.${DOMINIO_BASE} }(sem abrir portas no servidor)"
+    echo "  2) Direto — domínio próprio apontando para o IP desta VM (HTTPS automático, portas 80/443)"
+    echo "  3) Só rede local — pelo IP do servidor, sem HTTPS"
+    read -r -p "Escolha [1]: " op </dev/tty
+    case "${op:-1}" in 2) PUBLICACAO=direta ;; 3) PUBLICACAO=local ;; *) PUBLICACAO=cloudflare ;; esac
+  else
+    PUBLICACAO=cloudflare
   fi
-  case "${PUBLICAR:-s}" in [nN]*) false ;; *) true ;; esac
-}; then
-  SUB_PADRAO="${SLUG#acampamento-}"
-  if [ -z "${SUBDOMINIO:-}" ] && [ "$TEM_TTY" = 1 ]; then
-    read -r -p "Endereço: ____.${DOMINIO_BASE} [${SUB_PADRAO}]: " SUBDOMINIO </dev/tty
-  fi
-  SUBDOMINIO="$(printf '%s' "${SUBDOMINIO:-$SUB_PADRAO}" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9-' '-' | sed 's/-\+/-/g; s/^-//; s/-$//')"
-  DOMINIO="${SUBDOMINIO}.${DOMINIO_BASE}"
-  CLOUDFLARE=1
-  mkdir -p /etc/prefichas
-  [ -z "${CF_API_TOKEN:-}" ] && [ -r /etc/prefichas/cloudflare.env ] && . /etc/prefichas/cloudflare.env
-  if [ -z "${CF_API_TOKEN:-}" ]; then
-    echo "Token da API da Cloudflare (pedido só na 1ª instalação; fica guardado em /etc/prefichas/cloudflare.env)."
-    echo "Permissões: Conta › Cloudflare Tunnel › Editar  e  Zona › DNS › Editar (${DOMINIO_BASE})."
-    [ "$TEM_TTY" = 1 ] && read -r -s -p "Token: " CF_API_TOKEN </dev/tty && echo
-    [ -n "${CF_API_TOKEN:-}" ] || erro "Sem o token da Cloudflare não dá para publicar ${DOMINIO}."
-  fi
-  ( umask 077; printf 'CF_API_TOKEN=%q\n' "$CF_API_TOKEN" > /etc/prefichas/cloudflare.env )
-  export CF_API_TOKEN
-else
-  DOMINIO=""
 fi
+CLOUDFLARE=0 COMPARTILHADO=0
+case "$PUBLICACAO" in
+  cloudflare)
+    [ -n "$DOMINIO_BASE" ] || erro "Defina DOMINIO_BASE para publicar pela Cloudflare."
+    SUB_PADRAO="${SLUG#acampamento-}"
+    if [ -z "${SUBDOMINIO:-}" ] && [ "$TEM_TTY" = 1 ]; then
+      read -r -p "Endereço: ____.${DOMINIO_BASE} [${SUB_PADRAO}]: " SUBDOMINIO </dev/tty
+    fi
+    SUBDOMINIO="$(printf '%s' "${SUBDOMINIO:-$SUB_PADRAO}" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9-' '-' | sed 's/-\+/-/g; s/^-//; s/-$//')"
+    DOMINIO="${SUBDOMINIO}.${DOMINIO_BASE}"
+    CLOUDFLARE=1
+    mkdir -p /etc/prefichas && chmod 700 /etc/prefichas
+    [ -z "${CF_API_TOKEN:-}" ] && [ -r /etc/prefichas/cloudflare.env ] && . /etc/prefichas/cloudflare.env
+    if [ -z "${CF_API_TOKEN:-}" ]; then
+      echo "Token da API da Cloudflare (pedido só na 1ª instalação; fica guardado em /etc/prefichas/cloudflare.env)."
+      echo "Permissões: Conta › Cloudflare Tunnel › Editar  e  Zona › DNS › Editar (${DOMINIO_BASE})."
+      [ "$TEM_TTY" = 1 ] && read -r -s -p "Token: " CF_API_TOKEN </dev/tty && echo
+      [ -n "${CF_API_TOKEN:-}" ] || erro "Sem o token da Cloudflare não dá para publicar ${DOMINIO}."
+    fi
+    ( umask 077; printf 'CF_API_TOKEN=%q\n' "$CF_API_TOKEN" > /etc/prefichas/cloudflare.env )
+    export CF_API_TOKEN
+    ;;
+  direta)
+    if [ -z "${DOMINIO:-}" ] && [ "$TEM_TTY" = 1 ]; then
+      echo "O domínio precisa ter um registro A apontando para o IP público desta VM."
+      read -r -p "Domínio (ex.: prefichas.seuacampamento.com.br): " DOMINIO </dev/tty
+    fi
+    DOMINIO="$(printf '%s' "${DOMINIO:-}" | tr 'A-Z' 'a-z')"
+    [[ "$DOMINIO" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$ ]] || erro "Domínio inválido: ${DOMINIO}"
+    COMPARTILHADO=1
+    ;;
+  local) DOMINIO="" ;;
+  *) erro "PUBLICACAO deve ser cloudflare, direta ou local." ;;
+esac
 perguntar ADMIN_EMAIL "E-mail do administrador"
 perguntar ADMIN_NOME "Nome do administrador"
 [ -n "${ADMIN_EMAIL:-}" ] && [ -n "${ADMIN_NOME:-}" ] || erro "Informe e-mail e nome do administrador."
@@ -135,6 +157,7 @@ ARGS=(--nome "$NOME" --dominio "$DOMINIO" --admin "$ADMIN_EMAIL" --nome-admin "$
 [ -n "$CHAVE" ] && ARGS+=(--chave "$CHAVE")
 [ -n "$PORTA_HTTP" ] && ARGS+=(--porta-http "$PORTA_HTTP")
 [ "$CLOUDFLARE" = 1 ] && ARGS+=(--cloudflare)
+[ "$COMPARTILHADO" = 1 ] && ARGS+=(--compartilhado)
 export SMTP_USUARIO SMTP_SENHA SMTP_HOST="${SMTP_HOST:-smtp.gmail.com}" SMTP_PORTA="${SMTP_PORTA:-465}"
 ./scripts/novo-acampamento.sh "${ARGS[@]}"
 
