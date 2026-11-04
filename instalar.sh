@@ -4,8 +4,10 @@
 #
 #    curl -fsSL https://raw.githubusercontent.com/ecruz-acamps/pre-fichas_acampamento/main/instalar.sh | sudo bash
 #
-#  Faz tudo: instala o que faltar (git, Docker), baixa o sistema, pergunta o nome
-#  do acampamento e os dados do administrador e coloca no ar.
+#  Ordem de implantação numa VM com vários acampamentos:
+#    1) PAINEL CENTRAL  (este comando, opção 1) — prepara a VM (Docker, VPN, Cloudflare,
+#       Let's Encrypt, e-mail) e instala o painel que cria os acampamentos;
+#    2) ACAMPAMENTOS    — criados pelo painel (ou por este comando, opção 2).
 #  Testado em Ubuntu 22.04/24.04 e Debian 12.
 # ============================================================================
 set -euo pipefail
@@ -34,6 +36,114 @@ cat <<'BANNER'
   └──────────────────────────────────────────────────┘
 BANNER
 
+preparar_programas() {
+  etapa "Verificando programas necessários"
+  if command -v apt-get >/dev/null; then
+    FALTAM=""
+    for p in git curl openssl ss iconv jq; do command -v "$p" >/dev/null || FALTAM="$FALTAM $p"; done
+    if [ -n "$FALTAM" ]; then
+      echo "Instalando:$FALTAM"
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update -qq && apt-get install -y -qq git curl ca-certificates openssl iproute2 libc-bin jq >/dev/null
+    fi
+  else
+    for p in git curl; do command -v "$p" >/dev/null || erro "Instale '$p' e rode de novo (sistema sem apt-get)."; done
+  fi
+  if ! command -v docker >/dev/null; then
+    echo "Instalando o Docker (alguns minutos)…"
+    curl -fsSL https://get.docker.com | sh >/dev/null
+  fi
+  systemctl enable --now docker >/dev/null 2>&1 || true
+  docker compose version >/dev/null 2>&1 || erro "Docker sem o plugin 'compose'. Veja https://docs.docker.com/engine/install/"
+  verde "✓ git, curl e Docker prontos"
+}
+
+
+# ============================================================================
+#  O QUE INSTALAR
+# ============================================================================
+if [ -z "${INSTALAR:-}" ]; then
+  if [ "$TEM_TTY" = 1 ]; then
+    echo
+    echo "O que você quer instalar?"
+    echo "  1) Painel central da VM — recomendado PRIMEIRO; depois cria os acampamentos pelo navegador"
+    echo "  2) Um acampamento (instância) direto por aqui"
+    read -r -p "Escolha [1]: " op </dev/tty
+    case "${op:-1}" in 2) INSTALAR=acampamento ;; *) INSTALAR=painel ;; esac
+  else
+    INSTALAR=acampamento
+  fi
+fi
+
+if [ "$INSTALAR" = painel ]; then
+  PASTA_PAINEL=/opt/prefichas-gerenciador
+  preparar_programas
+  etapa "Baixando o sistema para $PASTA_PAINEL"
+  if [ -d "$PASTA_PAINEL/.git" ]; then git -C "$PASTA_PAINEL" pull -q --ff-only origin "$BRANCH"
+  else git clone -q --branch "$BRANCH" "$REPO" "$PASTA_PAINEL"; fi
+  cd "$PASTA_PAINEL"
+  mkdir -p /etc/prefichas && chmod 700 /etc/prefichas
+
+  etapa "1/5 · Acesso remoto pela VPN (FortiClient)"
+  if [ -z "${VPN_FORTINET+x}" ] && [ "$TEM_TTY" = 1 ]; then
+    read -r -p "O painel será acessado pela VPN do FortiGate da sua empresa? [S/n]: " VPN_FORTINET </dev/tty
+  fi
+  case "${VPN_FORTINET:-s}" in
+    [nN]*) echo "Sem VPN: o painel ficará acessível só pelo próprio servidor (túnel SSH)." ;;
+    *) ./scripts/vpn-fortinet.sh configurar || echo "⚠ VPN não configurada agora. Depois: sudo $PASTA_PAINEL/scripts/vpn-fortinet.sh configurar" ;;
+  esac
+
+  etapa "2/5 · Cloudflare (para acampamentos publicados pelo túnel)"
+  DOMINIO_BASE="${DOMINIO_BASE-movimentocampista.com.br}"
+  if [ "$TEM_TTY" = 1 ] && [ -z "${CF_API_TOKEN:-}" ] && [ ! -s /etc/prefichas/cloudflare.env ]; then
+    read -r -p "Domínio base da Cloudflare [${DOMINIO_BASE}]: " db </dev/tty; DOMINIO_BASE="${db:-$DOMINIO_BASE}"
+    echo "Token da API da Cloudflare (Conta › Cloudflare Tunnel › Editar e Zona › DNS › Editar)."
+    read -r -s -p "Token — ENTER para configurar depois: " CF_API_TOKEN </dev/tty; echo
+  fi
+  [[ "$DOMINIO_BASE" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$ ]] || erro "Domínio base inválido."
+  ( umask 077; printf 'DOMINIO_BASE=%s\n' "$DOMINIO_BASE" > /etc/prefichas/painel.env )
+  if [ -n "${CF_API_TOKEN:-}" ]; then
+    ( umask 077; printf 'CF_API_TOKEN=%q\n' "$CF_API_TOKEN" > /etc/prefichas/cloudflare.env ); verde "✓ Token da Cloudflare guardado"
+  fi
+
+  etapa "3/5 · Certificados HTTPS (Let's Encrypt) para acampamentos diretos"
+  if [ -z "${LETSENCRYPT_EMAIL+x}" ] && [ "$TEM_TTY" = 1 ]; then
+    read -r -p "E-mail para avisos do Let's Encrypt — ENTER para pular: " LETSENCRYPT_EMAIL </dev/tty
+  fi
+  if [ -n "${LETSENCRYPT_EMAIL:-}" ]; then
+    [[ "$LETSENCRYPT_EMAIL" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || erro "E-mail inválido."
+    ( umask 077; printf 'LETSENCRYPT_EMAIL=%s\n' "$LETSENCRYPT_EMAIL" > /etc/prefichas/proxy.env )
+  fi
+
+  etapa "4/5 · E-mail de envio (\"Esqueci minha senha\") para os acampamentos"
+  if [ -z "${SMTP_USUARIO+x}" ] && [ "$TEM_TTY" = 1 ]; then
+    read -r -p "Gmail que envia os e-mails — ENTER para configurar depois: " SMTP_USUARIO </dev/tty
+    [ -n "$SMTP_USUARIO" ] && { echo "Use uma SENHA DE APP do Google (myaccount.google.com → Segurança → Senhas de app)."; read -r -s -p "Senha de app: " SMTP_SENHA </dev/tty; echo; }
+  fi
+  if [ -n "${SMTP_USUARIO:-}" ]; then
+    ( umask 077; printf 'SMTP_HOST=%s\nSMTP_PORTA=%s\nSMTP_USUARIO=%s\nSMTP_SENHA=%s\nSMTP_REMETENTE=%s\n' \
+      "${SMTP_HOST:-smtp.gmail.com}" "${SMTP_PORTA:-465}" "$SMTP_USUARIO" "${SMTP_SENHA// /}" "$SMTP_USUARIO" > /etc/prefichas/smtp.env )
+    verde "✓ E-mail de envio guardado (usado em cada acampamento novo)"
+  fi
+
+  etapa "5/5 · Painel central"
+  perguntar ADMIN_EMAIL "Seu e-mail (usuário do painel central)"
+  [ -n "${ADMIN_EMAIL:-}" ] || erro "Informe o e-mail do usuário do painel."
+  export ADMIN_EMAIL
+  if [ ! -s /etc/prefichas/vpn-forticlient.env ] && [ -z "${REDES_PERMITIDAS:-}" ] && [ "$TEM_TTY" = 1 ]; then
+    read -r -p "Redes que podem abrir o painel (ex.: 192.168.10.0/24) — ENTER = só pelo próprio servidor: " rp </dev/tty
+    [ -n "$rp" ] && { export REDES_PERMITIDAS="127.0.0.1/32,${rp// /}"; export ESCUTAR=0.0.0.0; }
+  fi
+  ./scripts/instalar-gerenciador.sh
+
+  echo
+  echo "════════════════════════════════════════════════════════════"
+  echo "  ✓ Painel central instalado. Próximo passo: criar os acampamentos"
+  echo "    pelo painel → aba \"Nova instância\"."
+  echo "════════════════════════════════════════════════════════════"
+  exit 0
+fi
+
 # ---- 1. Perguntas (podem vir prontas por variáveis de ambiente) ------------
 etapa "Dados do acampamento"
 perguntar NOME "Nome do acampamento (ex.: Acampamento Exemplo)"
@@ -46,6 +156,7 @@ SLUG="$(printf '%s' "$SLUG" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '-' | sed 's/-\+/-
 #   direta     : domínio próprio apontando para o IP da VM, pelo proxy HTTPS compartilhado (80/443)
 #   local      : só na rede local, pelo IP (sem HTTPS)
 # Variáveis: PUBLICACAO=cloudflare|direta|local, DOMINIO (direta), SUBDOMINIO e DOMINIO_BASE (cloudflare).
+[ -z "${DOMINIO_BASE+x}" ] && [ -r /etc/prefichas/painel.env ] && . /etc/prefichas/painel.env
 DOMINIO_BASE="${DOMINIO_BASE-movimentocampista.com.br}"
 if [ -z "${PUBLICACAO:-}" ]; then
   if [ -n "${DOMINIO:-}" ]; then PUBLICACAO=direta
@@ -102,6 +213,7 @@ perguntar ADMIN_NOME "Nome do administrador"
 CHAVE="${CHAVE:-}"
 
 # E-mail que envia o link de "Esqueci minha senha" (Gmail com senha de app)
+[ -z "${SMTP_USUARIO+x}" ] && [ -r /etc/prefichas/smtp.env ] && { set -a; . /etc/prefichas/smtp.env; set +a; }
 if [ -z "${SMTP_USUARIO+x}" ] && [ "$TEM_TTY" = 1 ]; then
   echo
   echo "E-mail para enviar o link de 'Esqueci minha senha' (recomendado: um Gmail do acampamento)."
@@ -120,26 +232,8 @@ PORTA_HTTP="${PORTA_HTTP:-}"
 PASTA="${PASTA:-/opt/prefichas-${SLUG:-acampamento}}"
 [ -f "$PASTA/.env" ] && erro "Já existe uma instalação em $PASTA. Para reinstalar do zero: cd $PASTA && docker compose down -v && cd / && rm -rf $PASTA"
 
-# ---- 2. Programas necessários ----------------------------------------------
-etapa "Verificando programas necessários"
-if command -v apt-get >/dev/null; then
-  FALTAM=""
-  for p in git curl openssl ss iconv jq; do command -v "$p" >/dev/null || FALTAM="$FALTAM $p"; done
-  if [ -n "$FALTAM" ]; then
-    echo "Instalando:$FALTAM"
-    export DEBIAN_FRONTEND=noninteractive
-    apt-get update -qq && apt-get install -y -qq git curl ca-certificates openssl iproute2 libc-bin jq >/dev/null
-  fi
-else
-  for p in git curl; do command -v "$p" >/dev/null || erro "Instale '$p' e rode de novo (sistema sem apt-get)."; done
-fi
-if ! command -v docker >/dev/null; then
-  echo "Instalando o Docker (alguns minutos)…"
-  curl -fsSL https://get.docker.com | sh >/dev/null
-fi
-systemctl enable --now docker >/dev/null 2>&1 || true
-docker compose version >/dev/null 2>&1 || erro "Docker sem o plugin 'compose'. Veja https://docs.docker.com/engine/install/"
-verde "✓ git, curl e Docker prontos"
+# ---- 2. Programas necessários
+preparar_programas
 
 # ---- 3. Baixar o sistema -----------------------------------------------------
 etapa "Baixando o sistema para $PASTA"

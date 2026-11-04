@@ -53,7 +53,8 @@ acao_nova() { # arquivo
     cloudflare)
       [[ "$sub" =~ $RE_SUB ]] || { echo "✗ Endereço inválido."; return 1; }
       [ -r /etc/prefichas/cloudflare.env ] || { echo "✗ Token da Cloudflare não configurado na VM (instale um acampamento pela Cloudflare pelo terminal uma vez)."; return 1; }
-      local base; base="$(valor_env "$(instancias | head -1)" DOMINIO_BASE)"; base="${base:-movimentocampista.com.br}"
+      local base=""; [ -r /etc/prefichas/painel.env ] && base="$({ grep -E '^DOMINIO_BASE=' /etc/prefichas/painel.env || true; } | cut -d= -f2-)"
+      [[ "$base" =~ $RE_DOM ]] || base="$(valor_env "$(instancias | head -1)" DOMINIO_BASE)"; base="${base:-movimentocampista.com.br}"
       args+=(--dominio "${sub}.${base}" --cloudflare) ;;
     direta)
       [[ "$dom" =~ $RE_DOM ]] || { echo "✗ Domínio inválido."; return 1; }
@@ -66,10 +67,18 @@ acao_nova() { # arquivo
   git clone -q "$REPO" "$pasta" || { echo "✗ Falha ao baixar o sistema."; return 1; }
   echo "→ Instalando ${nome}…"
   if [ -r /etc/prefichas/cloudflare.env ]; then set -a; . /etc/prefichas/cloudflare.env; set +a; fi
+  # e-mail de envio ("Esqueci minha senha") guardado na preparação da VM
+  if [ -r /etc/prefichas/smtp.env ]; then set -a; . /etc/prefichas/smtp.env; set +a; fi
   (cd "$pasta" && ./scripts/novo-acampamento.sh "${args[@]}" </dev/null)
 }
 acao_atualizar() { local i="$1"; [[ "$i" =~ $RE_INST ]] && [ -f "/opt/$i/.env" ] || { echo "✗ Instância inválida: $i"; return 1; }
   echo "→ Atualizando $i…"; (cd "/opt/$i" && ./scripts/atualizar.sh); }
+acao_atualizar_painel() {
+  echo "→ Atualizando o painel central…"
+  git -C "$CODIGO" pull -q --ff-only || { echo "✗ Não foi possível baixar a versão nova do painel."; return 1; }
+  (cd "$BASE" && docker compose up -d --force-recreate >/dev/null) || { echo "✗ Falha ao reiniciar o painel."; return 1; }
+  echo "✓ Painel central atualizado para $(git -C "$CODIGO" rev-parse --short HEAD)."
+}
 acao_backup() { local i="$1"; [[ "$i" =~ $RE_INST ]] && [ -f "/opt/$i/.env" ] || { echo "✗ Instância inválida: $i"; return 1; }
   echo "→ Backup de $i…"; (cd "/opt/$i" && ./scripts/backup.sh); }
 
@@ -88,6 +97,7 @@ processar() { # arquivo do pedido
     nova) acao_nova "$tmp" >> "$log" 2>&1 && ok=1 ;;
     atualizar) acao_atualizar "$(jq -r '.instancia // empty' "$tmp")" >> "$log" 2>&1 && ok=1 ;;
     backup) acao_backup "$(jq -r '.instancia // empty' "$tmp")" >> "$log" 2>&1 && ok=1 ;;
+    atualizar-painel) acao_atualizar_painel >> "$log" 2>&1 && ok=1 ;;
     atualizar-todas)
       ok=1
       for i in $(instancias); do acao_atualizar "$i" >> "$log" 2>&1 || { ok=0; echo "✗ Falhou: $i" >> "$log"; }; done ;;
@@ -121,8 +131,9 @@ coletar() {
   read -r dt du dp < <(df -h / | awk 'NR==2{print $2, $3, $5}')
   docker ps --format '{{.Names}}' 2>/dev/null | grep -qx prefichas-proxy && proxy=true
   sites="$(ls /opt/prefichas-proxy/sites/*.caddy 2>/dev/null | grep -vc '_vazio' || true)"
-  printf '{"carga":"%s","cpus":%s,"memoria_total_mb":%s,"memoria_usada_mb":%s,"disco_total":"%s","disco_usado":"%s","disco_pct":"%s","proxy":%s,"dominios_diretos":%s}\n' \
-    "$(cut -d' ' -f1 /proc/loadavg)" "$(nproc)" "${mt:-0}" "${mu:-0}" "$dt" "$du" "$dp" "$proxy" "${sites:-0}" > "$ESTADO/servidor.json.tmp" && mv -f "$ESTADO/servidor.json.tmp" "$ESTADO/servidor.json"
+  local vpainel; vpainel="$(git -C "$CODIGO" rev-parse --short HEAD 2>/dev/null || true)"
+  printf '{"versao_painel":"%s","carga":"%s","cpus":%s,"memoria_total_mb":%s,"memoria_usada_mb":%s,"disco_total":"%s","disco_usado":"%s","disco_pct":"%s","proxy":%s,"dominios_diretos":%s}\n' \
+    "$vpainel" "$(cut -d' ' -f1 /proc/loadavg)" "$(nproc)" "${mt:-0}" "${mu:-0}" "$dt" "$du" "$dp" "$proxy" "${sites:-0}" > "$ESTADO/servidor.json.tmp" && mv -f "$ESTADO/servidor.json.tmp" "$ESTADO/servidor.json"
   chmod 644 "$ESTADO/instancias.json" "$ESTADO/servidor.json"
 }
 

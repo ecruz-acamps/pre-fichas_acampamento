@@ -246,6 +246,9 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
 
 ## Instalação (um único comando)
 
+> **Vários acampamentos na mesma VM?** Instale primeiro o **painel central** (opção 1 do instalador) e crie os
+> acampamentos pelo navegador. Veja [`docs/INSTALACAO.md`](docs/INSTALACAO.md), seção 11f.
+
 Num servidor Linux (Ubuntu ou Debian), rode:
 
 ```bash

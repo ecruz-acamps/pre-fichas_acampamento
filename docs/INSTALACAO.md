@@ -612,20 +612,30 @@ sudo /opt/prefichas-NOME/scripts/proxy-compartilhado.sh listar     # domínios d
 `docker compose stop caddy`, coloque `COMPOSE_PROFILES=` no `.env`, rode `docker compose up -d` e depois
 `sudo ./scripts/proxy-compartilhado.sh adicionar DOMINIO PORTA_LOCAL`.
 
-## 11f. Painel central da VM (instalar e gerenciar instâncias pelo navegador)
+## 11f. Painel central da VM e ordem de implantação
 
-Com vários acampamentos na mesma VM, o **painel central** mostra todas as instâncias (endereço, publicação,
-situação, versão e memória), cria **novas instâncias** com um formulário, atualiza uma ou todas, faz
-backup e registra tudo numa auditoria. Ele não mostra fichas de nenhum acampamento.
+**Ordem de implantação numa VM com vários acampamentos:**
 
-**Instalar** (uma vez, em qualquer pasta de instância):
-```bash
-sudo ./scripts/instalar-gerenciador.sh
-# ou, para acessar pela VPN (redes da VPN liberadas):
-sudo ESCUTAR=0.0.0.0 REDES_PERMITIDAS=127.0.0.1/32,192.168.10.0/24 ./scripts/instalar-gerenciador.sh
-```
-No fim ele cria o primeiro usuário e mostra **a senha** e **a chave do autenticador** uma única vez.
-Cadastre a chave no Google Authenticator ou no Microsoft Authenticator.
+1. **Painel central primeiro**: rode o comando único e escolha **1) Painel central**:
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/ecruz-acamps/pre-fichas_acampamento/main/instalar.sh | sudo bash
+   ```
+   Ele prepara a VM e guarda as configurações que os acampamentos vão usar:
+   1. instala Docker e as ferramentas necessárias;
+   2. configura a **VPN (FortiClient)** de acesso remoto, se você quiser;
+   3. guarda o **domínio base e o token da Cloudflare**;
+   4. guarda o **e-mail do Let's Encrypt** (certificados dos acampamentos diretos);
+   5. guarda o **e-mail de envio** (Gmail com senha de app) usado em cada acampamento novo;
+   6. instala o **painel central** e cria o seu usuário (senha + chave do autenticador, mostradas uma vez).
+2. **Acampamentos depois**, pelo painel → aba **Nova instância**. Também dá para criar pelo comando único,
+   opção 2.
+
+Com vários acampamentos na mesma VM, o **painel central** mostra todas as instâncias (endereço,
+publicação, situação, versão e memória), cria **novas instâncias**, atualiza uma ou todas, faz backup,
+**atualiza o próprio painel** e registra tudo numa auditoria. Ele não mostra fichas de nenhum acampamento.
+
+Para instalar o painel numa VM que já tem acampamentos: `sudo ./scripts/instalar-gerenciador.sh`
+(variáveis `ESCUTAR`, `REDES_PERMITIDAS` e `ADMIN_EMAIL`).
 
 **Acesso:**
 - **Pela VPN:** `http://IP-DA-VM-NA-VPN:9090`.
@@ -638,8 +648,7 @@ Cadastre a chave no Google Authenticator ou no Microsoft Authenticator.
 - A sessão expira após 2 horas sem uso.
 - O painel roda num container somente leitura, com usuário sem privilégio. Ele **não executa nada**: só grava
   pedidos. O executor (`scripts/gerenciador-executor.sh`, via systemd) valida tudo de novo antes de agir.
-- **Nova instância pela Cloudflare** precisa do token já guardado na VM. Na primeira vez, instale um
-  acampamento pela Cloudflare usando o terminal.
+- **Nova instância pela Cloudflare** usa o token guardado na preparação do painel (passo 3 da etapa 1).
 
 **Usuários do painel:**
 ```bash

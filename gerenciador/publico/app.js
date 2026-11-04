@@ -56,7 +56,9 @@ async function telaInstancias(area) {
         h('div', { class: 'metrica' }, h('b', {}, `${s.memoria_usada_mb ?? '?'} / ${s.memoria_total_mb ?? '?'} MB`), h('span', {}, 'memória')),
         h('div', { class: 'metrica' }, h('b', {}, `${s.disco_usado ?? '?'} / ${s.disco_total ?? '?'}`), h('span', {}, `disco (${s.disco_pct ?? '?'})`)),
         h('div', { class: 'metrica' }, h('b', {}, s.proxy ? 'no ar' : 'não instalado'), h('span', {}, `proxy compartilhado · ${s.dominios_diretos ?? 0} domínio(s)`)),
-        h('div', { class: 'metrica' }, h('b', {}, dataHora(d.coletado_em)), h('span', {}, 'última leitura')))))
+        h('div', { class: 'metrica' }, h('b', {}, dataHora(d.coletado_em)), h('span', {}, 'última leitura')),
+        h('div', { class: 'metrica' }, h('b', {}, s.versao_painel || '—'), h('span', {}, 'versão do painel '),
+          h('button', { class: 'link', onclick: () => pedir({ acao: 'atualizar-painel' }, 'Atualizar o painel central? Ele reinicia em alguns segundos.') }, 'atualizar')))))
   }
   const linhas = (d.instancias ?? []).map((i) => h('tr', {},
     h('td', {}, h('strong', {}, i.nome || i.pasta), h('div', { class: 'dica' }, i.pasta)),
@@ -121,7 +123,7 @@ function telaNova(area) {
 // ------------------------------------------------------------------ tarefas
 async function telaTarefas(area) {
   const d = await api('GET', '/api/tarefas')
-  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas' }
+  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas', 'atualizar-painel': 'Atualizar o painel' }
   const linha = (t) => h('tr', { style: 'cursor:pointer', onclick: () => { tarefaAberta = t.id; desenhar() } },
     h('td', {}, dataHora(t.inicio || t.pedido_em)), h('td', {}, nomeAcao[t.acao] ?? t.acao), h('td', {}, t.alvo || t.nome || t.instancia || '—'),
     h('td', {}, h('span', { class: `selo ${t.situacao === 'concluida' ? 'ok' : t.situacao === 'erro' ? 'erro' : 'neutro'}` }, t.situacao)), h('td', {}, t.por || '—'))

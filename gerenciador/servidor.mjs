@@ -124,7 +124,7 @@ function validarPedido(c) {
     if (!existe) return { erros: { instancia: 'Instância não encontrada.' } }
     return { pedido: { acao, instancia: c.instancia } }
   }
-  if (acao === 'atualizar-todas') return { pedido: { acao } }
+  if (acao === 'atualizar-todas' || acao === 'atualizar-painel') return { pedido: { acao } }
   return { erros: { acao: 'Ação desconhecida.' } }
 }
 

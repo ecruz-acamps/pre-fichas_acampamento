@@ -18,15 +18,26 @@ dominio_valido() { [[ "$1" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63
 porta_ocupada() { ss -ltnH "sport = :$1" 2>/dev/null | grep -q . ; }
 quem_usa() { ss -ltnpH "sport = :$1" 2>/dev/null | grep -o 'users:(("[^"]*"' | head -1 | sed 's/users:(("//; s/"$//'; }
 rodando() { docker ps --format '{{.Names}}' | grep -qx prefichas-proxy; }
-recarregar() { docker exec prefichas-proxy caddy reload --config /etc/caddy/Caddyfile >/dev/null; }
+# Recarrega a configuração (logo após subir, o Caddy leva alguns segundos para aceitar)
+recarregar() {
+  local t
+  for t in $(seq 1 15); do
+    docker exec prefichas-proxy caddy reload --config /etc/caddy/Caddyfile >/dev/null 2>&1 && return 0
+    sleep 1
+  done
+  docker exec prefichas-proxy caddy reload --config /etc/caddy/Caddyfile >/dev/null
+}
 
 garantir() {
   mkdir -p "$PASTA/sites"
-  [ -f "$PASTA/Caddyfile" ] || cat > "$PASTA/Caddyfile" <<'CFG'
+  local email=""
+  [ -r /etc/prefichas/proxy.env ] && email="$({ grep -E '^LETSENCRYPT_EMAIL=' /etc/prefichas/proxy.env || true; } | cut -d= -f2-)"
+  [[ "$email" =~ ^[^@[:space:]]+@[^@[:space:]]+\.[^@[:space:]]+$ ]] || email=""
+  [ -f "$PASTA/Caddyfile" ] || cat > "$PASTA/Caddyfile" <<CFG
 # Proxy compartilhado dos acampamentos (gerado por scripts/proxy-compartilhado.sh)
+# Certificados HTTPS: Let's Encrypt (automático; ZeroSSL como reserva)
 {
-	# e-mail opcional para avisos do Let's Encrypt: descomente e preencha
-	# email voce@exemplo.com
+	$([ -n "$email" ] && echo "email $email" || echo "# email voce@exemplo.com   (opcional: avisos do Let's Encrypt)")
 }
 import /etc/caddy/sites/*.caddy
 CFG
