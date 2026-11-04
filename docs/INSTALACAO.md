@@ -612,6 +612,42 @@ sudo /opt/prefichas-NOME/scripts/proxy-compartilhado.sh listar     # domínios d
 `docker compose stop caddy`, coloque `COMPOSE_PROFILES=` no `.env`, rode `docker compose up -d` e depois
 `sudo ./scripts/proxy-compartilhado.sh adicionar DOMINIO PORTA_LOCAL`.
 
+## 11f. Painel central da VM (instalar e gerenciar instâncias pelo navegador)
+
+Com vários acampamentos na mesma VM, o **painel central** mostra todas as instâncias (endereço, publicação,
+situação, versão e memória), cria **novas instâncias** com um formulário, atualiza uma ou todas, faz
+backup e registra tudo numa auditoria. Ele não mostra fichas de nenhum acampamento.
+
+**Instalar** (uma vez, em qualquer pasta de instância):
+```bash
+sudo ./scripts/instalar-gerenciador.sh
+# ou, para acessar pela VPN (redes da VPN liberadas):
+sudo ESCUTAR=0.0.0.0 REDES_PERMITIDAS=127.0.0.1/32,192.168.10.0/24 ./scripts/instalar-gerenciador.sh
+```
+No fim ele cria o primeiro usuário e mostra **a senha** e **a chave do autenticador** uma única vez.
+Cadastre a chave no Google Authenticator ou no Microsoft Authenticator.
+
+**Acesso:**
+- **Pela VPN:** `http://IP-DA-VM-NA-VPN:9090`.
+- **Pelo próprio servidor:** com um túnel SSH, `ssh -L 9090:127.0.0.1:9090 usuario@servidor`, e abra `http://localhost:9090`.
+
+**Segurança:**
+- O painel controla o servidor inteiro, então **nunca o publique na internet**. Ele recusa conexões de fora das
+  `REDES_PERMITIDAS`, mesmo que a porta esteja aberta, e o instalador não aceita `0.0.0.0/0`.
+- O login exige **senha e código de 6 dígitos**. Depois de 5 erros, o acesso fica bloqueado por 15 minutos.
+- A sessão expira após 2 horas sem uso.
+- O painel roda num container somente leitura, com usuário sem privilégio. Ele **não executa nada**: só grava
+  pedidos. O executor (`scripts/gerenciador-executor.sh`, via systemd) valida tudo de novo antes de agir.
+- **Nova instância pela Cloudflare** precisa do token já guardado na VM. Na primeira vez, instale um
+  acampamento pela Cloudflare usando o terminal.
+
+**Usuários do painel:**
+```bash
+G=/var/lib/prefichas-gerenciador; C=$(pwd)/gerenciador
+docker run --rm -u 1000:1000 -e DADOS=/dados -v $C:/app:ro -v $G/dados:/dados -w /app node:22-alpine node cli.mjs criar-usuario outro@email
+#   comandos: criar-usuario | nova-senha | novo-autenticador | desativar | listar
+```
+
 ## 12. Solução de problemas
 
 **O site não abre / certificado HTTPS não é emitido**
