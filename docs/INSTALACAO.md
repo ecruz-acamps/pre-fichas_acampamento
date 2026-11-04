@@ -548,6 +548,40 @@ reconstrói no servidor como antes.
 `pre-fichas_acampamento` → *Package settings* → *Change visibility* → **Public**. Sem isso os servidores
 não conseguem baixar a imagem e continuam reconstruindo localmente (funciona, só é mais lento).
 
+## 11d. Servidor remoto: acesso pela VPN Fortinet e porta 22 fechada
+
+Quando o servidor fica num local onde você não tem acesso à rede, ele mesmo pode conectar na VPN
+(FortiGate SSL-VPN) da sua empresa. Você acessa o servidor pelo IP que ele recebe na VPN e fecha a
+porta 22 para a internet. O instalador pergunta isso no final; para fazer depois:
+
+```bash
+sudo ./scripts/vpn-fortinet.sh configurar   # endereço, porta, usuário e senha da VPN
+sudo ./scripts/vpn-fortinet.sh status       # mostra o IP do servidor na VPN
+# do seu computador, conectado à VPN: ssh SEU_USUARIO@IP_NA_VPN  (teste antes de fechar!)
+sudo ./scripts/vpn-fortinet.sh fechar-ssh   # 22 só pela VPN; 80/443 continuam abertas
+```
+
+**Peça ao analista:**
+- SSL-VPN habilitado;
+- um **usuário de serviço sem token/2FA**, porque o servidor conecta sozinho;
+- **split tunnel**, para que só a rede interna passe pela VPN. Se tudo passar pela VPN, o site público pode parar de responder;
+- liberar no FortiGate o acesso da sua rede ao IP que o servidor recebe na VPN (porta 22);
+- a **impressão digital (SHA-256) do certificado** da VPN, para conferir na configuração;
+- depois do teste, bloquear a 22 no NAT 1:1.
+
+**Como funciona:**
+- Usa o `openfortivpn`, cliente de código aberto compatível com o FortiGate, rodando como serviço `prefichas-vpn`, que reconecta sozinho.
+- A senha fica só em `/etc/openfortivpn/prefichas.conf` (root, permissão 600).
+- O certificado da VPN fica fixado e o DNS do servidor não é alterado.
+- O `fechar-ssh` se recusa a rodar se a VPN não estiver conectada.
+
+**Emergência** (VPN fora do ar e SSH fechado): use o console da VM no provedor ou hipervisor e rode
+`sudo ./scripts/vpn-fortinet.sh abrir-ssh`.
+
+Se o FortiGate só oferecer VPN IPsec (algumas versões novas do FortiOS removeram o SSL-VPN em modo
+túnel), o `openfortivpn` não serve: peça ao analista uma VPN IPsec site-a-site ou de acesso remoto
+compatível com Linux (strongSwan).
+
 ## 12. Solução de problemas
 
 **O site não abre / certificado HTTPS não é emitido**
