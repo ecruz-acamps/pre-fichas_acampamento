@@ -548,39 +548,44 @@ reconstrói no servidor como antes.
 `pre-fichas_acampamento` → *Package settings* → *Change visibility* → **Public**. Sem isso os servidores
 não conseguem baixar a imagem e continuam reconstruindo localmente (funciona, só é mais lento).
 
-## 11d. Servidor remoto: acesso pela VPN IPsec (FortiGate) e porta 22 fechada
+## 11d. Servidor remoto: acesso pela VPN (FortiClient) e porta 22 fechada
 
-Quando o servidor fica num local onde você não tem acesso à rede, ele mesmo pode conectar num túnel
-**IPsec** do FortiGate da sua empresa. Você acessa o servidor pelo IP que ele recebe no túnel e fecha
-a porta 22 para a internet. O instalador pergunta isso no final; para fazer depois:
+Quando o servidor fica num local onde você não tem acesso à rede, ele mesmo conecta no túnel do
+FortiGate da sua empresa usando o **FortiClient VPN para Linux**. Você acessa o servidor pela VPN e
+fecha a porta 22 para a internet. O instalador pergunta isso no final; para fazer depois:
 
 ```bash
-sudo ./scripts/vpn-fortinet.sh configurar   # dados do túnel IPsec
-sudo ./scripts/vpn-fortinet.sh status       # mostra o túnel e o IP do servidor na VPN
-# a partir da rede da empresa: ssh SEU_USUARIO@IP_NA_VPN  (teste antes de fechar!)
+sudo ./scripts/vpn-fortinet.sh configurar   # instala o FortiClient, abre o assistente do perfil e conecta
+sudo ./scripts/vpn-fortinet.sh status       # situação do túnel e do vigia de reconexão
+# a partir da rede da empresa: ssh SEU_USUARIO@IP_DO_SERVIDOR_NA_VPN  (teste antes de fechar!)
 sudo ./scripts/vpn-fortinet.sh fechar-ssh   # 22 só a partir das redes da VPN; 80/443 abertas
 ```
 
-**Peça ao analista** um túnel IPsec *dial-up* (o servidor não tem IP fixo do lado dele, ou está atrás
-de NAT) para um cliente Linux (strongSwan), com:
-- **versão do IKE** (2 recomendado) e **chave pré-compartilhada (PSK)**;
-- **propostas** da fase 1 e da fase 2. O padrão do script é `aes256-sha256-modp2048` (fase 1) e
-  `aes256-sha256` (fase 2); se forem outras, informe nas variáveis `VPN_IKE_PROP` e `VPN_ESP_PROP`;
-- **peer ID / identificação local**, se o FortiGate usar;
-- **usuário e senha** só se o túnel exigir XAuth (IKEv1) ou EAP (IKEv2). Precisa ser uma conta **sem token**, porque o servidor conecta sozinho;
-- **mode-config** ligado, para o FortiGate entregar um IP para o servidor no túnel;
-- as **redes internas** que passam pelo túnel (*split tunnel*). Nunca `0.0.0.0/0`, porque isso derrubaria o site público;
-- liberação, da rede da empresa, para o IP do servidor no túnel, na porta TCP 22;
-- no local do servidor: **saída UDP 500 e 4500** liberada até o FortiGate;
+**O que o script faz:**
+1. Instala o FortiClient pelo **repositório oficial** `repo.fortinet.com` (versão 7.4 por padrão;
+   `FORTICLIENT_VERSAO=8.0` para outra), **conferindo a impressão digital da chave de assinatura** da
+   Fortinet. Se não bater, cancela.
+2. Abre o assistente do próprio FortiClient (`forticlient vpn edit prefichas`). Escolha **IPsec** e preencha
+   com os dados do analista: gateway, PSK, IKE e usuário. **Não** marque "todo o tráfego pela VPN".
+3. Conecta com senha salva e "sempre ativo" (`--save-password --always-up`).
+4. Liga um **vigia** (systemd, a cada 2 minutos) que reconecta se o túnel cair.
+
+**Peça ao analista** o túnel IPsec para o FortiClient (Linux), com:
+- gateway e porta, **PSK** e **IKEv2** (o FortiClient 7.4 não aceita IKEv1);
+- usuário **sem token/2FA**, se houver, porque o servidor conecta sozinho;
+- **split tunnel**, só com as redes internas;
+- liberação, da rede da empresa, para o IP do servidor na VPN, na porta 22;
+- no local do servidor: saída **UDP 500 e 4500** liberada;
 - depois do teste, **bloquear a 22 no NAT 1:1**.
 
-**Como funciona:**
-- Usa o **strongSwan**, cliente IPsec padrão do Linux, como serviço. O túnel sobe sozinho e reconecta se cair (DPD).
-- A chave e a senha ficam só em `/etc/swanctl/conf.d/prefichas.conf` (root, 600).
-- O DNS do servidor não é alterado.
-- O `fechar-ssh` se recusa a rodar se o túnel não estiver conectado.
+**Limitações (documentação da Fortinet):**
+- A versão Linux não tem todos os recursos das versões Windows/macOS.
+- Em servidor sem interface gráfica, salvar a senha pode depender do `gnome-keyring`.
 
-**Emergência** (túnel fora do ar e SSH fechado): use o console da VM no provedor ou hipervisor e rode
+**Plano B:** se o FortiClient não conseguir manter o túnel IPsec sem tela, use
+`sudo ./scripts/vpn-ipsec-strongswan.sh configurar`. Ele usa o strongSwan, compatível com o mesmo túnel do FortiGate.
+
+**Emergência** (VPN fora do ar e SSH fechado): use o console da VM no provedor ou hipervisor e rode
 `sudo ./scripts/vpn-fortinet.sh abrir-ssh`.
 
 ## 12. Solução de problemas
