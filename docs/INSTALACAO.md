@@ -657,6 +657,25 @@ docker run --rm -u 1000:1000 -e DADOS=/dados -v $C:/app:ro -v $G/dados:/dados -w
 #   comandos: criar-usuario | nova-senha | novo-autenticador | desativar | listar
 ```
 
+## 11g. Versões e como ficar na versão 1
+
+- **`main`**: versão atual (2.x). É a que o comando único instala e a que o botão **Atualizações** acompanha.
+- **`v1`**: versão 1.0 preservada (um acampamento por instalação), só para correções pontuais.
+- O histórico de mudanças está em [`CHANGELOG.md`](../CHANGELOG.md).
+
+**Instalar a versão 1:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/ecruz-acamps/pre-fichas_acampamento/v1/instalar.sh | sudo PREFICHAS_BRANCH=v1 bash
+```
+
+**Manter uma instalação existente na versão 1**, para o botão Atualizações não levar à 2.0:
+```bash
+cd /opt/prefichas-NOME
+sudo git fetch origin v1 && sudo git checkout v1
+echo 'ATUALIZACAO_BRANCH=v1' | sudo tee -a .env
+sudo docker compose up -d
+```
+
 ## 12. Solução de problemas
 
 **O site não abre / certificado HTTPS não é emitido**
