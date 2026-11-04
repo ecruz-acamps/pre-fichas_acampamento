@@ -137,3 +137,12 @@ ARGS=(--nome "$NOME" --dominio "$DOMINIO" --admin "$ADMIN_EMAIL" --nome-admin "$
 [ "$CLOUDFLARE" = 1 ] && ARGS+=(--cloudflare)
 export SMTP_USUARIO SMTP_SENHA SMTP_HOST="${SMTP_HOST:-smtp.gmail.com}" SMTP_PORTA="${SMTP_PORTA:-465}"
 ./scripts/novo-acampamento.sh "${ARGS[@]}"
+
+# ---- 5. (Opcional) VPN Fortinet para acessar este servidor remoto -------------
+if [ -z "${VPN_FORTINET+x}" ] && [ "$TEM_TTY" = 1 ]; then
+  echo
+  read -r -p "Este servidor é remoto e você quer acessá-lo pela VPN (FortiClient) do FortiGate da sua empresa? [s/N]: " VPN_FORTINET </dev/tty
+fi
+case "${VPN_FORTINET:-n}" in
+  [sS]*) ./scripts/vpn-fortinet.sh configurar || echo "⚠ VPN não configurada. Tente depois: sudo ./scripts/vpn-fortinet.sh configurar" ;;
+esac
