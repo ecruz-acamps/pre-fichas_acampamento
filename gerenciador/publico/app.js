@@ -117,13 +117,22 @@ function telaNova(area) {
   h('button', { class: 'link', type: 'button', onclick: () => { tela = 'instancias'; desenhar() } }, 'cancelar'))
   form.querySelector('#subdominio').addEventListener('input', (e) => { e.target.dataset.mexido = '1' })
   mostrar()
+  // Cloudflare escolhida e sem token guardado: avisa e leva para Configurações
+  api('GET', '/api/configuracoes').then((c) => {
+    if (c.cloudflare?.token_configurado === false) {
+      aviso.append(h('div', { class: 'alerta erro', id: 'sem-token' }, 'O token da Cloudflare ainda não foi configurado: ',
+        h('button', { class: 'link', type: 'button', onclick: () => { tela = 'configuracoes'; desenhar() } }, 'cole o token na aba Configurações'), ' antes de usar a publicação pela Cloudflare.'))
+      const mostrarAviso = () => { const el = aviso.querySelector('#sem-token'); if (el) el.hidden = pub.value !== 'cloudflare' }
+      pub.addEventListener('change', mostrarAviso); mostrarAviso()
+    }
+  }).catch(() => {})
   area.append(form, h('p', { class: 'dica' }, 'A criação leva alguns minutos. A senha temporária do administrador aparece no andamento da tarefa — repasse por um canal seguro.'))
 }
 
 // ------------------------------------------------------------------ tarefas
 async function telaTarefas(area) {
   const d = await api('GET', '/api/tarefas')
-  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas', 'atualizar-painel': 'Atualizar o painel' }
+  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas', 'atualizar-painel': 'Atualizar o painel', cloudflare: 'Token da Cloudflare', 'cloudflare-remover': 'Remover token da Cloudflare' }
   const linha = (t) => h('tr', { style: 'cursor:pointer', onclick: () => { tarefaAberta = t.id; desenhar() } },
     h('td', {}, dataHora(t.inicio || t.pedido_em)), h('td', {}, nomeAcao[t.acao] ?? t.acao), h('td', {}, t.alvo || t.nome || t.instancia || '—'),
     h('td', {}, h('span', { class: `selo ${t.situacao === 'concluida' ? 'ok' : t.situacao === 'erro' ? 'erro' : 'neutro'}` }, t.situacao)), h('td', {}, t.por || '—'))
@@ -153,6 +162,47 @@ async function telaAuditoria(area) {
     }))))))
 }
 
+// ------------------------------------------------------------------ configurações
+async function telaConfiguracoes(area) {
+  const cfg = (await api('GET', '/api/configuracoes')).cloudflare ?? {}
+  const aviso = h('div')
+  const token = h('input', { id: 'cf-token', name: 'token', type: 'password', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off',
+    placeholder: cfg.token_configurado ? '•••••••• (já configurado — cole só para trocar)' : 'Cole aqui o token da API da Cloudflare' })
+  const base = h('input', { id: 'cf-base', name: 'dominio_base', value: cfg.dominio_base || 'movimentocampista.com.br', maxlength: '120' })
+  const erros = { token: h('span', { class: 'erro-campo' }), dominio_base: h('span', { class: 'erro-campo' }) }
+  const situacao = cfg.token_configurado === true ? h('span', { class: 'selo ok' }, 'token configurado')
+    : cfg.token_configurado === false ? h('span', { class: 'selo erro' }, 'token não configurado') : h('span', { class: 'selo neutro' }, 'aguardando leitura do servidor')
+  const form = h('form', { class: 'cartao', autocomplete: 'off', onsubmit: async (e) => {
+    e.preventDefault(); aviso.replaceChildren(); Object.values(erros).forEach((x) => x.replaceChildren())
+    if (!token.value.trim() && !cfg.token_configurado) { erros.token.append('Cole o token da Cloudflare.'); return }
+    try {
+      const r = await api('POST', '/api/tarefas', { acao: 'cloudflare', token: token.value, dominio_base: base.value })
+      token.value = ''   // o token sai da tela na hora
+      tarefaAberta = r.id; tela = 'tarefas'; desenhar()
+    } catch (err) {
+      aviso.append(h('div', { class: 'alerta erro' }, err.message))
+      for (const [k, v] of Object.entries(err.dados?.erros ?? {})) erros[k]?.append(v)
+    }
+  } },
+  h('div', { class: 'topo' }, h('h2', {}, 'Cloudflare (publicação pelo túnel)'), situacao),
+  h('p', { class: 'dica' }, 'O token permite criar o endereço e o túnel de cada acampamento na Cloudflare. Ele é conferido na Cloudflare antes de ser aceito e fica guardado só no servidor (arquivo que apenas o administrador do sistema lê). Depois de salvo, não aparece mais em nenhuma tela.'),
+  h('div', { class: 'campo' }, h('label', { for: 'cf-base' }, 'Domínio na Cloudflare'), base,
+    h('span', { class: 'dica' }, 'Os acampamentos ficam em NOME.este-domínio.'), erros.dominio_base),
+  h('div', { class: 'campo' }, h('label', { for: 'cf-token' }, 'Token da API'), token, erros.token,
+    h('details', {}, h('summary', { class: 'dica' }, 'Como criar o token na Cloudflare'),
+      h('ol', { class: 'dica' },
+        h('li', {}, 'Entre em dash.cloudflare.com → seu perfil → Tokens de API → Criar token → Criar token personalizado.'),
+        h('li', {}, 'Permissões: Conta › Cloudflare Tunnel › Editar  e  Zona › DNS › Editar.'),
+        h('li', {}, 'Recursos: Conta (a sua conta) e Zona (o domínio acima).'),
+        h('li', {}, 'Crie, copie o token e cole aqui. A Cloudflare só mostra o token uma vez.')))),
+  aviso,
+  h('button', { class: 'principal', type: 'submit' }, cfg.token_configurado ? 'Salvar e verificar' : 'Salvar token'), ' ',
+  cfg.token_configurado && h('button', { class: 'secundario', type: 'button', onclick: () => {
+    if (confirm('Remover o token da Cloudflare do servidor? Os acampamentos já publicados continuam no ar; só não será possível criar novos pela Cloudflare até colar um token de novo.')) pedir({ acao: 'cloudflare-remover' })
+  } }, 'Remover token'))
+  area.append(form, h('p', { class: 'dica' }, cfg.atualizado_em ? `Último token guardado em ${dataHora(cfg.atualizado_em)}.` : ''))
+}
+
 // ------------------------------------------------------------------ montagem
 async function desenhar() {
   clearTimeout(atualizador)
@@ -165,12 +215,13 @@ async function desenhar() {
   app.replaceChildren(
     h('header', { class: 'topo' }, h('div', {}, h('h1', {}, 'Painel central'), h('small', {}, 'Acampamentos deste servidor')),
       h('div', {}, h('small', {}, usuario), ' ', h('button', { class: 'link', onclick: async () => { await api('POST', '/api/sair').catch(() => {}); usuario = null; desenhar() } }, 'Sair'))),
-    h('nav', { class: 'abas' }, aba('instancias', 'Instâncias'), aba('nova', 'Nova instância'), aba('tarefas', 'Tarefas'), aba('auditoria', 'Auditoria')),
+    h('nav', { class: 'abas' }, aba('instancias', 'Instâncias'), aba('nova', 'Nova instância'), aba('tarefas', 'Tarefas'), aba('auditoria', 'Auditoria'), aba('configuracoes', 'Configurações')),
     area)
   try {
     if (tela === 'nova') telaNova(area)
     else if (tela === 'tarefas') await telaTarefas(area)
     else if (tela === 'auditoria') await telaAuditoria(area)
+    else if (tela === 'configuracoes') await telaConfiguracoes(area)
     else await telaInstancias(area)
   } catch (e) { if (usuario) area.append(h('div', { class: 'alerta erro' }, e.message)) }
 }

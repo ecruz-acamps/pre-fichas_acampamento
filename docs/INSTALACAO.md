@@ -637,6 +637,15 @@ publicação, situação, versão e memória), cria **novas instâncias**, atual
 Para instalar o painel numa VM que já tem acampamentos: `sudo ./scripts/instalar-gerenciador.sh`
 (variáveis `ESCUTAR`, `REDES_PERMITIDAS` e `ADMIN_EMAIL`).
 
+**Token da Cloudflare pelo painel (sem reinstalar):** no painel central, aba **Configurações**, cole o token da API da
+Cloudflare e o domínio (por exemplo `movimentocampista.com.br`) e clique em **Salvar token**. O servidor **confere o token na
+Cloudflare antes de aceitar** e diz o motivo se recusar (token errado, ou token que não enxerga o domínio). Para trocar o
+token, cole o novo; para trocar só o domínio, deixe o token em branco. **Remover token** apaga do servidor, sem afetar os
+acampamentos já publicados.
+- O token fica só em `/etc/prefichas/cloudflare.env` (pasta `700`, arquivo `600`, do administrador do sistema).
+- Depois de salvo ele **nunca mais aparece** em tela, auditoria, lista de tarefas nem log. A tela só mostra "token configurado".
+- Ao criar o token na Cloudflare, use: *Conta › Cloudflare Tunnel › Editar* e *Zona › DNS › Editar*, com a sua conta e a zona do domínio.
+
 **Acesso:**
 - **Pela VPN:** `http://IP-DA-VM-NA-VPN:9090`.
 - **Pelo próprio servidor:** com um túnel SSH, `ssh -L 9090:127.0.0.1:9090 usuario@servidor`, e abra `http://localhost:9090`.

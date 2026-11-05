@@ -74,6 +74,38 @@ test('pedidos validados (injeção recusada) e gravados para o executor', async 
   assert.doesNotMatch(aud, /ABC-1234/, 'a chave de ativação não vai para a auditoria')
 })
 
+test('aba Configurações: token da Cloudflare é validado e nunca vaza (auditoria, pendentes, leitura)', async () => {
+  const post = (corpo) => fetch(`${url}/api/tarefas`, { method: 'POST', headers: { ...H, cookie: globalThis.cookie }, body: JSON.stringify(corpo) })
+  const TOKEN = 'cfut_ABCdef1234567890ABCdef1234567890abcd'
+  for (const ruim of ['curto', 'tem espaço no meio 1234567890123456', 'x;rm -rf /;1234567890123456789', '`id`1234567890123456789012']) {
+    const r = await post({ acao: 'cloudflare', token: ruim, dominio_base: 'exemplo.com.br' })
+    assert.equal(r.status, 400, `token ruim aceito: ${ruim}`)
+  }
+  assert.equal((await post({ acao: 'cloudflare', token: TOKEN, dominio_base: 'exemplo.com.br;id' })).status, 400)
+  // sem sessão não grava nada
+  assert.equal((await fetch(`${url}/api/tarefas`, { method: 'POST', headers: H, body: JSON.stringify({ acao: 'cloudflare', token: TOKEN, dominio_base: 'exemplo.com.br' }) })).status, 401)
+  const antes = readdirSync(join(base, 'pedidos')).length
+  const ok = await post({ acao: 'cloudflare', token: TOKEN, dominio_base: 'Exemplo.com.br' })
+  assert.equal(ok.status, 201)
+  const arquivos = readdirSync(join(base, 'pedidos'))
+  assert.equal(arquivos.length, antes + 1)
+  const pedidos = arquivos.map((f) => JSON.parse(readFileSync(join(base, 'pedidos', f), 'utf8'))).filter((x) => x.acao === 'cloudflare')
+  assert.equal(pedidos[0].dominio_base, 'exemplo.com.br')
+  assert.equal(pedidos[0].token, TOKEN, 'o executor recebe o token')
+  // o token não aparece na lista de tarefas pendentes, na auditoria nem na leitura das configurações
+  const lista = await (await fetch(`${url}/api/tarefas`, { headers: { cookie: globalThis.cookie } })).text()
+  assert.doesNotMatch(lista, new RegExp(TOKEN))
+  const aud = readFileSync(join(base, 'dados', 'auditoria.jsonl'), 'utf8')
+  assert.match(aud, /pedido-cloudflare/); assert.doesNotMatch(aud, new RegExp(TOKEN))
+  writeFileSync(join(base, 'estado', 'configuracoes.json'), JSON.stringify({ cloudflare: { token_configurado: true, dominio_base: 'exemplo.com.br' } }))
+  const cfg = await fetch(`${url}/api/configuracoes`, { headers: { cookie: globalThis.cookie } })
+  assert.equal(cfg.status, 200); assert.equal((await cfg.json()).cloudflare.token_configurado, true)
+  assert.equal((await fetch(`${url}/api/configuracoes`)).status, 401)
+  // trocar só o domínio (token vazio) e remover são aceitos
+  assert.equal((await post({ acao: 'cloudflare', dominio_base: 'exemplo.com.br' })).status, 201)
+  assert.equal((await post({ acao: 'cloudflare-remover' })).status, 201)
+})
+
 test('bloqueio após 5 tentativas erradas', async () => {
   for (let i = 0; i < 5; i++) await fetch(`${url}/api/login`, { method: 'POST', headers: H, body: JSON.stringify({ email: 'adm@x.com', senha: 'errada', codigo: '000000' }) })
   const r = await fetch(`${url}/api/login`, { method: 'POST', headers: H, body: JSON.stringify({ email: 'adm@x.com', senha: SENHA, codigo: codigoAgora() }) })
