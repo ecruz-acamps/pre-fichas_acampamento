@@ -139,7 +139,7 @@ Para manter um servidor existente na 1.0, veja a seção 11g do [manual de insta
 
 ## Telas
 
-> Capturas do sistema funcionando, com **dados fictícios** de demonstração.
+> Capturas da versão 2.0 funcionando, com a marca genérica **Acampamento Exemplo** e **dados fictícios** de demonstração.
 
 <table>
 <tr>
@@ -151,7 +151,49 @@ Para manter um servidor existente na 1.0, veja a seção 11g do [manual de insta
 </table>
 
 <details>
-<summary><strong>Formulário público</strong></summary>
+<summary><strong>Participante: entrada, conta e área</strong></summary>
+
+<p><em>Tela de entrada (página inicial)</em><br />
+<img src="docs/imagens/32-participante-entrar.webp" alt="Tela de entrada: CPF ou e-mail e senha" width="300" /></p>
+
+<p><em>Criar conta</em><br />
+<img src="docs/imagens/33-participante-criar-conta.webp" alt="Criar conta com CPF, e-mail e senha" width="300" /></p>
+
+<p><em>Minha área: situação, posição na fila, editar dados e desistir</em><br />
+<img src="docs/imagens/34-participante-minha-area.webp" alt="Área do participante" width="300" /></p>
+
+</details>
+
+<details>
+<summary><strong>Impressão da pré-ficha</strong></summary>
+
+<p><em>Ficha impressa (A4), com cabeçalho personalizável</em><br />
+<img src="docs/imagens/35-ficha-impressa.webp" alt="Ficha de pré-inscrição impressa" width="520" /></p>
+
+<p><em>Configurações → Impressão da ficha</em><br />
+<img src="docs/imagens/36-configuracoes-impressao-da-ficha.webp" alt="Configuração do cabeçalho da impressão" /></p>
+
+</details>
+
+<details>
+<summary><strong>Painel central da VM (versão 2.0)</strong></summary>
+
+<p><em>Instâncias e situação do servidor</em><br />
+<img src="docs/imagens/37-painel-central-instancias.webp" alt="Painel central: instâncias e servidor" /></p>
+
+<p><em>Nova instância (acampamento)</em><br />
+<img src="docs/imagens/38-painel-central-nova-instancia.webp" alt="Painel central: nova instância" /></p>
+
+<p><em>Entrada com senha e código do autenticador</em><br />
+<img src="docs/imagens/40-painel-central-entrar.webp" alt="Painel central: login com autenticador" width="500" /></p>
+
+<p><em>Publicação na internet pela Cloudflare (painel do acampamento)</em><br />
+<img src="docs/imagens/39-configuracoes-publicacao-cloudflare.webp" alt="Ligar ou desligar a publicação pela Cloudflare" /></p>
+
+</details>
+
+<details>
+<summary><strong>Formulário da pré-ficha</strong></summary>
 
 <p><em>Formulário no computador</em><br />
 <img src="docs/imagens/05-formulario-computador.webp" alt="Formulário no computador" width="700" /></p>
