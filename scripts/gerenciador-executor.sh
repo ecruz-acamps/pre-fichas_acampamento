@@ -23,6 +23,9 @@ RE_CHAVE='^[A-Za-z0-9-]{3,20}$'
 RE_INST='^prefichas-[a-z0-9-]{1,80}$'
 RE_ID='^[0-9a-f-]{36}$'
 
+# Confere com regex no modo byte a byte (LC_ALL=C): em locale UTF-8 o bash recusa a faixa de
+# letras acentuadas da regex e TODA validação falhava. Só nas validações; o resto continua em UTF-8.
+casa() { local LC_ALL=C; [[ "$1" =~ $2 ]]; }
 json_str() { jq -Rn --arg v "$1" '$v'; }
 estado_tarefa() { # id acao alvo situacao mensagem por inicio
   local f="$TAREFAS/$1.json"
@@ -39,10 +42,10 @@ acao_nova() { # arquivo
   nome="$(jq -r '.nome // empty' "$p")"; pub="$(jq -r '.publicacao // empty' "$p")"
   sub="$(jq -r '.subdominio // empty' "$p")"; dom="$(jq -r '.dominio // empty' "$p")"
   email="$(jq -r '.admin_email // empty' "$p")"; anome="$(jq -r '.admin_nome // empty' "$p")"; chave="$(jq -r '.chave // empty' "$p")"
-  [[ "$nome" =~ $RE_NOME ]] || { echo "✗ Nome inválido."; return 1; }
-  [[ "$email" =~ $RE_EMAIL ]] || { echo "✗ E-mail inválido."; return 1; }
-  [[ "$anome" =~ $RE_PESSOA ]] || { echo "✗ Nome do administrador inválido."; return 1; }
-  [ -z "$chave" ] || [[ "$chave" =~ $RE_CHAVE ]] || { echo "✗ Chave inválida."; return 1; }
+  casa "$nome" "$RE_NOME" || { echo "✗ Nome inválido."; return 1; }
+  casa "$email" "$RE_EMAIL" || { echo "✗ E-mail inválido."; return 1; }
+  casa "$anome" "$RE_PESSOA" || { echo "✗ Nome do administrador inválido."; return 1; }
+  [ -z "$chave" ] || casa "$chave" "$RE_CHAVE" || { echo "✗ Chave inválida."; return 1; }
   slug="$(printf '%s' "$nome" | iconv -f UTF-8 -t ASCII//TRANSLIT 2>/dev/null || printf '%s' "$nome")"
   slug="$(printf '%s' "$slug" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '-' | sed 's/-\+/-/g; s/^-//; s/-$//')"
   [ -n "$slug" ] || { echo "✗ Nome sem letras."; return 1; }
@@ -51,13 +54,13 @@ acao_nova() { # arquivo
   args=(--nome "$nome" --admin "$email" --nome-admin "$anome")
   case "$pub" in
     cloudflare)
-      [[ "$sub" =~ $RE_SUB ]] || { echo "✗ Endereço inválido."; return 1; }
+      casa "$sub" "$RE_SUB" || { echo "✗ Endereço inválido."; return 1; }
       [ -r /etc/prefichas/cloudflare.env ] || { echo "✗ Token da Cloudflare não configurado na VM (instale um acampamento pela Cloudflare pelo terminal uma vez)."; return 1; }
       local base=""; [ -r /etc/prefichas/painel.env ] && base="$({ grep -E '^DOMINIO_BASE=' /etc/prefichas/painel.env || true; } | cut -d= -f2-)"
-      [[ "$base" =~ $RE_DOM ]] || base="$(valor_env "$(instancias | head -1)" DOMINIO_BASE)"; base="${base:-movimentocampista.com.br}"
+      casa "$base" "$RE_DOM" || base="$(valor_env "$(instancias | head -1)" DOMINIO_BASE)"; base="${base:-movimentocampista.com.br}"
       args+=(--dominio "${sub}.${base}" --cloudflare) ;;
     direta)
-      [[ "$dom" =~ $RE_DOM ]] || { echo "✗ Domínio inválido."; return 1; }
+      casa "$dom" "$RE_DOM" || { echo "✗ Domínio inválido."; return 1; }
       args+=(--dominio "$dom" --compartilhado) ;;
     local) args+=(--dominio "") ;;
     *) echo "✗ Publicação inválida."; return 1 ;;
@@ -71,7 +74,7 @@ acao_nova() { # arquivo
   if [ -r /etc/prefichas/smtp.env ]; then set -a; . /etc/prefichas/smtp.env; set +a; fi
   (cd "$pasta" && ./scripts/novo-acampamento.sh "${args[@]}" </dev/null)
 }
-acao_atualizar() { local i="$1"; [[ "$i" =~ $RE_INST ]] && [ -f "/opt/$i/.env" ] || { echo "✗ Instância inválida: $i"; return 1; }
+acao_atualizar() { local i="$1"; casa "$i" "$RE_INST" && [ -f "/opt/$i/.env" ] || { echo "✗ Instância inválida: $i"; return 1; }
   echo "→ Atualizando $i…"; (cd "/opt/$i" && ./scripts/atualizar.sh); }
 acao_atualizar_painel() {
   echo "→ Atualizando o painel central…"
@@ -79,13 +82,13 @@ acao_atualizar_painel() {
   (cd "$BASE" && docker compose up -d --force-recreate >/dev/null) || { echo "✗ Falha ao reiniciar o painel."; return 1; }
   echo "✓ Painel central atualizado para $(git -C "$CODIGO" rev-parse --short HEAD)."
 }
-acao_backup() { local i="$1"; [[ "$i" =~ $RE_INST ]] && [ -f "/opt/$i/.env" ] || { echo "✗ Instância inválida: $i"; return 1; }
+acao_backup() { local i="$1"; casa "$i" "$RE_INST" && [ -f "/opt/$i/.env" ] || { echo "✗ Instância inválida: $i"; return 1; }
   echo "→ Backup de $i…"; (cd "/opt/$i" && ./scripts/backup.sh); }
 
 processar() { # arquivo do pedido
   local arq="$1" id acao alvo por inicio log ok=0
   id="$(basename "$arq" .json)"
-  if [ -L "$arq" ] || [ ! -f "$arq" ] || ! [[ "$id" =~ $RE_ID ]] || [ "$(stat -c %s "$arq")" -gt 8192 ] || ! jq -e . "$arq" >/dev/null 2>&1; then
+  if [ -L "$arq" ] || [ ! -f "$arq" ] || ! casa "$id" "$RE_ID" || [ "$(stat -c %s "$arq")" -gt 8192 ] || ! jq -e . "$arq" >/dev/null 2>&1; then
     rm -f "$arq"; return
   fi
   local tmp; tmp="$(mktemp)"; cp "$arq" "$tmp"; rm -f "$arq"   # trabalha numa cópia do root
@@ -93,6 +96,7 @@ processar() { # arquivo do pedido
   alvo="$(jq -r '.instancia // .nome // "todas"' "$tmp" | head -c 120)"
   inicio="$(date -Iseconds)"; log="$TAREFAS/$id.log"; : > "$log"
   estado_tarefa "$id" "$acao" "$alvo" executando "Em andamento" "$por" "$inicio"
+  echo "▶ Tarefa $id: $acao · $alvo (por $por) — log: $log"
   case "$acao" in
     nova) acao_nova "$tmp" >> "$log" 2>&1 && ok=1 ;;
     atualizar) acao_atualizar "$(jq -r '.instancia // empty' "$tmp")" >> "$log" 2>&1 && ok=1 ;;
@@ -107,6 +111,7 @@ processar() { # arquivo do pedido
   if [ "$ok" = 1 ]; then estado_tarefa "$id" "$acao" "$alvo" concluida "$(grep -E '^✓' "$log" | tail -1)" "$por" "$inicio"
   else estado_tarefa "$id" "$acao" "$alvo" erro "$(grep -E '^✗' "$log" | tail -1 || echo 'Falhou')" "$por" "$inicio"; fi
   chmod 644 "$TAREFAS/$id.json" "$log"
+  echo "■ Tarefa $id terminou: $([ "$ok" = 1 ] && echo concluída || echo ERRO)"
   coletar
 }
 
