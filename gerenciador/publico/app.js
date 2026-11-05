@@ -132,7 +132,7 @@ function telaNova(area) {
 // ------------------------------------------------------------------ tarefas
 async function telaTarefas(area) {
   const d = await api('GET', '/api/tarefas')
-  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas', 'atualizar-painel': 'Atualizar o painel', cloudflare: 'Token da Cloudflare', 'cloudflare-remover': 'Remover token da Cloudflare' }
+  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas', 'atualizar-painel': 'Atualizar o painel', cloudflare: 'Token da Cloudflare', 'cloudflare-remover': 'Remover token da Cloudflare', 'vpn-reconectar': 'Reconectar a VPN', 'vpn-credenciais': 'Trocar credenciais da VPN' }
   const linha = (t) => h('tr', { style: 'cursor:pointer', onclick: () => { tarefaAberta = t.id; desenhar() } },
     h('td', {}, dataHora(t.inicio || t.pedido_em)), h('td', {}, nomeAcao[t.acao] ?? t.acao), h('td', {}, t.alvo || t.nome || t.instancia || '—'),
     h('td', {}, h('span', { class: `selo ${t.situacao === 'concluida' ? 'ok' : t.situacao === 'erro' ? 'erro' : 'neutro'}` }, t.situacao)), h('td', {}, t.por || '—'))
@@ -201,6 +201,50 @@ async function telaConfiguracoes(area) {
     if (confirm('Remover o token da Cloudflare do servidor? Os acampamentos já publicados continuam no ar; só não será possível criar novos pela Cloudflare até colar um token de novo.')) pedir({ acao: 'cloudflare-remover' })
   } }, 'Remover token'))
   area.append(form, h('p', { class: 'dica' }, cfg.atualizado_em ? `Último token guardado em ${dataHora(cfg.atualizado_em)}.` : ''))
+  await cartaoVpn(area)
+}
+
+// VPN do servidor: situação, reconectar e (strongSwan) troca de credenciais com retorno automático.
+// A configuração inicial e o fechamento da porta 22 ficam só no terminal, de propósito.
+async function cartaoVpn(area) {
+  const v = await api('GET', '/api/vpn').catch(() => ({ configurada: null }))
+  const selo = v.configurada === false ? h('span', { class: 'selo neutro' }, 'não configurada')
+    : v.configurada === null ? h('span', { class: 'selo neutro' }, 'aguardando leitura do servidor')
+      : v.conectada ? h('span', { class: 'selo ok' }, 'conectada') : h('span', { class: 'selo erro' }, 'desconectada')
+  const partes = [h('div', { class: 'topo' }, h('h2', {}, 'VPN do servidor'), selo)]
+  if (v.configurada === false || v.configurada === null) {
+    partes.push(h('p', { class: 'dica' }, 'A VPN ainda não foi configurada neste servidor. A configuração inicial é feita pelo terminal, com o analista de segurança ao lado: '),
+      h('pre', { class: 'log' }, 'sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh configurar'))
+  } else {
+    partes.push(h('p', { class: 'dica' }, `Cliente: ${v.tipo === 'forticlient' ? 'FortiClient' : 'strongSwan'}`
+      + (v.redes?.length ? ` · redes pelo túnel: ${v.redes.join(', ')}` : '') + (v.ip_na_vpn ? ` · IP do servidor na VPN: ${v.ip_na_vpn}` : '')
+      + (v.coletado_em ? ` · lido em ${dataHora(v.coletado_em)}` : '')))
+    if (v.erro) partes.push(h('div', { class: 'alerta erro' }, v.erro))
+    if (v.detalhe) partes.push(h('pre', { class: 'log' }, v.detalhe))
+    partes.push(h('div', {}, h('button', { class: 'secundario', type: 'button', onclick: () => pedir({ acao: 'vpn-reconectar' },
+      'Reconectar a VPN agora? O painel pode ficar alguns segundos sem resposta se você o acessa pela VPN.') }, 'Reconectar')))
+    if (v.troca_credenciais) {
+      const aviso = h('div'); const erros = { psk: h('span', { class: 'erro-campo' }), senha: h('span', { class: 'erro-campo' }) }
+      const psk = h('input', { id: 'vpn-psk', type: 'password', autocomplete: 'off', placeholder: 'Nova chave pré-compartilhada (PSK) — opcional' })
+      const senha = v.tem_usuario ? h('input', { id: 'vpn-senha', type: 'password', autocomplete: 'off', placeholder: 'Nova senha do usuário da VPN — opcional' }) : null
+      partes.push(h('form', { autocomplete: 'off', onsubmit: async (e) => {
+        e.preventDefault(); aviso.replaceChildren(); Object.values(erros).forEach((x) => x.replaceChildren())
+        if (!confirm('Trocar as credenciais da VPN? O túnel será reiniciado. Se não subir em 90 segundos, o servidor volta sozinho para as credenciais anteriores. A página pode ficar sem resposta nesse tempo.')) return
+        try { const r = await api('POST', '/api/tarefas', { acao: 'vpn-credenciais', psk: psk.value, senha: senha?.value ?? '' }); psk.value = ''; if (senha) senha.value = ''; tarefaAberta = r.id; tela = 'tarefas'; desenhar() } catch (err) {
+          aviso.append(h('div', { class: 'alerta erro' }, err.message)); for (const [k, m] of Object.entries(err.dados?.erros ?? {})) erros[k]?.append(m)
+        }
+      } }, h('h3', {}, 'Trocar chave ou senha'),
+      h('p', { class: 'dica' }, 'Antes, a mudança precisa estar feita no FortiGate. Se o túnel não subir com os novos valores, o servidor volta sozinho para os anteriores (você acompanha em Tarefas).'),
+      h('div', { class: 'campo' }, h('label', { for: 'vpn-psk' }, 'Chave (PSK)'), psk, erros.psk),
+      senha && h('div', { class: 'campo' }, h('label', { for: 'vpn-senha' }, 'Senha do usuário'), senha, erros.senha),
+      aviso, h('button', { class: 'principal', type: 'submit' }, 'Trocar e testar')))
+    } else {
+      partes.push(h('p', { class: 'dica' }, 'Com o FortiClient, a troca de chave ou senha ainda é feita pelo terminal: '),
+        h('pre', { class: 'log' }, 'sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh configurar'))
+    }
+  }
+  partes.push(h('p', { class: 'dica' }, 'Por segurança, a configuração inicial da VPN e o fechamento da porta 22 só podem ser feitos pelo terminal.'))
+  area.append(h('section', { class: 'cartao' }, ...partes))
 }
 
 // ------------------------------------------------------------------ montagem
@@ -223,6 +267,9 @@ async function desenhar() {
     else if (tela === 'auditoria') await telaAuditoria(area)
     else if (tela === 'configuracoes') await telaConfiguracoes(area)
     else await telaInstancias(area)
-  } catch (e) { if (usuario) area.append(h('div', { class: 'alerta erro' }, e.message)) }
+  } catch (e) {
+    if (usuario) area.append(h('div', { class: 'alerta erro' }, e.message + (tela === 'tarefas' ? ' — tentando de novo…' : '')))
+    if (usuario && tela === 'tarefas') atualizador = setTimeout(desenhar, 5000)   // a VPN pode estar reiniciando
+  }
 }
 desenhar()

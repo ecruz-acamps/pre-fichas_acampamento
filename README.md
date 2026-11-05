@@ -190,6 +190,9 @@ Para manter um servidor existente na 1.0, veja a seção 11g do [manual de insta
 <p><em>Configurações: colar o token da Cloudflare (conferido antes de ser guardado)</em><br />
 <img src="docs/imagens/41-painel-central-configuracoes.webp" alt="Painel central: aba Configurações com o token da Cloudflare" /></p>
 
+<p><em>Configurações: VPN do servidor (situação, reconectar e troca de credenciais com retorno automático)</em><br />
+<img src="docs/imagens/42-painel-central-vpn-strongswan.webp" alt="Painel central: VPN do servidor" /></p>
+
 <p><em>Publicação na internet pela Cloudflare (painel do acampamento)</em><br />
 <img src="docs/imagens/39-configuracoes-publicacao-cloudflare.webp" alt="Ligar ou desligar a publicação pela Cloudflare" /></p>
 
@@ -356,7 +359,8 @@ Para manter um servidor existente na 1.0, veja a seção 11g do [manual de insta
 - **Ativação por chave** (`XXX-0000`) e **auditoria** de tudo o que é feito.
 
 **Painel central da VM** (versão 2.0)
-- **Aba Configurações:** cola o **token da Cloudflare** e o domínio, sem reinstalar; o servidor confere o token e ele nunca mais aparece em tela, auditoria ou log.
+- **Aba Configurações, VPN:** situação do túnel, **Reconectar** e troca de chave/senha com **retorno automático** se o túnel não subir (strongSwan). A configuração inicial e o fechamento da porta 22 ficam só no terminal.
+- **Aba Configurações, Cloudflare:** cola o **token da Cloudflare** e o domínio, sem reinstalar; o servidor confere o token e ele nunca mais aparece em tela, auditoria ou log.
 - Mostra todas as instâncias (endereço, publicação, no ar ou fora, versão, memória, porta) e o servidor (CPU, memória, disco, proxy).
 - **Nova instância** pelo navegador; **Atualizar**, **Backup** e **Atualizar todas**; atualizar o próprio painel; tarefas com andamento ao vivo; auditoria.
 

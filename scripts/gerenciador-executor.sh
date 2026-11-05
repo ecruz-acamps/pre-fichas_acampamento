@@ -117,6 +117,34 @@ acao_cloudflare_remover() {
   echo "✓ Token da Cloudflare removido do servidor. Os acampamentos já publicados continuam no ar (cada um tem o próprio túnel)."
 }
 
+# ---------------------------------------------------------------- VPN (aba Configurações)
+# Qual cliente está instalado: FortiClient (preferido) ou strongSwan (plano B)
+vpn_backend() {
+  if [ -r "$ETC/vpn-forticlient.env" ]; then echo vpn-fortinet.sh
+  elif [ -f /etc/swanctl/conf.d/prefichas.conf ]; then echo vpn-ipsec-strongswan.sh; fi
+}
+acao_vpn_reconectar() {
+  local b; b="$(vpn_backend)"
+  [ -n "$b" ] || { echo "✗ A VPN ainda não foi configurada neste servidor (use o terminal: vpn-fortinet.sh configurar)."; return 1; }
+  "$CODIGO/scripts/$b" reconectar
+}
+acao_vpn_credenciais() { # arquivo do pedido
+  local p="$1" b psk senha
+  b="$(vpn_backend)"
+  [ -n "$b" ] || { echo "✗ A VPN ainda não foi configurada neste servidor."; return 1; }
+  if [ "$b" != vpn-ipsec-strongswan.sh ]; then
+    echo "✗ Com o FortiClient, a troca de chave/senha da VPN ainda é feita pelo terminal:"
+    echo "  sudo $CODIGO/scripts/vpn-fortinet.sh configurar"
+    return 1
+  fi
+  psk="$(jq -r '.psk // empty' "$p")"; senha="$(jq -r '.senha // empty' "$p")"
+  [ -z "$psk" ] || casa "$psk" '^[ -~]{4,128}$' || { echo "✗ Chave (PSK) inválida: use de 4 a 128 caracteres comuns."; return 1; }
+  [ -z "$senha" ] || casa "$senha" '^[^[:cntrl:]]{1,256}$' || { echo "✗ Senha inválida."; return 1; }
+  [ -n "$psk$senha" ] || { echo "✗ Informe a nova chave e/ou a nova senha."; return 1; }
+  # os segredos vão por variável de ambiente (não aparecem na lista de processos nem no log)
+  VPN_NOVA_PSK="$psk" VPN_NOVA_SENHA="$senha" "$CODIGO/scripts/$b" trocar-credenciais
+}
+
 acao_atualizar_painel() {
   echo "→ Atualizando o painel central…"
   git -C "$CODIGO" pull -q --ff-only || { echo "✗ Não foi possível baixar a versão nova do painel."; return 1; }
@@ -134,7 +162,7 @@ processar() { # arquivo do pedido
   fi
   local tmp; tmp="$(mktemp)"; cp "$arq" "$tmp"; rm -f "$arq"   # trabalha numa cópia do root
   acao="$(jq -r '.acao // empty' "$tmp")"; por="$(jq -r '.por // empty' "$tmp" | head -c 200)"
-  alvo="$(jq -r '.instancia // .nome // (if (.acao|startswith("cloudflare")) then "Cloudflare" else "todas" end)' "$tmp" | head -c 120)"
+  alvo="$(jq -r '.instancia // .nome // (if (.acao|startswith("cloudflare")) then "Cloudflare" elif (.acao|startswith("vpn")) then "VPN" else "todas" end)' "$tmp" | head -c 120)"
   inicio="$(date -Iseconds)"; log="$TAREFAS/$id.log"; : > "$log"
   estado_tarefa "$id" "$acao" "$alvo" executando "Em andamento" "$por" "$inicio"
   echo "▶ Tarefa $id: $acao · $alvo (por $por) — log: $log"
@@ -145,6 +173,8 @@ processar() { # arquivo do pedido
     atualizar-painel) acao_atualizar_painel >> "$log" 2>&1 && ok=1 ;;
     cloudflare) acao_cloudflare "$tmp" >> "$log" 2>&1 && ok=1 ;;
     cloudflare-remover) acao_cloudflare_remover >> "$log" 2>&1 && ok=1 ;;
+    vpn-reconectar) acao_vpn_reconectar >> "$log" 2>&1 && ok=1 ;;
+    vpn-credenciais) acao_vpn_credenciais "$tmp" >> "$log" 2>&1 && ok=1 ;;
     atualizar-todas)
       ok=1
       for i in $(instancias); do acao_atualizar "$i" >> "$log" 2>&1 || { ok=0; echo "✗ Falhou: $i" >> "$log"; }; done ;;
@@ -182,6 +212,10 @@ coletar() {
   local vpainel; vpainel="$(git -C "$CODIGO" rev-parse --short HEAD 2>/dev/null || true)"
   printf '{"versao_painel":"%s","carga":"%s","cpus":%s,"memoria_total_mb":%s,"memoria_usada_mb":%s,"disco_total":"%s","disco_usado":"%s","disco_pct":"%s","proxy":%s,"dominios_diretos":%s}\n' \
     "$vpainel" "$(cut -d' ' -f1 /proc/loadavg)" "$(nproc)" "${mt:-0}" "${mu:-0}" "$dt" "$du" "$dp" "$proxy" "${sites:-0}" > "$ESTADO/servidor.json.tmp" && mv -f "$ESTADO/servidor.json.tmp" "$ESTADO/servidor.json"
+  local b vj='{"configurada":false}'; b="$(vpn_backend)"
+  [ -n "$b" ] && vj="$(timeout 25 "$CODIGO/scripts/$b" estado-json 2>/dev/null)"
+  printf '%s' "$vj" | jq -e . >/dev/null 2>&1 || vj='{"configurada":true,"erro":"não consegui ler a situação da VPN agora"}'
+  printf '%s' "$vj" | jq -c --arg em "$(date -Iseconds)" '. + {coletado_em:$em}' > "$ESTADO/vpn.json.tmp" && mv -f "$ESTADO/vpn.json.tmp" "$ESTADO/vpn.json" && chmod 644 "$ESTADO/vpn.json"
   local tk=false; grep -qE '^CF_API_TOKEN=.' "$ETC/cloudflare.env" 2>/dev/null && tk=true
   local dbase; dbase="$(valor_painel DOMINIO_BASE)"; dbase="${dbase:-movimentocampista.com.br}"
   printf '{"cloudflare":{"token_configurado":%s,"dominio_base":%s,"atualizado_em":%s}}\n' "$tk" "$(json_str "$dbase")" \

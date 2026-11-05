@@ -166,6 +166,54 @@ CFG
     exit 1
   fi
   ;;
+estado-json)
+  conf=false; [ -f "$CONF" ] && conf=true
+  con=false; estabelecido && con=true
+  usuario=false; grep -qE '^  (xauth|eap)-prefichas' "$CONF" 2>/dev/null && usuario=true
+  redes=""; [ -r "$REDES_ARQ" ] && redes="$(tr -d '\n' < "$REDES_ARQ")"
+  jq -n --argjson c "$conf" --argjson k "$con" --argjson u "$usuario" --arg r "$redes" --arg ip "$(ip_vpn || true)" \
+    '{tipo:"strongswan", configurada:$c, conectada:$k, vigia:true, redes:($r|split(",")|map(select(length>0))), ip_na_vpn:$ip, tem_usuario:$u, troca_credenciais:true, detalhe:""}'
+  ;;
+reconectar)
+  [ -f "$CONF" ] || erro "A VPN ainda não foi configurada neste servidor."
+  echo "→ Reconectando o túnel IPsec…"
+  swanctl --terminate --ike prefichas >/dev/null 2>&1 || true
+  sleep 2; swanctl --load-all >/dev/null 2>&1 || true; swanctl --initiate --child prefichas >/dev/null 2>&1 || true
+  for _ in $(seq 1 25); do estabelecido && break; sleep 3; done
+  if estabelecido; then echo "✓ Túnel IPsec reconectado."; else erro "O túnel não voltou. Veja: journalctl -u $(servico) -n 80"; fi
+  ;;
+trocar-credenciais)
+  # Novos valores chegam por VARIÁVEIS DE AMBIENTE (VPN_NOVA_PSK / VPN_NOVA_SENHA), nunca por argumento.
+  # Se o túnel não subir com a nova configuração, volta sozinho para a anterior.
+  [ -f "$CONF" ] || erro "A VPN ainda não foi configurada neste servidor."
+  [ -n "${VPN_NOVA_PSK:-}" ] || [ -n "${VPN_NOVA_SENHA:-}" ] || erro "Informe a nova chave (PSK) e/ou a nova senha."
+  if [ -n "${VPN_NOVA_SENHA:-}" ] && ! grep -qE '^  (xauth|eap)-prefichas' "$CONF"; then erro "Este túnel não usa usuário e senha: só a chave (PSK) pode ser trocada."; fi
+  [[ "${VPN_NOVA_PSK:-ok}" != *$'\n'* && "${VPN_NOVA_SENHA:-ok}" != *$'\n'* ]] || erro "Valores com quebra de linha não são aceitos."
+  ANTERIOR="${CONF}.anterior"
+  ( umask 077; cp -p "$CONF" "$ANTERIOR" )
+  if [ -n "${VPN_NOVA_PSK:-}" ]; then
+    sed -i "s|^\(  ike-prefichas { secret = \)0s[A-Za-z0-9+/=]*|\10s$(b64 "$VPN_NOVA_PSK")|" "$CONF"
+  fi
+  if [ -n "${VPN_NOVA_SENHA:-}" ]; then
+    sed -i "s|^\(    secret = \)0s[A-Za-z0-9+/=]*|\10s$(b64 "$VPN_NOVA_SENHA")|" "$CONF"
+  fi
+  tentar() { # espera o túnel subir (segundos)
+    swanctl --terminate --ike prefichas >/dev/null 2>&1 || true
+    sleep 2; swanctl --load-all >/dev/null 2>&1 || true; swanctl --initiate --child prefichas >/dev/null 2>&1 || true
+    local t=$(( $1 / 3 )); for _ in $(seq 1 "$t"); do estabelecido && return 0; sleep 3; done; return 1
+  }
+  echo "→ Aplicando as novas credenciais e reiniciando o túnel (até 90 s)…"
+  if tentar 90; then
+    rm -f "$ANTERIOR"
+    echo "✓ Credenciais trocadas e túnel conectado."
+  else
+    echo "✗ O túnel não subiu com as novas credenciais. Voltando para a configuração anterior…"
+    ( umask 077; mv -f "$ANTERIOR" "$CONF" )
+    if tentar 60; then echo "✓ Configuração anterior restaurada: a VPN está conectada com as credenciais antigas."
+    else echo "✗ Nem a configuração anterior reconectou. Verifique no FortiGate e rode: vpn-ipsec-strongswan.sh reconectar"; fi
+    exit 1
+  fi
+  ;;
 status)
   swanctl --list-sas --ike prefichas 2>/dev/null || echo "Túnel: desconectado"
   [ -n "$(ip_vpn)" ] && echo "IP do servidor na VPN: $(ip_vpn)"
