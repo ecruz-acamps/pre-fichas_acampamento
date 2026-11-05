@@ -1,6 +1,6 @@
 # Roadmap
 
-## Versão 1.0 — atual
+## Versão 1.0 — entregue (branch `v1`)
 
 Sistema de pré-fichas e fila de espera, instalado no servidor de cada acampamento:
 
@@ -14,7 +14,20 @@ Detalhes no [README](README.md) e no [manual de instalação](docs/INSTALACAO.md
 
 ---
 
-## Versão 2.0 — planejada: app Android e iOS para os neocampistas
+## Versão 2.0 — atual (branch `main`)
+
+Vários acampamentos na mesma VM, administrados por um **painel central**:
+
+- Painel central: criar instâncias pelo navegador, situação do servidor e das instâncias, atualizar uma ou todas, backup e auditoria.
+- Instalação híbrida: publicação pela Cloudflare (túnel), direta (proxy HTTPS compartilhado com Let's Encrypt) ou rede local.
+- Ordem de implantação: 1) painel central, que prepara a VM; 2) acampamentos.
+- Contas dos participantes (CPF/e-mail), ficha impressa personalizável, VPN FortiClient para servidor remoto, melhorias de performance.
+
+Lista completa no [CHANGELOG](CHANGELOG.md).
+
+---
+
+## Versão 3.0 — planejada: app Android e iOS para os neocampistas
 
 > Melhoria registrada na issue [#3](https://github.com/ecruz-acamps/pre-fichas_acampamento/issues/3) — acompanhe por lá.
 
@@ -40,8 +53,8 @@ sentido ao acompanhar a pessoa durante a espera:
 - **Um único app para todos os acampamentos.** A pessoa escolhe o acampamento numa lista (arquivo no GitHub com
   nome, cidade e endereço de cada instalação) ou chega por link/QR code divulgado no Instagram. O app assume o nome,
   as cores e as declarações daquele acampamento.
-- **Sem criar senha.** Ao enviar a pré-ficha, o servidor gera um **código de acompanhamento** que o app guarda.
-  Para consultar em outro aparelho: código + data de nascimento.
+- **Mesma conta do site.** A versão 2.0 já tem contas dos participantes (CPF ou e-mail + senha), com situação da
+  inscrição, edição dos dados, desistência e nova inscrição. O app usa essa conta, e não um código de acompanhamento separado.
 - Mesmo formulário e mesmas regras do site; pode preencher sem internet e enviar depois.
 
 ### Etapas
@@ -52,7 +65,7 @@ sentido ao acompanhar a pessoa durante a espera:
 | 2 | App Android e iOS (React Native/Expo): escolher acampamento, formulário, acompanhamento, notificações | repositório novo `pre-fichas-app` | 6–8 semanas |
 | 3 | Publicação na App Store e no Google Play, ajustes da revisão | `pre-fichas-app` | 2–4 semanas |
 
-A fase 1 já traz benefício pelo site, mesmo antes do app.
+Boa parte da fase 1 já existe pelo site desde a 2.0: situação, atualizar dados, desistir e posição na fila opcional. Falta a API pública versionada e as notificações.
 
 ### Mudanças necessárias no servidor (fase 1)
 
@@ -77,6 +90,6 @@ As mudanças de servidor que o app precisa continuam aqui, em branches e PRs nor
 
 ### Decisões pendentes
 
-1. A pessoa vê a **posição na fila** ou apenas a **situação** da inscrição?
+1. ~~A pessoa vê a posição na fila?~~ Decidido na 2.0: é uma opção em Configurações.
 2. Quem será o **dono das contas nas lojas** (uma organização para todos os acampamentos ou cada acampamento)?
 3. Nome do app e identidade nas lojas.
