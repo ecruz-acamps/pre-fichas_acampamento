@@ -1,29 +1,141 @@
 # Pré-fichas do Acampamento · Fila de espera
 
-Sistema para receber as pré-fichas de novos campistas e organizar a **fila de espera**
-por ordem de chegada (data e hora do envio — quem se inscreveu primeiro tem preferência).
+**Versão 2.0** · Sistema para receber as pré-fichas de novos campistas e organizar a **fila de espera**
+por ordem de chegada (data e hora do envio). Quem se inscreveu primeiro tem preferência.
 
-Roda **100% no seu servidor Linux** (on-premises): sem serviços de nuvem, sem CDN, sem
-fontes externas. A única chamada externa é a consulta de CEP ao [ViaCEP](https://viacep.com.br),
-feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
+Roda **no seu servidor Linux** (on-premises), com os dados sob o seu controle. Uma única VM pode hospedar
+**vários acampamentos**, cada um com banco, usuários, backups e marca próprios. Eles são administrados por
+um **painel central** e publicados pela **Cloudflare**, **direto** (domínio próprio com HTTPS) ou **só na
+rede local**.
 
-- **`/`** → formulário público de pré-ficha (funciona no celular)
-- **`/admin/`** → painel da fila de espera (login da equipe)
+| Endereço | Para quem |
+|---|---|
+| **`/`** | Participante: criar conta, fazer a pré-ficha, acompanhar e atualizar os dados (funciona no celular) |
+| **`/admin/`** | Equipe do acampamento: fila, fichas, acampamentos, núcleos, usuários e configurações |
+| **Painel central** (`:9090`, só pela VPN) | Responsável pela VM: cria e atualiza os acampamentos do servidor |
+
+> 📘 **Como usar:** [`docs/MANUAL-DE-USO.md`](docs/MANUAL-DE-USO.md) ·
+> 🛠️ **Instalação detalhada:** [`docs/INSTALACAO.md`](docs/INSTALACAO.md) ·
+> 📝 **O que mudou:** [`CHANGELOG.md`](CHANGELOG.md) ·
+> 🗺️ **Próximos passos:** [`ROADMAP.md`](ROADMAP.md)
 
 | Camada | Tecnologia |
 |---|---|
-| Site | React + Vite (gerado como arquivos estáticos) |
+| Site | React + Vite (arquivos estáticos) |
 | Servidor / API | Node.js 22 + Fastify |
-| Banco de dados | PostgreSQL 16 |
-| HTTPS | Caddy (certificado automático) — ou o seu Nginx |
-| Implantação | Docker Compose — ou systemd, sem Docker |
+| Banco de dados | PostgreSQL 16 (um por acampamento) |
+| HTTPS | Caddy compartilhado com **Let's Encrypt** automático, ou **Cloudflare Tunnel** (cloudflared) |
+| Implantação | Docker Compose (imagem pronta no GitHub) ou systemd, sem Docker |
+| Painel central | Node.js sem dependências + executor do sistema (systemd) |
 
-> 🗺️ **Próximos passos:** veja o [`ROADMAP.md`](ROADMAP.md) — a versão 2.0 trará o app Android e iOS para os neocampistas.
->
-> 📘 **Instalação passo a passo no Linux:** [`docs/INSTALACAO.md`](docs/INSTALACAO.md)
-> (preparar o servidor, domínio, HTTPS, vários acampamentos, backup, atualização e solução de problemas).
+## Novidades da versão 2.0
 
-> 📘 **Como usar o sistema:** [`docs/MANUAL-DE-USO.md`](docs/MANUAL-DE-USO.md) · **Como instalar:** [`docs/INSTALACAO.md`](docs/INSTALACAO.md)
+- **Painel central da VM:** cria acampamentos pelo navegador, mostra a situação de cada um e do servidor, atualiza um ou todos, faz backup e mantém uma auditoria.
+- **Vários acampamentos na mesma VM**, de forma **híbrida**: cada um pode ser publicado pela Cloudflare, direto ou só na rede local.
+- **Instalador com ordem de implantação:** 1) painel central, que prepara a VM; 2) acampamentos.
+- **VPN FortiClient (IPsec)** para administrar um servidor remoto e fechar a porta 22.
+- **Ficha impressa** no formato de pré-inscrição, com cabeçalho personalizável.
+- **Performance:** a fila com 20 mil fichas abre em 1 s, antes levava 22 s.
+
+A versão 1.0 continua disponível na branch [`v1`](../../tree/v1). Veja a [seção Versões](#versões).
+
+---
+
+## Instalação
+
+### Requisitos
+- VM **Linux** (Ubuntu 22.04/24.04 ou Debian 12) com acesso de administrador (`sudo`).
+- Uma VM de **4 vCPU, 16 GB de RAM e 120 GB de disco** comporta com folga de **8 a 12 acampamentos**. Cada um
+  usa cerca de 300 a 500 MB de memória.
+- Para publicar **direto**: IP público (por exemplo, NAT 1:1) e as portas **80/443** livres. Para a **Cloudflare**: nenhuma porta aberta.
+
+### Passo 1 — Painel central (primeiro)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ecruz-acamps/pre-fichas_acampamento/main/instalar.sh | sudo bash
+```
+
+Escolha **1) Painel central**. O instalador prepara a VM:
+
+1. instala o Docker e as ferramentas;
+2. **VPN FortiClient**, para acessar o painel e o servidor remotamente (opcional);
+3. **Cloudflare**: domínio base e token da API, para os acampamentos publicados pelo túnel;
+4. **Let's Encrypt**: e-mail para os certificados dos acampamentos diretos;
+5. **E-mail de envio** (Gmail com senha de app), usado no "Esqueci minha senha" de cada acampamento;
+6. **Painel central**: cria o seu usuário e mostra **a senha e a chave do autenticador uma única vez**.
+
+As etapas 2 a 5 podem ser puladas com ENTER e configuradas depois.
+
+### Passo 2 — Acampamentos
+
+Pela VPN, abra `http://IP-DA-VM-NA-VPN:9090`, entre com a senha e o código do autenticador e use a aba
+**Nova instância**: nome, publicação, administrador e chave de ativação (opcional). A criação leva alguns
+minutos. Ao final aparece o endereço e a **senha temporária** do administrador do acampamento.
+
+Também dá para criar pelo terminal, com o mesmo comando do passo 1, escolhendo **2) Um acampamento**.
+Esse caminho também serve para um servidor com **um acampamento só**, sem painel central.
+
+### Como publicar cada acampamento
+
+| Publicação | Endereço | O que precisa |
+|---|---|---|
+| **Cloudflare** | `NOME.movimentocampista.com.br` | Token da API da Cloudflare (*Conta › Cloudflare Tunnel › Editar* e *Zona › DNS › Editar*). O DNS e o HTTPS são criados sozinhos, **sem abrir portas**. |
+| **Direta** | Domínio próprio | Um **registro A** do domínio apontando para o IP público da VM. Todos os diretos usam **um proxy HTTPS compartilhado** (Caddy) e o certificado do **Let's Encrypt** é emitido e renovado sozinho. |
+| **Só rede local** | `http://IP:8180` (porta livre) | Nada. Fica sem HTTPS, por isso não é indicado para a internet. |
+
+A publicação pela Cloudflare pode ser **ligada e desligada depois** no painel do acampamento:
+**Configurações → Publicação na internet**.
+
+**DNS para publicação direta:**
+- Crie no provedor do domínio um registro `A` com nome `prefichas` e valor `IP.PÚBLICO.DA.VM`. Vários
+  acampamentos podem usar o **mesmo IP**.
+- Se o DNS estiver na Cloudflare, deixe a nuvem **cinza ("Somente DNS")**.
+- Não crie registro `AAAA` se a VM não recebe conexões por IPv6.
+- Confira com `dig +short prefichas.seudominio.com.br` antes de instalar. Detalhes no
+  [manual de instalação](docs/INSTALACAO.md), seção 11e.
+
+### Portas e firewall
+
+| Sentido | Porta | Para quê |
+|---|---|---|
+| Entrada | **TCP 80 e 443** (UDP 443 opcional) | Acampamentos **diretos**: site com HTTPS e emissão do certificado. Não é necessário se todos forem pela Cloudflare. |
+| Entrada | TCP 22 | SSH, **somente do IP do administrador ou pela VPN**. Pode ser fechada depois da instalação (veja abaixo). |
+| Entrada | TCP 9090 | Painel central, **somente a partir das redes da VPN**. Nunca libere para a internet. |
+| Saída | TCP 443 | GitHub e imagem pronta (atualizações), Let's Encrypt, Cloudflare, ViaCEP |
+| Saída | TCP 465/587 | E-mail de recuperação de senha |
+| Saída | UDP 500 e 4500 | VPN IPsec com o FortiGate |
+
+**Nunca libere** 5432 (banco de dados) nem 3000+ (aplicações). Eles atendem só dentro da VM.
+
+### Servidor remoto: VPN e porta 22 fechada
+
+```bash
+sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh configurar   # FortiClient + perfil IPsec + reconexão
+sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh status
+sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh fechar-ssh   # 22 só pela VPN (recusa se a VPN estiver fora)
+```
+
+- A instalação do FortiClient confere a assinatura do repositório oficial da Fortinet.
+- Só as redes internas passam pelo túnel; o site continua saindo pela internet normal.
+- Emergência (VPN fora e SSH fechado): pelo console da VM, rode `vpn-fortinet.sh abrir-ssh`.
+- Plano B, se o FortiClient não mantiver o túnel IPsec sem tela: `scripts/vpn-ipsec-strongswan.sh`.
+
+Detalhes e o que pedir ao analista de segurança: [manual de instalação](docs/INSTALACAO.md), seção 11d.
+
+### Versões
+
+| Branch | Versão |
+|---|---|
+| **`main`** (padrão) | **2.x**. É a que o instalador instala e o botão **Atualizações** acompanha. |
+| **`v1`** | **1.0 preservada** (um acampamento por instalação), só para correções pontuais |
+
+Para instalar a versão 1:
+```bash
+curl -fsSL https://raw.githubusercontent.com/ecruz-acamps/pre-fichas_acampamento/v1/instalar.sh | sudo PREFICHAS_BRANCH=v1 bash
+```
+Para manter um servidor existente na 1.0, veja a seção 11g do [manual de instalação](docs/INSTALACAO.md).
+
+---
 
 ## Telas
 
@@ -163,173 +275,107 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
 
 </details>
 
-
 ## Funcionalidades
 
-**Conta do participante**
-- A página inicial é a **tela de entrada**: CPF ou e-mail + senha, "Esqueci minha senha" e "Crie uma aqui".
-- Com a conta, a pessoa faz a inscrição, vê a situação (e, se o acampamento quiser, a **posição na
-  fila** — opção em Configurações), **edita os próprios dados** (endereço, telefone…; cada alteração
-  fica na auditoria e a posição na fila não muda), **desiste da vaga** e **se inscreve de novo** com
-  os dados já preenchidos.
-- **Contas antigas**: importe uma planilha CSV (painel → Configurações); a pessoa cria a senha pelo
-  link enviado ao e-mail em "Esqueci minha senha". Precisa do envio de e-mail configurado (SMTP).
+**Participante (página inicial)**
+- **Tela de entrada:** CPF ou e-mail + senha, "Esqueci minha senha" (link por e-mail, válido por 1 hora e de uso único) e "Crie uma aqui".
+- Com a conta, a pessoa:
+  - faz a inscrição;
+  - vê a situação e, se o acampamento quiser, a **posição na fila**;
+  - **edita os próprios dados** sem perder a posição (cada alteração fica na auditoria);
+  - **desiste da vaga**;
+  - **se inscreve de novo** com os dados preenchidos.
+- **Outra modalidade:** quem fez o Juvenil entra na fila do Sênior quando tem os requisitos; repetir a modalidade já feita é bloqueado.
+- **Contas antigas:** importação por planilha CSV. A pessoa cria a senha pelo "Esqueci minha senha".
 
-**Feito para vários acampamentos**
-- Cada acampamento tem **sua própria instalação** (banco de dados separado): os dados de
-  um acampamento nunca se misturam com os de outro. Podem ficar em servidores diferentes
-  ou no mesmo servidor, cada um com seu domínio.
-- **Marca configurável** sem mexer no código: nome, logo, cor, contatos, textos do formulário,
-  declarações obrigatórias e tribos — pelo painel (**Configurações**) ou por arquivo
-  (`marcas/*.json`). Vale na hora, sem reiniciar. Veja [`marcas/README.md`](marcas/README.md).
-- **Instalação em um único comando** (`instalar.sh`): instala o Docker, baixa o sistema, pergunta o nome do acampamento e coloca no ar.
-- **Atualização pelo painel**: o sistema compara a versão instalada com o GitHub; quando há versão
-  nova, o administrador vê o botão **"Atualização disponível"**, confere o que mudou e clica em
-  **Atualizar agora** — backup, código novo, reconstrução e reinício, acompanhados na tela. (Também
-  pelo terminal: `sudo ./scripts/atualizar.sh`.)
-- **Ativação por chave**: depois de instalado e configurado, o sistema pede uma chave de ativação
-  (`XXX-0000`), fornecida pelo responsável pela implantação. Até ativar, o painel fica bloqueado
-  e o formulário não recebe inscrições.
+**Formulário da pré-ficha**
+- Dados pessoais, religiosos, contato, endereço (o CEP preenche sozinho), acampamento, saúde e declarações configuráveis. O texto aceito fica gravado na ficha.
+- Modalidade validada pela idade e pelo estado civil; responsável para menores de 18 anos.
+- Proteção contra robôs, limites de envio e CAPTCHA opcional.
 
-**Formulário (público)**
-- Dados pessoais, informações religiosas, contato, endereço, acampamento e informações adicionais.
-- Telefone/WhatsApp obrigatório; responsável para menores de 18 anos.
-- CEP preenche o endereço; modalidade validada pela idade/estado civil.
-- Declarações configuráveis por acampamento — o texto exato aceito fica gravado na ficha.
-- Proteção contra robôs e limite de envios por IP.
+**Fila de espera (painel)**
+- Fila por modalidade com a **posição**, filtros (núcleo, cidade, bairro, status, preferência), busca (inclusive por CPF), selos (🔑 tem conta, possível duplicado, ★ preferência, recusas), WhatsApp direto e exportação CSV.
+- **Ficha completa:** histórico, conta do participante (vincular ficha antiga pelo CPF), observações internas.
+- **Recusas e fim da fila:** automático após N recusas seguidas, ou manual com motivo.
+- **🖨 Imprimir a pré-ficha** no formato de ficha de pré-inscrição, com **cabeçalho personalizável** (logos e textos). Cada impressão fica registrada.
+- **Nomes (A–Z)** e **Resumo por cidade e bairro**.
 
-**Fila de espera**
-- Fila por modalidade, com a **posição** de cada pessoa (ordem de inscrição).
-- Filtros por **núcleo, cidade e bairro**, busca, status, aviso de possível duplicado, WhatsApp direto.
-- **Resumo por cidade e bairro**: quantas pessoas há em cada lugar, por modalidade.
-- Observações internas e histórico de quem alterou o quê. Exportação CSV.
+**Acampamentos, cônjuges e núcleos**
+- Cadastro de cada edição, registro de **quem fez** e da **tribo** (cores configuráveis).
+- **Preferência do cônjuge** (pode ser ligada ou desligada): quem faz a edição N dá preferência ao cônjuge nas próximas.
+- **Núcleos** por cidade ou bairro (com divisão de cidades grandes por bairros). O **coordenador de núcleo** só vê a própria área, e isso é garantido pelo servidor.
 
-**Coordenadores de núcleo**
-- Um **núcleo** reúne cidades inteiras e/ou bairros específicos (ex.: "São José inteira +
-  Florianópolis/Centro"). Maiúsculas e acentos não importam ("SAO JOSE" = "São José").
-- O **coordenador de núcleo** só vê as pré-fichas da sua área — garantido pelo servidor —
-  e usa o resumo para saber quem chamar em cada acampamento.
-- O painel mostra quais cidades/bairros com pré-fichas ainda não têm núcleo.
-- **Dividir cidade por bairros**: para cidades com vários núcleos (ex.: Palhoça → Centro, Ponte do
-  Imaruim, Aririu e São Sebastião), uma tela lista os bairros da cidade (com quantas pré-fichas há
-  em cada um) e você escolhe o núcleo de cada bairro.
-- **Nomes (A–Z)**: lista alfabética com as pré-fichas do núcleo do coordenador e **todos os
-  campistas** (quem já fez o acampamento) de todos os núcleos, com a ficha completa — campistas não
-  são restritos ao núcleo. Campistas de outros núcleos abrem em modo consulta (alterações ficam com
-  o núcleo deles, a equipe ou o administrador).
+**Administração do acampamento**
+- **Configurações** sem mexer no código: marca (nome, logo, cor, contatos), textos e declarações, regras da fila, impressão, área do participante, tribos e publicação na Cloudflare.
+- **Atualização pelo painel** (botão ⟳ **Atualizações**, laranja quando há versão nova), com backup automático antes.
+- **Ativação por chave** (`XXX-0000`) e **auditoria** de tudo o que é feito.
 
-**Acampamentos realizados**
-- Cadastre cada edição (**número + modalidade**, ex.: 45º Juvenil, com datas).
-- Marque quem **fez o acampamento** e a **cor da tribo** (azul, preto, amarelo, verde, roxo,
-  laranja, marrom — lista configurável). A pessoa sai da fila automaticamente.
-- Contagem por tribo, exportação da lista e histórico de acampamentos em cada ficha.
+**Painel central da VM** (versão 2.0)
+- Mostra todas as instâncias (endereço, publicação, no ar ou fora, versão, memória, porta) e o servidor (CPU, memória, disco, proxy).
+- **Nova instância** pelo navegador; **Atualizar**, **Backup** e **Atualizar todas**; atualizar o próprio painel; tarefas com andamento ao vivo; auditoria.
 
 **Papéis**
 
 | Papel | Pode |
 |---|---|
-| Administrador | tudo: usuários, núcleos, configurações da marca, acampamentos, fila |
-| Equipe | ver toda a fila, atualizar status, registrar acampamentos e tribos |
-| Coordenador de núcleo | ver e atualizar as pré-fichas das cidades/bairros dos seus núcleos; consultar todos os campistas |
+| Administrador | tudo no acampamento: usuários, núcleos, configurações, acampamentos, fila, atualizações |
+| Equipe | toda a fila, chamadas, recusas, acampamentos, cônjuges e preferências |
+| Coordenador de núcleo | pré-fichas do seu núcleo; consulta todos os campistas |
+| Usuário do painel central | criar e atualizar instâncias da VM (não vê fichas de nenhum acampamento) |
 
 **Segurança**
-- As regras valem no servidor (o navegador só orienta), inclusive o que cada papel enxerga.
-- A data/hora da inscrição é definida pelo banco e um *trigger* impede alterá-la.
-- Senhas com scrypt, senha temporária com troca obrigatória, cookie `HttpOnly` + `SameSite=Strict`,
-  proteção CSRF, CSP.
-- Login: limite por IP **e por conta**, e **verificação em duas etapas** opcional (aplicativo autenticador).
-- Formulário: limite por IP, por telefone/e-mail e geral; inscrição repetida da mesma pessoa é descartada;
-  CAPTCHA opcional (Cloudflare Turnstile). Logo enviada é conferida (SVG com script é recusado).
-- O banco não fica exposto na rede.
+- As regras valem no servidor, inclusive o que cada papel enxerga. A data da inscrição é protegida pelo banco e a auditoria não pode ser alterada.
+- Senhas com scrypt, verificação em duas etapas (obrigatória no painel central), bloqueio por tentativas, cookies `HttpOnly`/`SameSite=Strict`, proteção CSRF e CSP.
+- O painel central só abre pela VPN ou pelo próprio servidor e **não executa nada sozinho**: um executor do sistema valida cada pedido antes de agir.
+- Banco e aplicações não ficam expostos; imagens enviadas são conferidas (SVG com script é recusado); dados pessoais na impressão e na exportação seguem as boas práticas da LGPD descritas no manual.
+
+**Performance** (medido com 20 mil fichas)
+- Fila do painel em **1 s** (antes 22 s), **0,44 MB** transferidos (antes 25,8 MB), busca instantânea, formulário em **1,5 s** num celular com 4G fraco.
+- Logs com tamanho limitado, limites de memória por serviço, índices no banco e atualização com imagem pronta do GitHub.
+- Para analisar de novo: `/analise-performance` no Claude Code (squad de 4 revisores). Relatórios em [`docs/analise-performance/`](docs/analise-performance/).
 
 ---
 
-## Instalação (um único comando)
+## Operação do dia a dia
 
-> **Vários acampamentos na mesma VM?** Instale primeiro o **painel central** (opção 1 do instalador) e crie os
-> acampamentos pelo navegador. Veja [`docs/INSTALACAO.md`](docs/INSTALACAO.md), seção 11f.
+**Atualizar**
+- **Acampamento:** botão **⟳ Atualizações** no painel do acampamento. O backup é feito antes.
+- **Vários de uma vez:** no painel central, **Atualizar todas**.
+- **O próprio painel:** "atualizar" no quadro do servidor.
+- **Pelo terminal:** `cd /opt/prefichas-NOME && sudo ./scripts/atualizar.sh`.
 
-Num servidor Linux (Ubuntu ou Debian), rode:
-
+**Backup**
 ```bash
-curl -fsSL https://raw.githubusercontent.com/ecruz-acamps/pre-fichas_acampamento/main/instalar.sh | sudo bash
+cd /opt/prefichas-NOME
+sudo ./scripts/backup.sh                                     # salva em ./backups (guarda 30 dias)
+sudo ./scripts/restaurar.sh backups/prefichas-AAAA-MM-DD_HHMMSS.dump
 ```
+Também dá para fazer backup pelo painel central, no botão **Backup** de cada instância. Agende um diário no cron
+(`0 2 * * * cd /opt/prefichas-NOME && ./scripts/backup.sh`) e **copie a pasta `backups/` para outro lugar**.
 
-O instalador faz tudo sozinho: instala o que faltar (git, Docker), baixa o sistema em
-`/opt/prefichas-NOME`, **pergunta o nome do acampamento**, o domínio (opcional) e os dados do
-administrador, sobe banco + aplicação, cria o administrador (mostra a senha temporária) e pede a
-**chave de ativação** (ENTER = ativar depois pelo painel). No fim mostra os endereços do
-formulário e do painel.
-
-- **Com domínio** (ex.: `prefichas.seuacampamento.com.br` apontando para o servidor): HTTPS automático.
-- **Sem domínio**: deixe em branco e acesse por `http://IP-DO-SERVIDOR`.
-- **Porta 80/443 já ocupada** por outro programa: o instalador avisa quem está usando e instala
-  numa porta livre (padrão `http://IP:8180`; escolha outra na pergunta "Porta do site").
-
-**Publicação na Cloudflare (opcional):** o instalador pergunta se você quer publicar agora; se sim, sugere `NOME.movimentocampista.com.br`
-(pode trocar o NOME) e publica sozinho pelo **Cloudflare Tunnel**: cria o DNS e o HTTPS, sem
-usar as portas 80/443 e sem abrir portas no roteador. Na 1ª instalação ele pede um token da API
-da Cloudflare (crie em *dash.cloudflare.com → Perfil → Tokens de API* com as permissões
-**Conta › Cloudflare Tunnel › Editar** e **Zona › DNS › Editar** para `movimentocampista.com.br`);
-o token fica guardado em `/etc/prefichas/cloudflare.env` (só o root lê) e não é pedido de novo.
-Outro domínio: `DOMINIO_BASE=outro.com.br`; sem Cloudflare (acesso pelo IP): `DOMINIO_BASE=`.
-
-**Ligar ou desligar depois, pelo painel:** Configurações → *Publicação na internet (Cloudflare)*. Escolha o endereço (`NOME.movimentocampista.com.br`) e clique em **Ligar publicação**; para tirar do ar, **Desligar publicação** (o sistema continua acessível pela rede local, pelo IP). O token da Cloudflare é pedido ali na primeira vez e fica guardado só no servidor.
-
-Guia completo e instalação manual: [`docs/INSTALACAO.md`](docs/INSTALACAO.md).
-
-**Já tem Nginx no servidor?** Rode o assistente com `--multi` (sem Caddy próprio) e use
-`deploy/nginx.conf` apontando para a porta local (`--porta`, padrão 3000).
-
-### Vários acampamentos no mesmo servidor
-
-Cada acampamento fica em uma pasta própria, com porta local diferente, e um único Caddy
-na frente atende todos os domínios:
-
+**Comandos úteis**
 ```bash
-sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/prefichas-acampamento-a
-sudo git clone https://github.com/ecruz-acamps/pre-fichas_acampamento.git /opt/prefichas-acampamento-b
-
-cd /opt/prefichas-acampamento-a && sudo ./scripts/novo-acampamento.sh --multi --porta 3001 \
-    --nome "Acampamento A" --dominio prefichas.acampamento-a.com.br \
-    --admin admin@acampamento-a.com.br --nome-admin "Coordenação A"
-
-cd /opt/prefichas-acampamento-b && sudo ./scripts/novo-acampamento.sh --multi --porta 3002 \
-    --nome "Acampamento B" --dominio prefichas.acampamento-b.com.br \
-    --admin admin@acampamento-b.com.br --nome-admin "Coordenação B"
-```
-
-Depois instale o Caddy no servidor e use [`deploy/Caddyfile.multi`](deploy/Caddyfile.multi)
-(o assistente imprime o bloco de cada domínio). Cada instalação tem seu banco, seus usuários,
-seus backups e sua marca.
-
-### Logo, cores e tribos
-
-O nome é escolhido na instalação. Logo, cor, contatos e tribos ficam no painel → **Configurações**.
-Se preferir arquivo:
-
-```bash
-cp marcas/modelo.json marcas/meu-acampamento.json   # edite nome, cor, contatos, tribos...
-cp ~/logo.png marcas/meu-acampamento.png                     # e indique "logo": "meu-acampamento.png" no .json
-```
-
-Tudo pode ser ajustado depois no painel → **Configurações** (inclusive importar/exportar o `.json`).
-
-### Comandos do dia a dia
-
-```bash
-docker compose ps                      # situação dos serviços
-docker compose logs -f app             # logs da aplicação
-docker compose exec app node server/cli.js listar
+# Acampamento (dentro da pasta /opt/prefichas-NOME)
+docker compose ps                                        # situação
+docker compose logs -f app                               # logs
+docker compose exec app node server/cli.js listar        # usuários
 docker compose exec app node server/cli.js redefinir-senha pessoa@email.com
-docker compose exec app node server/cli.js desativar pessoa@email.com
-docker compose exec app node server/cli.js criar-coordenador pessoa@email.com "Nome"
-docker compose exec app node server/cli.js marca aplicar marcas/meu-acampamento.json
-docker compose exec app node server/cli.js marca exportar        # mostra a marca atual (JSON)
+docker compose exec app node server/cli.js participantes importar contas.csv
 
-# Atualizar: pelo botão "Atualização disponível" no painel, ou pelo terminal
-sudo ./scripts/atualizar.sh
+# Servidor
+sudo /opt/prefichas-gerenciador/scripts/proxy-compartilhado.sh listar   # domínios diretos
+sudo docker logs prefichas-proxy --tail 50                              # certificados / HTTPS
+sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh status          # VPN
+
+# Usuários do painel central
+G=/var/lib/prefichas-gerenciador; C=/opt/prefichas-gerenciador/gerenciador
+sudo docker run --rm -u 1000:1000 -e DADOS=/dados -v $C:/app:ro -v $G/dados:/dados -w /app node:22-alpine node cli.mjs listar
+#   criar-usuario EMAIL | nova-senha EMAIL | novo-autenticador EMAIL | desativar EMAIL
 ```
+
+**Marca por arquivo** (opcional; o normal é pelo painel → Configurações):
+`cp marcas/modelo.json marcas/meu-acampamento.json` e
+`docker compose exec app node server/cli.js marca aplicar marcas/meu-acampamento.json`.
 
 ---
 
@@ -368,51 +414,38 @@ Depois configure o Nginx com `deploy/nginx.conf` e gere o certificado com `certb
 
 ---
 
-## Backup
-
-```bash
-./scripts/backup.sh                       # Docker (padrão) — salva em ./backups
-MODO=local DATABASE_URL=... ./scripts/backup.sh   # sem Docker
-./scripts/restaurar.sh backups/prefichas-AAAA-MM-DD_HHMMSS.dump
-```
-
-Agende um backup diário no cron (`sudo crontab -e`):
-
-```
-0 2 * * * cd /opt/pre-fichas && ./scripts/backup.sh >> /var/log/pre-fichas-backup.log 2>&1
-```
-
-Os backups com mais de 30 dias são apagados (`MANTER_DIAS`). **Copie a pasta `backups/` para
-outro lugar** (outro servidor, HD externo) — backup no mesmo disco não protege contra falha do disco.
-
----
-
 ## Desenvolvimento
 
 ```bash
 npm install
-cp .env.example .env     # e defina DATABASE_URL apontando para um PostgreSQL local
+cp .env.example .env     # defina DATABASE_URL apontando para um PostgreSQL local
 npm run dev:api          # API em http://localhost:3000
 npm run dev              # site em http://localhost:5173 (repassa /api para a API)
 npm run usuarios -- criar-admin voce@email.com "Seu Nome"
 
-# Testes de integração (APAGAM o banco indicado — use um banco só para testes)
+# Testes de integração (APAGAM o banco indicado; use um banco só para testes)
 DATABASE_URL_TESTE=postgres://usuario:senha@localhost:5432/prefichas_teste npm test
+npm run test:gerenciador   # testes do painel central
 ```
 
 ## Estrutura
 
 ```
-index.html, admin/index.html   páginas (formulário e painel; o servidor aplica a marca)
-src/form/                      formulário público
-src/admin/                     fila, resumo, acampamentos, núcleos, usuários, configurações
+index.html, admin/index.html   páginas (participante e painel; o servidor aplica a marca)
+src/form/                      tela de entrada, conta do participante e formulário
+src/admin/                     painel do acampamento (fila, ficha, impressão, configurações…)
 shared/                        regras de validação, opções e marca (site E servidor)
-server/                        API (Fastify), sessões, senhas, marca, CLI
-marcas/                        identidade de cada acampamento (.json + logo)
+server/                        API (Fastify), contas, sessões, senhas, marca, e-mail, CLI
 server/migrations/             estrutura do banco (aplicada automaticamente)
 server/teste/                  testes de integração
+gerenciador/                   painel central da VM (servidor, interface, CLI de usuários, testes)
+marcas/                        modelo de identidade (.json + logo)
 deploy/                        Caddyfile, Caddyfile.multi, nginx.conf, serviço systemd
-scripts/                       novo-acampamento, atualizar, atualizador do painel, backup e restauração
+scripts/                       instalação, atualização, backup, proxy compartilhado, Cloudflare,
+                               VPN (FortiClient / strongSwan), executor e instalador do painel central
+instalar.sh                    instalador de um comando (painel central ou acampamento)
+docs/                          manual de uso, manual de instalação, análises de performance
+.github/workflows/imagem.yml   gera a imagem pronta a cada mudança na main
 Dockerfile, docker-compose.yml implantação com Docker
 ```
 
