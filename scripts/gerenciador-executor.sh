@@ -96,6 +96,7 @@ processar() { # arquivo do pedido
   alvo="$(jq -r '.instancia // .nome // "todas"' "$tmp" | head -c 120)"
   inicio="$(date -Iseconds)"; log="$TAREFAS/$id.log"; : > "$log"
   estado_tarefa "$id" "$acao" "$alvo" executando "Em andamento" "$por" "$inicio"
+  echo "▶ Tarefa $id: $acao · $alvo (por $por) — log: $log"
   case "$acao" in
     nova) acao_nova "$tmp" >> "$log" 2>&1 && ok=1 ;;
     atualizar) acao_atualizar "$(jq -r '.instancia // empty' "$tmp")" >> "$log" 2>&1 && ok=1 ;;
@@ -110,6 +111,7 @@ processar() { # arquivo do pedido
   if [ "$ok" = 1 ]; then estado_tarefa "$id" "$acao" "$alvo" concluida "$(grep -E '^✓' "$log" | tail -1)" "$por" "$inicio"
   else estado_tarefa "$id" "$acao" "$alvo" erro "$(grep -E '^✗' "$log" | tail -1 || echo 'Falhou')" "$por" "$inicio"; fi
   chmod 644 "$TAREFAS/$id.json" "$log"
+  echo "■ Tarefa $id terminou: $([ "$ok" = 1 ] && echo concluída || echo ERRO)"
   coletar
 }
 

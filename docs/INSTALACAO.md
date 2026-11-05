@@ -650,6 +650,13 @@ Para instalar o painel numa VM que já tem acampamentos: `sudo ./scripts/instala
   pedidos. O executor (`scripts/gerenciador-executor.sh`, via systemd) valida tudo de novo antes de agir.
 - **Nova instância pela Cloudflare** usa o token guardado na preparação do painel (passo 3 da etapa 1).
 
+**Acompanhar ao vivo (como um "verbose"):**
+```bash
+sudo /opt/prefichas-gerenciador/scripts/acompanhar.sh            # tarefas do painel (nova instância, atualizar…)
+sudo /opt/prefichas-gerenciador/scripts/acompanhar.sh tudo       # tarefas + serviço + proxy
+sudo /opt/prefichas-gerenciador/scripts/acompanhar.sh instancia prefichas-NOME   # logs de um acampamento
+```
+
 **Usuários do painel:**
 ```bash
 G=/var/lib/prefichas-gerenciador; C=$(pwd)/gerenciador
