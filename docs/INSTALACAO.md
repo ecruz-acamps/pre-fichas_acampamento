@@ -588,6 +588,94 @@ sudo ./scripts/vpn-fortinet.sh fechar-ssh   # 22 só a partir das redes da VPN; 
 **Emergência** (VPN fora do ar e SSH fechado): use o console da VM no provedor ou hipervisor e rode
 `sudo ./scripts/vpn-fortinet.sh abrir-ssh`.
 
+## 11e. Vários acampamentos na mesma VM (híbrido)
+
+Cada acampamento pode ser publicado de um jeito diferente na mesma VM. Rode o comando único uma vez para
+cada acampamento e escolha:
+
+1. **Cloudflare**: `NOME.movimentocampista.com.br`, pelo túnel. Não usa as portas 80/443.
+2. **Direto**: domínio próprio com registro A apontando para o IP público da VM. Todos os acampamentos
+   diretos usam **um único proxy HTTPS compartilhado** (`/opt/prefichas-proxy`, nas portas 80/443),
+   e o certificado de cada domínio é automático.
+3. **Só rede local**: pelo IP, numa porta livre (8180, 8181…), sem HTTPS.
+
+O instalador escolhe sozinho uma **porta local livre** para cada acampamento (3001, 3002…), sem repetir
+portas de outras instâncias, mesmo das que estiverem paradas. Cada acampamento tem banco, usuários,
+backups e marca próprios.
+
+```bash
+sudo /opt/prefichas-NOME/scripts/proxy-compartilhado.sh listar     # domínios diretos publicados
+```
+
+**Atenção:** acampamentos instalados antes desta versão no modo direto têm o próprio Caddy nas portas
+80/443, e isso impede o proxy compartilhado de subir. Para migrar um deles:
+`docker compose stop caddy`, coloque `COMPOSE_PROFILES=` no `.env`, rode `docker compose up -d` e depois
+`sudo ./scripts/proxy-compartilhado.sh adicionar DOMINIO PORTA_LOCAL`.
+
+## 11f. Painel central da VM e ordem de implantação
+
+**Ordem de implantação numa VM com vários acampamentos:**
+
+1. **Painel central primeiro**: rode o comando único e escolha **1) Painel central**:
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/ecruz-acamps/pre-fichas_acampamento/main/instalar.sh | sudo bash
+   ```
+   Ele prepara a VM e guarda as configurações que os acampamentos vão usar:
+   1. instala Docker e as ferramentas necessárias;
+   2. configura a **VPN (FortiClient)** de acesso remoto, se você quiser;
+   3. guarda o **domínio base e o token da Cloudflare**;
+   4. guarda o **e-mail do Let's Encrypt** (certificados dos acampamentos diretos);
+   5. guarda o **e-mail de envio** (Gmail com senha de app) usado em cada acampamento novo;
+   6. instala o **painel central** e cria o seu usuário (senha + chave do autenticador, mostradas uma vez).
+2. **Acampamentos depois**, pelo painel → aba **Nova instância**. Também dá para criar pelo comando único,
+   opção 2.
+
+Com vários acampamentos na mesma VM, o **painel central** mostra todas as instâncias (endereço,
+publicação, situação, versão e memória), cria **novas instâncias**, atualiza uma ou todas, faz backup,
+**atualiza o próprio painel** e registra tudo numa auditoria. Ele não mostra fichas de nenhum acampamento.
+
+Para instalar o painel numa VM que já tem acampamentos: `sudo ./scripts/instalar-gerenciador.sh`
+(variáveis `ESCUTAR`, `REDES_PERMITIDAS` e `ADMIN_EMAIL`).
+
+**Acesso:**
+- **Pela VPN:** `http://IP-DA-VM-NA-VPN:9090`.
+- **Pelo próprio servidor:** com um túnel SSH, `ssh -L 9090:127.0.0.1:9090 usuario@servidor`, e abra `http://localhost:9090`.
+
+**Segurança:**
+- O painel controla o servidor inteiro, então **nunca o publique na internet**. Ele recusa conexões de fora das
+  `REDES_PERMITIDAS`, mesmo que a porta esteja aberta, e o instalador não aceita `0.0.0.0/0`.
+- O login exige **senha e código de 6 dígitos**. Depois de 5 erros, o acesso fica bloqueado por 15 minutos.
+- A sessão expira após 2 horas sem uso.
+- O painel roda num container somente leitura, com usuário sem privilégio. Ele **não executa nada**: só grava
+  pedidos. O executor (`scripts/gerenciador-executor.sh`, via systemd) valida tudo de novo antes de agir.
+- **Nova instância pela Cloudflare** usa o token guardado na preparação do painel (passo 3 da etapa 1).
+
+**Usuários do painel:**
+```bash
+G=/var/lib/prefichas-gerenciador; C=$(pwd)/gerenciador
+docker run --rm -u 1000:1000 -e DADOS=/dados -v $C:/app:ro -v $G/dados:/dados -w /app node:22-alpine node cli.mjs criar-usuario outro@email
+#   comandos: criar-usuario | nova-senha | novo-autenticador | desativar | listar
+```
+
+## 11g. Versões e como ficar na versão 1
+
+- **`main`**: versão atual (2.x). É a que o comando único instala e a que o botão **Atualizações** acompanha.
+- **`v1`**: versão 1.0 preservada (um acampamento por instalação), só para correções pontuais.
+- O histórico de mudanças está em [`CHANGELOG.md`](../CHANGELOG.md).
+
+**Instalar a versão 1:**
+```bash
+curl -fsSL https://raw.githubusercontent.com/ecruz-acamps/pre-fichas_acampamento/v1/instalar.sh | sudo PREFICHAS_BRANCH=v1 bash
+```
+
+**Manter uma instalação existente na versão 1**, para o botão Atualizações não levar à 2.0:
+```bash
+cd /opt/prefichas-NOME
+sudo git fetch origin v1 && sudo git checkout v1
+echo 'ATUALIZACAO_BRANCH=v1' | sudo tee -a .env
+sudo docker compose up -d
+```
+
 ## 12. Solução de problemas
 
 **O site não abre / certificado HTTPS não é emitido**

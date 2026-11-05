@@ -23,6 +23,8 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
 > 📘 **Instalação passo a passo no Linux:** [`docs/INSTALACAO.md`](docs/INSTALACAO.md)
 > (preparar o servidor, domínio, HTTPS, vários acampamentos, backup, atualização e solução de problemas).
 
+> 📘 **Como usar o sistema:** [`docs/MANUAL-DE-USO.md`](docs/MANUAL-DE-USO.md) · **Como instalar:** [`docs/INSTALACAO.md`](docs/INSTALACAO.md)
+
 ## Telas
 
 > Capturas do sistema funcionando, com **dados fictícios** de demonstração.
@@ -243,6 +245,9 @@ feita pelo servidor — se ela falhar, a pessoa preenche o endereço à mão.
 ---
 
 ## Instalação (um único comando)
+
+> **Vários acampamentos na mesma VM?** Instale primeiro o **painel central** (opção 1 do instalador) e crie os
+> acampamentos pelo navegador. Veja [`docs/INSTALACAO.md`](docs/INSTALACAO.md), seção 11f.
 
 Num servidor Linux (Ubuntu ou Debian), rode:
 
