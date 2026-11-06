@@ -20,6 +20,12 @@ const ESCUTAR = process.env.ESCUTAR || '127.0.0.1'
 const PORTA = Number(process.env.PORTA || 9090)
 const REDES = (process.env.REDES_PERMITIDAS || '127.0.0.1/32').split(',').map((r) => r.trim()).filter(Boolean)
 const COOKIE = 'gerenciador_sessao'
+// Publicação na internet (pelo proxy HTTPS da VM): o painel continua escutando só em 127.0.0.1 e o proxy
+// (Caddy) entrega os pedidos. Nesse modo o cookie é "Secure", o domínio é conferido e o IP real do visitante
+// vem do proxy (só é aceito quando o pedido chega do próprio servidor).
+const PAINEL_DOMINIO = (process.env.PAINEL_DOMINIO || '').trim().toLowerCase()
+const PROXY_CONFIAVEL = process.env.PROXY_CONFIAVEL === 'true'
+const COOKIE_SEGURO = process.env.COOKIE_SEGURO === 'true'
 const SESSAO_MIN = 120
 
 // ------------------------------------------------------------------ utilidades
@@ -40,6 +46,20 @@ function permitido(ip) {
     const mascara = k === 0 ? 0 : (~0 << (32 - k)) >>> 0
     return ((n & mascara) >>> 0) === ((b & mascara) >>> 0)
   })
+}
+
+const ehLocal = (ip) => ip === '::1' || ip === '127.0.0.1' || ip === '::ffff:127.0.0.1'
+/** IP de quem está acessando. Atrás do proxy local, vale o último valor de X-Forwarded-For (o que o próprio proxy acrescentou). */
+function ipDoVisitante(req) {
+  const direto = req.socket.remoteAddress ?? ''
+  if (!PROXY_CONFIAVEL || !ehLocal(direto)) return direto
+  const ultimo = String(req.headers['x-forwarded-for'] ?? '').split(',').pop().trim()
+  return /^[0-9a-fA-F:.]{3,45}$/.test(ultimo) ? ultimo : direto
+}
+function hostPermitido(req) {
+  if (!PAINEL_DOMINIO) return true
+  const h = String(req.headers.host ?? '').toLowerCase().replace(/:\d+$/, '')
+  return h === PAINEL_DOMINIO || h === 'localhost' || h === '127.0.0.1' || h === '[::1]'
 }
 
 // ------------------------------------------------------------------ senha e TOTP
@@ -80,6 +100,13 @@ const ARQ_USUARIOS = join(DADOS, 'usuarios.json')
 const lerUsuarios = () => lerJson(ARQ_USUARIOS, [])
 const sessoes = new Map() // hash do token -> { email, expira }
 const falhas = new Map()  // email -> { n, ate }
+const falhasIp = new Map() // ip -> { n, ate }: limite por origem (além do limite por e-mail)
+const LIMITE_IP = 20
+setInterval(() => { // não deixa as tabelas crescerem sem limite
+  const agora = Date.now()
+  for (const t of [falhas, falhasIp]) for (const [k, v] of t) if (v.ate <= agora && (v.visto ?? 0) < agora - 15 * 60000) t.delete(k)
+  for (const [k, v] of sessoes) if (v.expira < agora) sessoes.delete(k)
+}, 10 * 60000).unref()
 const hashToken = (t) => createHash('sha256').update(t).digest('hex')
 function auditar(quem, acao, detalhes = {}) {
   appendFileSync(join(DADOS, 'auditoria.jsonl'), JSON.stringify({ ...detalhes, em: new Date().toISOString(), quem, acao }) + '\n', { mode: 0o600 })
@@ -157,6 +184,8 @@ const TIPOS = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; ch
 const CABECALHOS = {
   'Content-Security-Policy': "default-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
   'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY', 'Cache-Control': 'no-store',
+  'X-Robots-Tag': 'noindex, nofollow',
+  ...(COOKIE_SEGURO ? { 'Strict-Transport-Security': 'max-age=31536000' } : {}),
 }
 function responder(res, codigo, corpo, extra = {}) {
   res.writeHead(codigo, { ...CABECALHOS, 'Content-Type': 'application/json; charset=utf-8', ...extra })
@@ -169,8 +198,9 @@ async function lerCorpo(req) {
 }
 
 const servidor = createServer(async (req, res) => {
-  const ip = req.socket.remoteAddress ?? ''
-  if (!permitido(ip)) { res.writeHead(403, CABECALHOS); return res.end('Acesso negado.') }
+  const ip = ipDoVisitante(req)
+  if (!permitido(req.socket.remoteAddress ?? '')) { res.writeHead(403, CABECALHOS); return res.end('Acesso negado.') }
+  if (!hostPermitido(req)) { res.writeHead(421, CABECALHOS); return res.end('Endereço não atendido.') }
   const url = new URL(req.url, 'http://x')
   try {
     // ---------- arquivos do painel
@@ -188,6 +218,8 @@ const servidor = createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/login') {
       const c = await lerCorpo(req)
       const email = String(c.email ?? '').trim().toLowerCase().slice(0, 200)
+      const fi = falhasIp.get(ip)
+      if (fi && fi.ate > Date.now()) return responder(res, 429, { mensagem: 'Muitas tentativas. Aguarde 15 minutos.' })
       const f = falhas.get(email)
       if (f && f.ate > Date.now()) return responder(res, 429, { mensagem: 'Muitas tentativas. Aguarde 15 minutos.' })
       const usuarios = lerUsuarios()
@@ -197,18 +229,20 @@ const servidor = createServer(async (req, res) => {
       if (!okSenha || passo === null) {
         // conta as falhas; depois de um bloqueio vencido, recomeça do zero
         const n = (f && f.ate && f.ate <= Date.now() ? 0 : (f?.n ?? 0)) + 1
-        falhas.set(email, { n, ate: n >= 5 ? Date.now() + 15 * 60000 : 0 })
+        falhas.set(email, { n, ate: n >= 5 ? Date.now() + 15 * 60000 : 0, visto: Date.now() })
+        const ni = (fi && fi.ate && fi.ate <= Date.now() ? 0 : (fi?.n ?? 0)) + 1
+        falhasIp.set(ip, { n: ni, ate: ni >= LIMITE_IP ? Date.now() + 15 * 60000 : 0, visto: Date.now() })
         auditar(email || '(vazio)', 'login-recusado', { ip })
         return responder(res, 401, { mensagem: 'E-mail, senha ou código incorretos.' })
       }
-      falhas.delete(email)
+      falhas.delete(email); falhasIp.delete(ip)
       u.totp_ultimo = passo; u.ultimo_login = new Date().toISOString()
       gravarJson(ARQ_USUARIOS, usuarios)
       const token = randomBytes(32).toString('base64url')
       sessoes.set(hashToken(token), { email, expira: Date.now() + SESSAO_MIN * 60000 })
       auditar(email, 'login', { ip })
       return responder(res, 200, { ok: true, email }, {
-        'Set-Cookie': `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSAO_MIN * 60}${process.env.COOKIE_SEGURO === 'true' ? '; Secure' : ''}`,
+        'Set-Cookie': `${COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSAO_MIN * 60}${COOKIE_SEGURO ? '; Secure' : ''}`,
       })
     }
 
@@ -220,7 +254,7 @@ const servidor = createServer(async (req, res) => {
       const m = new RegExp(`${COOKIE}=([A-Za-z0-9_-]+)`).exec(req.headers.cookie ?? '')
       if (m) sessoes.delete(hashToken(m[1]))
       auditar(s.email, 'sair')
-      return responder(res, 200, { ok: true }, { 'Set-Cookie': `${COOKIE}=; Path=/; Max-Age=0` })
+      return responder(res, 200, { ok: true }, { 'Set-Cookie': `${COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${COOKIE_SEGURO ? '; Secure' : ''}` })
     }
     if (req.method === 'GET' && url.pathname === '/api/instancias') {
       return responder(res, 200, {
@@ -280,4 +314,4 @@ if (process.argv[1] && process.argv[1].endsWith('servidor.mjs')) {
   try { statSync(PEDIDOS); statSync(ESTADO) } catch { console.error('Pastas de pedidos/estado não encontradas.'); process.exit(1) }
   servidor.listen(PORTA, ESCUTAR, () => console.log(`Painel central em http://${ESCUTAR}:${PORTA} (redes permitidas: ${REDES.join(', ')})`))
 }
-export { servidor, validarPedido, permitido, conferirTotp, codigoTotp }
+export { servidor, validarPedido, permitido, conferirTotp, codigoTotp, ipDoVisitante }

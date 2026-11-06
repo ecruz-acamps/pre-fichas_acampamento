@@ -131,7 +131,12 @@ if [ "$INSTALAR" = painel ]; then
   perguntar ADMIN_EMAIL "Seu e-mail (usuário do painel central)"
   [ -n "${ADMIN_EMAIL:-}" ] || erro "Informe o e-mail do usuário do painel."
   export ADMIN_EMAIL
-  if [ ! -s /etc/prefichas/vpn-forticlient.env ] && [ -z "${REDES_PERMITIDAS:-}" ] && [ "$TEM_TTY" = 1 ]; then
+  if [ -z "${PAINEL_DOMINIO+x}" ] && [ "$TEM_TTY" = 1 ]; then
+    echo "O painel pode abrir pela internet em HTTPS (porta 443), sem VPN, protegido por senha + autenticador."
+    read -r -p "Domínio do painel (ex.: painel.exemplo.com.br; o DNS deve apontar para esta VM) — ENTER = só rede interna: " PAINEL_DOMINIO </dev/tty
+  fi
+  export PAINEL_DOMINIO="${PAINEL_DOMINIO:-}"
+  if [ -z "$PAINEL_DOMINIO" ] && [ ! -s /etc/prefichas/vpn-forticlient.env ] && [ -z "${REDES_PERMITIDAS:-}" ] && [ "$TEM_TTY" = 1 ]; then
     read -r -p "Redes que podem abrir o painel (ex.: 192.168.10.0/24) — ENTER = só pelo próprio servidor: " rp </dev/tty
     [ -n "$rp" ] && { export REDES_PERMITIDAS="127.0.0.1/32,${rp// /}"; export ESCUTAR=0.0.0.0; }
   fi

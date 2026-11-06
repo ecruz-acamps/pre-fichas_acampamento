@@ -656,14 +656,22 @@ acampamentos já publicados.
   FortiClient ainda não foi validada num servidor real. O painel mostra situação e Reconectar.
 - **Só pelo terminal, de propósito:** a **configuração inicial** da VPN e o **fechamento da porta 22**. Um erro neles pode deixar o servidor inacessível.
 
-**Acesso:**
-- **Pela VPN:** `http://IP-DA-VM-NA-VPN:9090`.
+**Acesso (a VPN é opcional):**
+- **Pela internet, na porta web normal (recomendado):** informe um domínio, por exemplo
+  `sudo PAINEL_DOMINIO=painel.seudominio.com.br ./scripts/instalar-gerenciador.sh` (o `instalar.sh` também pergunta).
+  O painel abre em `https://painel.seudominio.com.br`, com certificado do Let's Encrypt emitido sozinho pelo proxy
+  compartilhado da VM. O usuário e a senha já criados continuam valendo: não precisa recriar nada.
+  Requisitos: o DNS desse nome (registro A) aponta para o IP público da VM e as portas **80 e 443** chegam nela.
+  A porta 9090 deixa de ser exposta: o painel passa a escutar só em `127.0.0.1`.
+- **Pela VPN ou rede interna:** sem domínio, `http://IP-DA-VM:9090`, liberando as redes em `REDES_PERMITIDAS`.
 - **Pelo próprio servidor:** com um túnel SSH, `ssh -L 9090:127.0.0.1:9090 usuario@servidor`, e abra `http://localhost:9090`.
 
 **Segurança:**
-- O painel controla o servidor inteiro, então **nunca o publique na internet**. Ele recusa conexões de fora das
-  `REDES_PERMITIDAS`, mesmo que a porta esteja aberta, e o instalador não aceita `0.0.0.0/0`.
-- O login exige **senha e código de 6 dígitos**. Depois de 5 erros, o acesso fica bloqueado por 15 minutos.
+- O painel controla o servidor inteiro. Publicado na internet, ele só deixa entrar quem tem **senha e código do
+  autenticador**, e só responde no domínio configurado. Use senha forte, guarde o autenticador e mantenha poucos
+  usuários. Sem domínio, ele recusa conexões de fora das `REDES_PERMITIDAS`, e o instalador não aceita `0.0.0.0/0`.
+- O login exige **senha e código de 6 dígitos**. Depois de 5 erros no mesmo usuário, ou 20 erros da mesma origem
+  (IP), o acesso fica bloqueado por 15 minutos. Cookie `Secure`, HSTS e sem indexação por buscadores.
 - A sessão expira após 2 horas sem uso.
 - O painel roda num container somente leitura, com usuário sem privilégio. Ele **não executa nada**: só grava
   pedidos. O executor (`scripts/gerenciador-executor.sh`, via systemd) valida tudo de novo antes de agir.
