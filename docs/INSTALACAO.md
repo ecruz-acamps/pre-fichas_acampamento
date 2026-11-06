@@ -656,6 +656,8 @@ acampamentos já publicados.
 - É esse servidor que envia o link do **"Esqueci minha senha"**: do painel central, do painel de cada acampamento (administradores e equipe)
   e dos participantes. Em cada acampamento o link vale 1 hora e uma única vez; com a verificação em duas etapas ativa, também é preciso o
   código do aplicativo. No painel central o código do autenticador é sempre obrigatório.
+- **Painel central, sem e-mail:** a tela "Esqueci minha senha" também troca a senha direto, com o e-mail do usuário e o código atual do autenticador (código de uso único,
+  só o atual e o anterior, 3 erros travam o caminho por 1 hora, sessões derrubadas). Para desligar esse caminho: `REDEFINIR_POR_MFA: "false"` no `docker-compose.yml` do painel e `docker compose up -d`.
 - Quem perdeu a senha **e** o celular do autenticador no painel central usa o terminal (`cli.mjs nova-senha` e `novo-autenticador`); no acampamento, outro administrador redefine o acesso.
 
 **VPN pelo painel central (aba Configurações → "VPN do servidor"):**

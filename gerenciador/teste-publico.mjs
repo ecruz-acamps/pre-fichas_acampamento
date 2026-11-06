@@ -16,12 +16,17 @@ const m = await import('./servidor.mjs')
 let porta
 const SENHA = 'senha-forte-do-teste'
 let segredo, segredoRed
+const segMfa = {}
 before(async () => {
   segredo = m.novoSegredoTotp(); segredoRed = m.novoSegredoTotp()
   writeFileSync(join(base, 'dados', 'usuarios.json'), JSON.stringify([
     { email: 'adm@x.com', senha: await m.gerarHash(SENHA), totp: segredo, ativo: true },
     { email: 'red@x.com', senha: await m.gerarHash(SENHA), totp: segredoRed, ativo: true },
     { email: 'fora@x.com', senha: await m.gerarHash(SENHA), totp: m.novoSegredoTotp(), ativo: false },
+    ...(await Promise.all(['mfa1', 'mfa2', 'mfa3', 'mfa4', 'mfa5'].map(async (n) => {
+      segMfa[n] = m.novoSegredoTotp()
+      return { email: `${n}@x.com`, senha: await m.gerarHash(SENHA), totp: segMfa[n], ativo: true }
+    }))),
   ]))
   writeFileSync(join(base, 'estado', 'configuracoes.json'), JSON.stringify({ email: { configurado: true, host: 'smtp.exemplo.com' } }))
   await new Promise((r) => m.servidor.listen(0, '127.0.0.1', r))
@@ -142,4 +147,55 @@ test('esqueci minha senha: limite por origem e aviso quando o e-mail do servidor
   assert.equal(sem.status, 503)
   assert.match(JSON.parse(sem.corpo).mensagem, /não está configurada/)
   writeFileSync(join(base, 'estado', 'configuracoes.json'), JSON.stringify({ email: { configurado: true } }))
+})
+
+// ------------------------------------------------------------------ esqueci minha senha só com o código do autenticador
+const rmfa = (corpo, ip = '203.0.113.50') => chamar({ metodo: 'POST', caminho: '/api/redefinir-mfa', ip, corpo })
+const passoAgora = () => Math.floor(Date.now() / 30000)
+
+test('redefinir só com o código: senha nova, código de uso único, sessões antigas caem, senha antiga deixa de valer', async () => {
+  const n = 'mfa1'; const email = `${n}@x.com`; const passo = passoAgora()
+  const antigo = await login({ email, senha: SENHA, codigo: m.codigoTotp(segMfa[n], passo - 1) }, '203.0.113.51')
+  assert.equal(antigo.status, 200)
+  const cookie = antigo.headers['set-cookie'][0].split(';')[0]
+  assert.equal(JSON.parse((await chamar({ caminho: '/api/eu', extra: { cookie } })).corpo).email, email)
+
+  assert.equal((await rmfa({ email, codigo: m.codigoTotp(segMfa[n], passo), senha: 'curta' })).status, 400, 'senha fraca')
+  const ok = await rmfa({ email, codigo: m.codigoTotp(segMfa[n], passo), senha: 'senha-nova-so-mfa-123' })
+  assert.equal(ok.status, 200, ok.corpo)
+  assert.equal((await rmfa({ email, codigo: m.codigoTotp(segMfa[n], passo), senha: 'outra-senha-so-mfa-123' })).status, 401, 'o mesmo código não vale duas vezes')
+  assert.equal(JSON.parse((await chamar({ caminho: '/api/eu', extra: { cookie } })).corpo).email, null, 'a sessão antiga caiu')
+  assert.equal((await login({ email, senha: SENHA, codigo: m.codigoTotp(segMfa[n], passo + 1) }, '203.0.113.52')).status, 401, 'a senha antiga deixou de valer')
+  assert.equal((await login({ email, senha: 'senha-nova-so-mfa-123', codigo: m.codigoTotp(segMfa[n], passo + 1) }, '203.0.113.53')).status, 200, 'a senha nova vale')
+  const aud = readFileSync(join(base, 'dados', 'auditoria.jsonl'), 'utf8')
+  assert.match(aud, /senha-redefinida-mfa/); assert.doesNotMatch(aud, /senha-nova-so-mfa/)
+})
+
+test('redefinir só com o código: erro igual para usuário inexistente e código errado; só vale o código atual ou o anterior', async () => {
+  const passo = passoAgora()
+  const a = await rmfa({ email: 'mfa2@x.com', codigo: '000000', senha: 'senha-nova-so-mfa-123' }, '203.0.113.54')
+  const b = await rmfa({ email: 'naoexiste@x.com', codigo: '000000', senha: 'senha-nova-so-mfa-123' }, '203.0.113.54')
+  const c = await rmfa({ email: 'fora@x.com', codigo: '000000', senha: 'senha-nova-so-mfa-123' }, '203.0.113.54')
+  assert.deepEqual([a.status, b.status, c.status], [401, 401, 401]); assert.equal(a.corpo, b.corpo); assert.equal(a.corpo, c.corpo)
+  // o código do PRÓXIMO período (aceito no login) não vale aqui
+  assert.equal((await rmfa({ email: 'mfa3@x.com', codigo: m.codigoTotp(segMfa.mfa3, passo + 1), senha: 'senha-nova-so-mfa-123' }, '203.0.113.55')).status, 401)
+  // o do período anterior vale (quem digitou na virada do relógio)
+  assert.equal((await rmfa({ email: 'mfa3@x.com', codigo: m.codigoTotp(segMfa.mfa3, passo - 1), senha: 'senha-nova-so-mfa-123' }, '203.0.113.55')).status, 200)
+})
+
+test('redefinir só com o código: 3 erros travam a redefinição daquele usuário (até com o código certo), sem travar o login', async () => {
+  const n = 'mfa4'; const email = `${n}@x.com`; const passo = passoAgora()
+  for (let i = 0; i < 3; i++) assert.equal((await rmfa({ email, codigo: '111111', senha: 'senha-nova-so-mfa-123' }, `203.0.113.6${i}`)).status, 401)
+  const travado = await rmfa({ email, codigo: m.codigoTotp(segMfa[n], passo), senha: 'senha-nova-so-mfa-123' }, '203.0.113.69')
+  assert.equal(travado.status, 429)
+  // o login normal do mesmo usuário continua funcionando (contadores separados)
+  assert.equal((await login({ email, senha: SENHA, codigo: m.codigoTotp(segMfa[n], passo) }, '203.0.113.70')).status, 200)
+})
+
+test('redefinir só com o código: dois pedidos ao mesmo tempo com o mesmo código, só um vale; pode ser desligado', async () => {
+  const n = 'mfa5'; const email = `${n}@x.com`; const codigo = m.codigoTotp(segMfa[n], passoAgora())
+  const r = await Promise.all([rmfa({ email, codigo, senha: 'corrida-mfa-um-123' }, '203.0.113.71'), rmfa({ email, codigo, senha: 'corrida-mfa-dois-123' }, '203.0.113.72')])
+  assert.deepEqual(r.map((x) => x.status).sort(), [200, 401])
+  process.env.REDEFINIR_POR_MFA = 'false'
+  try { assert.equal((await rmfa({ email, codigo, senha: 'qualquer-senha-123456' }, '203.0.113.73')).status, 404) } finally { delete process.env.REDEFINIR_POR_MFA }
 })

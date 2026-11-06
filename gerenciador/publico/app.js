@@ -46,8 +46,34 @@ function telaEntrar() {
   app.replaceChildren(form)
 }
 
-// "Esqueci minha senha": o link chega por e-mail e, para entrar com a senha nova, ainda é preciso o código do autenticador.
+// "Esqueci minha senha", direto nesta tela: e-mail + código ATUAL do autenticador + senha nova.
+function telaSenhaAlterada() {
+  history.replaceState(null, '', location.pathname)   // tira qualquer token da barra de endereço
+  app.replaceChildren(h('div', { class: 'cartao entrar' }, h('h1', {}, 'Senha alterada'), h('p', {}, 'Você saiu de todos os aparelhos. Entre com a senha nova.'),
+    h('button', { class: 'principal', type: 'button', onclick: telaEntrar }, 'Ir para o login')))
+}
 function telaEsqueci() {
+  const aviso = h('div')
+  const form = h('form', { class: 'cartao entrar', onsubmit: async (e) => {
+    e.preventDefault(); aviso.replaceChildren()
+    const d = Object.fromEntries(new FormData(form))
+    if (d.senha !== d.confirmacao) return aviso.append(h('div', { class: 'alerta erro' }, 'A confirmação não confere com a senha nova.'))
+    try { await api('POST', '/api/redefinir-mfa', { email: d.email, codigo: d.codigo, senha: d.senha }); telaSenhaAlterada() } catch (err) { aviso.append(h('div', { class: 'alerta erro' }, err.message)) }
+  } },
+  h('h1', {}, 'Esqueci minha senha'),
+  h('p', { class: 'dica' }, 'Informe o seu e-mail, o código ATUAL do aplicativo autenticador e a senha nova. Não precisa de e-mail nem de VPN. Depois de trocar, você sai de todos os aparelhos.'),
+  h('div', { class: 'campo' }, h('label', { for: 'em' }, 'E-mail'), h('input', { id: 'em', name: 'email', type: 'email', required: true, autocomplete: 'username' })),
+  h('div', { class: 'campo' }, h('label', { for: 'cc' }, 'Código do autenticador'), h('input', { id: 'cc', name: 'codigo', inputmode: 'numeric', pattern: '[0-9]{6}', maxlength: '6', required: true, autocomplete: 'one-time-code' })),
+  h('div', { class: 'campo' }, h('label', { for: 'n1' }, 'Senha nova (mínimo 12 caracteres)'), h('input', { id: 'n1', name: 'senha', type: 'password', required: true, minlength: '12', maxlength: '200', autocomplete: 'new-password' })),
+  h('div', { class: 'campo' }, h('label', { for: 'n2' }, 'Repita a senha nova'), h('input', { id: 'n2', name: 'confirmacao', type: 'password', required: true, autocomplete: 'new-password' })),
+  aviso, h('button', { class: 'principal', type: 'submit' }, 'Trocar senha'),
+  h('p', { class: 'dica' }, h('button', { class: 'link', type: 'button', onclick: telaEntrar }, 'Voltar ao login'), ' · ',
+    h('button', { class: 'link', type: 'button', onclick: telaEsqueciEmail }, 'Prefiro receber um link por e-mail')),
+  h('p', { class: 'dica' }, 'Perdeu também o celular do autenticador? Peça a quem administra o servidor o comando novo-autenticador.'))
+  app.replaceChildren(form)
+}
+// Alternativa: o link chega por e-mail e, para entrar com a senha nova, ainda é preciso o código do autenticador.
+function telaEsqueciEmail() {
   const aviso = h('div')
   const form = h('form', { class: 'cartao entrar', onsubmit: async (e) => {
     e.preventDefault(); aviso.replaceChildren()
@@ -56,10 +82,10 @@ function telaEsqueci() {
       aviso.append(h('div', { class: 'alerta ok' }, r.mensagem))
     } catch (err) { aviso.append(h('div', { class: 'alerta erro' }, err.message)) }
   } },
-  h('h1', {}, 'Esqueci minha senha'), h('p', { class: 'dica' }, 'Informe o e-mail do seu usuário. Enviaremos um link para criar uma senha nova (você vai precisar do código do autenticador).'),
+  h('h1', {}, 'Receber link por e-mail'), h('p', { class: 'dica' }, 'Informe o e-mail do seu usuário. Enviaremos um link para criar uma senha nova (você vai precisar do código do autenticador).'),
   h('div', { class: 'campo' }, h('label', { for: 'em' }, 'E-mail'), h('input', { id: 'em', type: 'email', required: true, autocomplete: 'username' })),
   aviso, h('button', { class: 'principal', type: 'submit' }, 'Enviar link'),
-  h('p', { class: 'dica' }, h('button', { class: 'link', type: 'button', onclick: telaEntrar }, 'Voltar ao login'), ' · Perdeu também o celular do autenticador? Peça a quem administra o servidor o comando novo-autenticador.'))
+  h('p', { class: 'dica' }, h('button', { class: 'link', type: 'button', onclick: telaEsqueci }, 'Voltar')))
   app.replaceChildren(form)
 }
 function telaRedefinir(token) {
@@ -71,9 +97,7 @@ function telaRedefinir(token) {
     if (d.senha !== d.confirmacao) return aviso.append(h('div', { class: 'alerta erro' }, 'A confirmação não confere com a senha nova.'))
     try {
       await api('POST', '/api/redefinir', { token, senha: d.senha, codigo: d.codigo })
-      history.replaceState(null, '', location.pathname)   // tira o token da barra de endereço
-      app.replaceChildren(h('div', { class: 'cartao entrar' }, h('h1', {}, 'Senha alterada'), h('p', {}, 'Você saiu de todos os aparelhos. Entre com a senha nova.'),
-        h('button', { class: 'principal', type: 'button', onclick: telaEntrar }, 'Ir para o login')))
+      telaSenhaAlterada()
     } catch (err) { aviso.append(h('div', { class: 'alerta erro' }, err.message)) }
   } },
   h('h1', {}, 'Crie uma senha nova'),

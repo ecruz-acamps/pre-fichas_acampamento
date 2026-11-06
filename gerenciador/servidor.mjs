@@ -85,10 +85,10 @@ function codigoTotp(segredo, passo) {
   const h = createHmac('sha1', chave).update(msg).digest(); const o = h[h.length - 1] & 15
   return String(((h.readUInt32BE(o) & 0x7fffffff) % 1e6)).padStart(6, '0')
 }
-function conferirTotp(segredo, codigo, ultimo) {
+function conferirTotp(segredo, codigo, ultimo, janela = [0, -1, 1]) {
   if (!/^\d{6}$/.test(String(codigo ?? ''))) return null
   const agora = Math.floor(Date.now() / 30000)
-  for (const d of [0, -1, 1]) {
+  for (const d of janela) {
     const passo = agora + d
     if (passo > (ultimo ?? 0) && codigoTotp(segredo, passo) === String(codigo)) return passo
   }
@@ -102,6 +102,7 @@ const sessoes = new Map() // hash do token -> { email, expira }
 const falhas = new Map()  // email -> { n, ate }
 const falhasIp = new Map() // ip -> { n, ate }: limite por origem (além do limite por e-mail)
 const LIMITE_IP = 20
+const falhasReset = new Map() // e-mail -> { n, ate }: tentativas erradas na redefinição só com o código do autenticador
 const pedidosPorChave = new Map() // limite de pedidos de "esqueci minha senha": chave -> instantes
 /** true se a chave já passou de `max` pedidos na janela (e registra este pedido). */
 function excedeu(chave, max, janelaMs) {
@@ -119,7 +120,7 @@ function lerRedefinicoes() {
 }
 setInterval(() => { // não deixa as tabelas crescerem sem limite
   const agora = Date.now()
-  for (const t of [falhas, falhasIp]) for (const [k, v] of t) if (v.ate <= agora && (v.visto ?? 0) < agora - 15 * 60000) t.delete(k)
+  for (const t of [falhas, falhasIp, falhasReset]) for (const [k, v] of t) if (v.ate <= agora && (v.visto ?? 0) < agora - 15 * 60000) t.delete(k)
   for (const [k, v] of sessoes) if (v.expira < agora) sessoes.delete(k)
   for (const [k, l] of pedidosPorChave) if (!l.some((t) => t > agora - 3600000)) pedidosPorChave.delete(k)
 }, 10 * 60000).unref()
@@ -275,6 +276,43 @@ const servidor = createServer(async (req, res) => {
       })
       auditar(email, 'esqueci-senha', { ip })
       return responder(res, 200, resposta)
+    }
+    // ---------- esqueci minha senha SEM e-mail: e-mail + código ATUAL do autenticador + senha nova, tudo nesta tela.
+    // O código passa a ser a única barreira deste caminho, então ele é endurecido: só vale o código atual e o anterior,
+    // o código é de uso único, 3 erros travam a redefinição daquele usuário por 1 hora (o login normal não é afetado) e
+    // trocar a senha derruba todas as sessões. Desligar: REDEFINIR_POR_MFA=false.
+    if (req.method === 'POST' && url.pathname === '/api/redefinir-mfa') {
+      if (process.env.REDEFINIR_POR_MFA === 'false') return responder(res, 404, { mensagem: 'Não encontrado.' })
+      const c = await lerCorpo(req)
+      if (excedeu(`rmfa-ip:${ip}`, 10, 15 * 60000)) return responder(res, 429, { mensagem: 'Muitas tentativas. Aguarde 15 minutos.' })
+      const email = String(c.email ?? '').trim().toLowerCase().slice(0, 200)
+      const senha = String(c.senha ?? '')
+      if (senha.length < 12 || senha.length > 200) return responder(res, 400, { mensagem: 'A senha nova deve ter de 12 a 200 caracteres.' })
+      const f = falhasReset.get(email)
+      if (f && f.ate > Date.now()) {
+        return responder(res, 429, { mensagem: 'Muitas tentativas para este usuário. Aguarde 1 hora ou peça a quem administra o servidor uma senha nova (comando nova-senha).' })
+      }
+      const u0 = lerUsuarios().find((x) => x.email === email && x.ativo !== false)
+      // usuário inexistente e código errado dão exatamente a mesma resposta
+      const passo = u0 ? conferirTotp(u0.totp, c.codigo, u0.totp_ultimo, [0, -1]) : null
+      if (passo === null) {
+        const n = (f && f.ate && f.ate <= Date.now() ? 0 : (f?.n ?? 0)) + 1
+        falhasReset.set(email, { n, ate: n >= 3 ? Date.now() + 3600000 : 0, visto: Date.now() })
+        auditar(email || '(vazio)', 'redefinicao-mfa-recusada', { ip })
+        return responder(res, 401, { mensagem: 'E-mail ou código do autenticador incorretos.' })
+      }
+      // consome o código ANTES de qualquer espera: dois pedidos com o mesmo código não passam os dois
+      const usuarios1 = lerUsuarios(); const u1 = usuarios1.find((x) => x.email === email)
+      if (!(passo > (u1.totp_ultimo ?? 0))) return responder(res, 401, { mensagem: 'E-mail ou código do autenticador incorretos.' })
+      u1.totp_ultimo = passo; gravarJson(ARQ_USUARIOS, usuarios1)
+      const hash = await gerarHash(senha)
+      const usuarios = lerUsuarios(); const u = usuarios.find((x) => x.email === email)
+      u.senha = hash
+      gravarJson(ARQ_USUARIOS, usuarios)
+      for (const [k, v] of sessoes) if (v.email === email) sessoes.delete(k)   // sai de todos os aparelhos
+      falhasReset.delete(email); falhas.delete(email)
+      auditar(email, 'senha-redefinida-mfa', { ip })
+      return responder(res, 200, { ok: true })
     }
     if (req.method === 'POST' && url.pathname === '/api/redefinir') {
       const c = await lerCorpo(req)

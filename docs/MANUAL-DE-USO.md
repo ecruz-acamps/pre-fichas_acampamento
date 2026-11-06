@@ -271,7 +271,9 @@ hora, sem reiniciar.
 - **Administrador ou equipe do acampamento:** na tela de login do painel (`/admin/`), "Esqueci minha senha", informe o e-mail do usuário e abra o link
   que chega por e-mail (vale 1 hora, uma vez). Se você usa o aplicativo autenticador, digite o código dele também. Perdeu o celular do autenticador? Peça a um administrador para
   redefinir o seu acesso (isso desliga as duas etapas para você ativar de novo).
-- **Painel central:** na tela de entrada, "Esqueci minha senha"; o link chega por e-mail e, para salvar a senha nova (12+ caracteres), é preciso o código do autenticador.
+- **Painel central:** na tela de entrada, "Esqueci minha senha": informe o e-mail, o **código atual do aplicativo autenticador** e a senha nova (12+ caracteres).
+  Não precisa de e-mail configurado. Errou o código 3 vezes? A redefinição daquele usuário fica travada por 1 hora (o login normal continua livre). Se preferir, use
+  "Prefiro receber um link por e-mail" (precisa do servidor de e-mail configurado e também do código do autenticador).
 - Se aparecer que a recuperação "ainda não foi configurada", falta cadastrar o servidor de e-mail: painel central → Configurações → "Servidor de e-mail".
 
 ### Servidor de e-mail pela interface

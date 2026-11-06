@@ -5,8 +5,12 @@
 - **Esqueci minha senha no painel do acampamento** (administradores e equipe): o login tem o link; o e-mail leva um link que vale
   1 hora e uma única vez. Com a verificação em duas etapas ativa, o link sozinho não basta: é preciso também o código do
   aplicativo (a recuperação não desliga as duas etapas). Ao trocar a senha, a pessoa sai de todos os aparelhos.
-- **Esqueci minha senha no painel central da VM:** link por e-mail **mais o código do autenticador (obrigatório)**; senha nova com
-  12+ caracteres; limite de pedidos por origem e por e-mail; o executor só envia para usuário ativo do painel e só com link no formato esperado.
+- **Esqueci minha senha no painel central da VM, na própria tela:** e-mail + **código atual do autenticador** + senha nova (12+ caracteres),
+  sem precisar de e-mail nem de VPN. Como o código passa a ser a única barreira desse caminho, ele é endurecido: vale só o código atual ou o
+  anterior, uso único (mesmo com pedidos simultâneos), 3 erros travam a redefinição daquele usuário por 1 hora (o login normal não é afetado),
+  resposta igual para usuário inexistente e código errado, e a troca derruba todas as sessões. Pode ser desligado com `REDEFINIR_POR_MFA=false`.
+- **Alternativa por e-mail** no painel central ("Prefiro receber um link por e-mail"): link + código do autenticador; o executor só envia para
+  usuário ativo do painel e só com link no formato esperado.
 - **Servidor de e-mail pela interface** (painel central → Configurações → "Servidor de e-mail"): servidor, porta, usuário, senha de app
   e remetente. O servidor **envia um e-mail de teste antes de guardar**; a senha fica só num arquivo do administrador do sistema e nunca volta
   para a tela, a auditoria ou o log. Há "Enviar e-mail de teste", "Aplicar aos acampamentos" (grava nos já criados) e "Remover".
