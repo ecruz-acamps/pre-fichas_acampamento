@@ -68,7 +68,8 @@ As etapas 2 a 5 podem ser puladas com ENTER e configuradas depois. O **token da 
 
 ### Passo 2 — Acampamentos
 
-Pela VPN, abra `http://IP-DA-VM-NA-VPN:9090`, entre com a senha e o código do autenticador e use a aba
+Abra o painel (no endereço HTTPS informado na instalação, por exemplo `https://painel.seudominio.com.br`, **sem VPN**; ou
+`http://IP-DA-VM:9090` na rede interna), entre com a senha e o código do autenticador e use a aba
 **Nova instância**: nome, publicação, administrador e chave de ativação (opcional). A criação leva alguns
 minutos. Ao final aparece o endereço e a **senha temporária** do administrador do acampamento.
 
@@ -394,7 +395,7 @@ Para manter um servidor existente na 1.0, veja a seção 11g do [manual de insta
 **Segurança**
 - As regras valem no servidor, inclusive o que cada papel enxerga. A data da inscrição é protegida pelo banco e a auditoria não pode ser alterada.
 - Senhas com scrypt, verificação em duas etapas (obrigatória no painel central), bloqueio por tentativas, cookies `HttpOnly`/`SameSite=Strict`, proteção CSRF e CSP.
-- O painel central só abre pela VPN ou pelo próprio servidor e **não executa nada sozinho**: um executor do sistema valida cada pedido antes de agir.
+- O painel central pode abrir pela internet em HTTPS (porta 443, **sem VPN**), protegido por senha + autenticador obrigatório, bloqueio por usuário e por IP, cookie `Secure` e HSTS; ele **não executa nada sozinho**: um executor do sistema valida cada pedido antes de agir.
 - Banco e aplicações não ficam expostos; imagens enviadas são conferidas (SVG com script é recusado); dados pessoais na impressão e na exportação seguem as boas práticas da LGPD descritas no manual.
 
 **Performance** (medido com 20 mil fichas)

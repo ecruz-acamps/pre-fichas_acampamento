@@ -1,5 +1,14 @@
 # Histórico de versões
 
+## 2.2.0 — painel central sem depender de VPN
+
+- **O painel central abre pela porta web normal (HTTPS, 443)**, com domínio próprio e certificado do Let's Encrypt emitido
+  sozinho pelo proxy compartilhado da VM: `PAINEL_DOMINIO=painel.seudominio.com.br ./scripts/instalar-gerenciador.sh`
+  (o `instalar.sh` também pergunta). Os usuários existentes continuam valendo. A VPN passa a ser opcional.
+- Segurança do painel publicado: ele escuta só em `127.0.0.1` (a porta 9090 não fica exposta), responde só no domínio
+  configurado, cookie `Secure`, HSTS, sem indexação, IP real do visitante na auditoria (só aceito vindo do proxy local) e
+  **bloqueio por origem (20 erros em 15 min)** além do bloqueio por usuário. Senha + autenticador continuam obrigatórios.
+
 ## 2.1.0 — modalidade Casais
 
 - **Nova modalidade Casais.** Ao escolhê-la, o formulário pede o **CPF do cônjuge**. A inscrição é **recusada** se o cônjuge
