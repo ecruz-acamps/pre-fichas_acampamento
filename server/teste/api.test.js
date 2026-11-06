@@ -14,6 +14,7 @@ import { invalidarMarca } from '../marca.js'
 import { esquecerLicenca, gerarHashChave } from '../licenca.js'
 import { _codigoNoPasso, passoAtual } from '../totp.js'
 import { gerarHash } from '../senha.js'
+import { modalidadesCompativeis } from '../../shared/util.js'
 
 const URL_TESTE = process.env.DATABASE_URL_TESTE
 const pular = !URL_TESTE && 'defina DATABASE_URL_TESTE para rodar os testes de integração'
@@ -1047,6 +1048,157 @@ describe('API', { skip: pular }, () => {
       assert.equal((await req('admin', 'PUT', '/api/admin/marca', { ...atual, impressaoTitulo: 'x'.repeat(81) })).statusCode, 400)
       assert.equal((await app.inject({ method: 'DELETE', url: '/api/admin/marca/logo-impressao', headers: como('admin') })).statusCode, 200)
       assert.equal((await app.inject({ method: 'GET', url: '/api/marca' })).json().logoImpressaoUrl, null)
+    })
+  })
+
+
+  // ------------------------------------------------------------------ modalidade Casais
+  describe('modalidade Casais', () => {
+    const gerarCpf = (base) => {
+      const d = base.split('').map(Number)
+      const dv = (n) => { let t = 0; for (let i = 0; i < n; i++) t += d[i] * (n + 1 - i); const r = (t * 10) % 11; return r === 10 ? 0 : r }
+      d.push(dv(9)); d.push(dv(10)); return d.join('')
+    }
+    const mascara = (c) => `${c.slice(0, 3)}.${c.slice(3, 6)}.${c.slice(6, 9)}-${c.slice(9)}`
+    const comoConta = (cookie) => (method, url, payload) => app.inject({ method, url, payload, headers: { ...H, cookie } })
+    let campSenior, campJuvenil
+    const marcaAtual = async () => (await app.inject({ method: 'GET', url: '/api/marca' })).json()
+    const exigeSenior = async (valor) => {
+      const r = await req('admin', 'PUT', '/api/admin/marca', { ...(await marcaAtual()), casaisExigeSenior: valor })
+      assert.equal(r.statusCode, 200)
+    }
+    // conta + ficha ligada ao CPF; se `camp` for informado, a pessoa passa a ser campista daquela edição
+    async function pessoa({ nome, base, camp = null, casado = true }) {
+      const cpf = gerarCpf(base), email = `${cpf}@casais.teste`
+      const c = await app.inject({ method: 'POST', url: '/api/conta/cadastro', headers: H, payload: { cpf, email, senha: 'senha-casais-1' } })
+      assert.equal(c.statusCode, 201, c.body)
+      const ck = c.cookies.find((x) => x.name === 'prefichas_conta')
+      const cookie = `${ck.name}=${ck.value}`
+      let id = null
+      if (camp) {
+        await enviar({ nome_completo: nome, email, estado_civil: casado ? 'casado' : 'solteiro' })
+        id = await idPorNome(nome)
+        const { rows: [part] } = await pool.query('select id from participantes where cpf = $1', [cpf])
+        await pool.query('update pre_fichas set cpf = $1, participante_id = $2 where id = $3', [cpf, part.id, id])
+        const reg = await req('admin', 'PUT', `/api/admin/acampamentos/${camp}/participantes/${id}`, { tribo: 'Azul' })
+        assert.ok(reg.statusCode < 300, reg.body)
+      }
+      return { cpf, email, cookie, id, api: comoConta(cookie) }
+    }
+    const inscrever = (quem, conjuge, extra = {}) => quem.api('POST', '/api/conta/pre-ficha', {
+      ...FICHA, nome_completo: extra.nome ?? 'Casal Inscrito', email: quem.email, estado_civil: 'casado', modalidade: 'casais',
+      conjuge_cpf: mascara(conjuge), ...extra.campos,
+    })
+
+    before(async () => {
+      const a = await req('admin', 'POST', '/api/admin/acampamentos', { numero: 90, modalidade: 'senior' })
+      const b = await req('admin', 'POST', '/api/admin/acampamentos', { numero: 91, modalidade: 'juvenil' })
+      assert.equal(a.statusCode, 201, a.body)
+      campSenior = a.json().id ?? a.json().acampamento?.id
+      campJuvenil = b.json().id ?? b.json().acampamento?.id
+    })
+    after(() => exigeSenior(true))
+
+    test('Casais é compatível só para casado(a)/união estável com 18+; a marca começa exigindo o Sênior', async () => {
+      assert.ok(modalidadesCompativeis(35, 'casado').includes('casais'))
+      assert.ok(modalidadesCompativeis(25, 'uniao_estavel').includes('casais'))
+      assert.ok(!modalidadesCompativeis(35, 'solteiro').includes('casais'))
+      assert.ok(!modalidadesCompativeis(17, 'casado').includes('casais'))
+      assert.equal((await marcaAtual()).casaisExigeSenior, true)
+    })
+
+    test('configuração: o administrador liga e desliga "precisa do Sênior?"; equipe não altera', async () => {
+      assert.equal((await req('equipe', 'PUT', '/api/admin/marca', { ...(await marcaAtual()), casaisExigeSenior: false })).statusCode, 403)
+      await exigeSenior(false)
+      assert.equal((await marcaAtual()).casaisExigeSenior, false)
+      await exigeSenior(true)
+      assert.equal((await marcaAtual()).casaisExigeSenior, true)
+    })
+
+    test('sem conta (formulário público) a inscrição de Casais é recusada', async () => {
+      const r = await enviar({ nome_completo: 'Sem Conta Casal', estado_civil: 'casado', modalidade: 'casais', conjuge_cpf: mascara(gerarCpf('111222333')) })
+      assert.equal(r.statusCode, 400)
+      assert.match(r.json().erros.modalidade, /entre na sua conta/)
+    })
+
+    test('exigindo o Sênior: o inscrito precisa ter feito o Sênior; CPF do cônjuge é obrigatório e válido', async () => {
+      const conjuge = await pessoa({ nome: 'Cônjuge Sênior Um', base: '200100301', camp: campSenior })
+      const sem = await pessoa({ nome: 'Sem Sênior', base: '200100302' })
+      const r = await inscrever(sem, conjuge.cpf)
+      assert.equal(r.statusCode, 400)
+      assert.match(r.json().erros.modalidade, /feito o Sênior/)
+      const ok = await pessoa({ nome: 'Inscrito Sênior Um', base: '200100303', camp: campSenior })
+      const faltando = await ok.api('POST', '/api/conta/pre-ficha', { ...FICHA, nome_completo: 'Casal Faltando', email: ok.email, estado_civil: 'casado', modalidade: 'casais' })
+      assert.equal(faltando.statusCode, 400); assert.match(faltando.json().erros.conjuge_cpf, /Informe o CPF/)
+      const invalido = await inscrever(ok, '12345678900')
+      assert.equal(invalido.statusCode, 400); assert.match(invalido.json().erros.conjuge_cpf, /inválido/)
+      const proprio = await inscrever(ok, ok.cpf)
+      assert.equal(proprio.statusCode, 400); assert.match(proprio.json().erros.conjuge_cpf, /diferente do seu/)
+    })
+
+    test('o cônjuge precisa ser campista (e, se exigido, do Sênior); a recusa não revela quem é campista', async () => {
+      const inscrito = await pessoa({ nome: 'Inscrito Sênior Dois', base: '200100304', camp: campSenior })
+      const soJuvenil = await pessoa({ nome: 'Cônjuge Só Juvenil', base: '200100305', camp: campJuvenil })
+      const naoExiste = gerarCpf('200100399')
+      const a = await inscrever(inscrito, soJuvenil.cpf, { nome: 'Casal A' })
+      const b = await inscrever(inscrito, naoExiste, { nome: 'Casal B' })
+      assert.equal(a.statusCode, 400); assert.equal(b.statusCode, 400)
+      // mesma mensagem para "campista de outra modalidade" e "CPF desconhecido"
+      assert.equal(a.json().erros.conjuge_cpf, b.json().erros.conjuge_cpf)
+      assert.match(a.json().erros.conjuge_cpf, /campista cadastrado/)
+      assert.equal((await pool.query(`select count(*)::int n from pre_fichas where modalidade = 'casais' and cpf = $1`, [inscrito.cpf])).rows[0].n, 0)
+    })
+
+    test('casal válido: grava o CPF do cônjuge, registra no histórico, impede o cônjuge de duplicar e trava a edição', async () => {
+      const marido = await pessoa({ nome: 'Marido Sênior', base: '200100306', camp: campSenior })
+      const esposa = await pessoa({ nome: 'Esposa Sênior', base: '200100307', camp: campSenior })
+      const r = await inscrever(marido, esposa.cpf, { nome: 'Marido Sênior' })
+      assert.equal(r.statusCode, 201, r.body)
+      const { rows: [f] } = await pool.query(`select id, modalidade, conjuge_cpf, cpf from pre_fichas where cpf = $1 and modalidade = 'casais'`, [marido.cpf])
+      assert.equal(f.conjuge_cpf, esposa.cpf)
+      const { rows: hist } = await pool.query(`select observacao from pre_fichas_historico where pre_ficha_id = $1 and observacao like 'Inscrição de casal%'`, [f.id])
+      assert.equal(hist.length, 1)
+      assert.match(hist[0].observacao, new RegExp(`terminado em ${esposa.cpf.slice(-2)}`)); assert.doesNotMatch(hist[0].observacao, new RegExp(esposa.cpf))
+      // o cônjuge não inscreve o mesmo casal de novo
+      const dup = await inscrever(esposa, marido.cpf, { nome: 'Esposa Sênior' })
+      assert.equal(dup.statusCode, 400); assert.match(dup.json().erros.modalidade, /já fez a inscrição de casais/)
+      // a área do participante não troca modalidade nem CPF do cônjuge
+      const ed = await marido.api('PUT', '/api/conta/dados', { ...FICHA, nome_completo: 'Marido Sênior', email: marido.email, estado_civil: 'casado', modalidade: 'senior', conjuge_cpf: mascara(gerarCpf('200100398')), logradouro: 'Rua Nova' })
+      assert.equal(ed.statusCode, 200, ed.body)
+      const { rows: [g] } = await pool.query('select modalidade, conjuge_cpf, logradouro from pre_fichas where id = $1', [f.id])
+      assert.equal(g.modalidade, 'casais'); assert.equal(g.conjuge_cpf, esposa.cpf); assert.equal(g.logradouro, 'Rua Nova')
+      // o painel mostra o CPF do cônjuge ao admin
+      const det = (await req('admin', 'GET', `/api/admin/pre-fichas/${f.id}`)).json()
+      assert.equal(det.conjuge_cpf, esposa.cpf); assert.equal(det.modalidade, 'casais')
+    })
+
+    test('não exigindo o Sênior: vale qualquer campista como cônjuge e o inscrito não precisa ter feito o Sênior', async () => {
+      await exigeSenior(false)
+      try {
+        const conjuge = await pessoa({ nome: 'Cônjuge Juvenil Dois', base: '200100308', camp: campJuvenil })
+        const inscrito = await pessoa({ nome: 'Inscrito Sem Sênior', base: '200100309' })
+        const ok = await inscrever(inscrito, conjuge.cpf, { nome: 'Casal Sem Regra' })
+        assert.equal(ok.statusCode, 201, ok.body)
+        // continua exigindo que o cônjuge seja campista cadastrado
+        const outro = await pessoa({ nome: 'Outro Sem Sênior', base: '200100310' })
+        const naoCampista = await pessoa({ nome: 'Não Campista', base: '200100311' })
+        const recusa = await inscrever(outro, naoCampista.cpf, { nome: 'Casal Recusado' })
+        assert.equal(recusa.statusCode, 400); assert.match(recusa.json().erros.conjuge_cpf, /campista cadastrado/)
+        assert.doesNotMatch(recusa.json().erros.conjuge_cpf, /Sênior/)
+      } finally { await exigeSenior(true) }
+    })
+
+    test('conta informa se já fez o Sênior; tentativas erradas de CPF de cônjuge têm limite', async () => {
+      const fez = await pessoa({ nome: 'Fez Sênior Limite', base: '200100312', camp: campSenior })
+      const nao = await pessoa({ nome: 'Não Fez Limite', base: '200100313' })
+      assert.equal((await fez.api('GET', '/api/conta/eu')).json().fezSenior, true)
+      assert.equal((await nao.api('GET', '/api/conta/eu')).json().fezSenior, false)
+      for (let i = 0; i < 5; i++) {
+        const r = await inscrever(fez, gerarCpf(`30010030${i}`), { nome: 'Tentativa Limite' })
+        assert.equal(r.statusCode, 400, `tentativa ${i + 1}`)
+      }
+      const bloqueada = await inscrever(fez, gerarCpf('300100309'), { nome: 'Tentativa Limite' })
+      assert.equal(bloqueada.statusCode, 429)
     })
   })
 

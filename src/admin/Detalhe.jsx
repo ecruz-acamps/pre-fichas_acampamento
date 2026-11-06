@@ -301,6 +301,7 @@ export default function Detalhe({ ficha: resumo, marca, usuario, todas = [], pos
           <h3>Acampamento</h3>
           <dl className="grade">
             <Item rotulo="Modalidade">{rotuloDe(MODALIDADES, f.modalidade)}</Item>
+            {f.conjuge_cpf && <Item rotulo="CPF do cônjuge (Casais)">{mascaraCpf(f.conjuge_cpf)} <small className="dica">confirmado como campista na inscrição</small></Item>}
             <Item rotulo="Como conheceu">{f.como_conheceu}</Item>
           </dl>
           <dl>

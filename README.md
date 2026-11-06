@@ -151,6 +151,23 @@ Para manter um servidor existente na 1.0, veja a seção 11g do [manual de insta
 </table>
 
 <details>
+<summary><strong>Modalidade Casais</strong></summary>
+
+<p><em>Ao escolher Casais, o formulário pede o CPF do cônjuge</em><br />
+<img src="docs/imagens/45-casais-campo-cpf-do-conjuge.webp" alt="Campo do CPF do cônjuge na modalidade Casais" width="300" /></p>
+
+<p><em>Cônjuge que não é campista cadastrado: a inscrição é recusada (mensagem neutra)</em><br />
+<img src="docs/imagens/46-casais-recusa-conjuge-nao-campista.webp" alt="Recusa quando o cônjuge não é campista" width="300" /></p>
+
+<p><em>Quando o acampamento exige o Sênior, a opção só abre para quem já fez</em><br />
+<img src="docs/imagens/47-casais-bloqueado-sem-senior.webp" alt="Casais bloqueado para quem não fez o Sênior" width="300" /></p>
+
+<p><em>Configurações: "Para a modalidade Casais é necessário ter feito o Sênior?" Sim ou Não</em><br />
+<img src="docs/imagens/48-configuracoes-casais.webp" alt="Menu Sim/Não nas Configurações" /></p>
+
+</details>
+
+<details>
 <summary><strong>Participante: entrada, conta e área</strong></summary>
 
 <p><em>Tela de entrada (página inicial)</em><br />
@@ -333,6 +350,7 @@ Para manter um servidor existente na 1.0, veja a seção 11g do [manual de insta
 **Formulário da pré-ficha**
 - Dados pessoais, religiosos, contato, endereço (o CEP preenche sozinho), acampamento, saúde e declarações configuráveis. O texto aceito fica gravado na ficha.
 - Modalidade validada pela idade e pelo estado civil; responsável para menores de 18 anos.
+- **Modalidade Casais:** pede o **CPF do cônjuge**, que precisa já ser campista cadastrado no sistema (senão a inscrição é recusada). Em Configurações, o administrador escolhe se **os dois precisam ter feito o Sênior** (Sim ou Não, conforme a regra de cada acampamento).
 - Proteção contra robôs, limites de envio e CAPTCHA opcional.
 
 **Fila de espera (painel)**

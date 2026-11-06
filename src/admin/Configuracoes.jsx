@@ -4,7 +4,7 @@ import { carregarMarca, TextoMarca } from '../lib/marca.jsx'
 import { ajustarCor, corTextoSobre } from '../../shared/marca.js'
 
 const CAMPOS_EXPORTADOS = ['nome', 'nomeCurto', 'corPrimaria', 'whatsapp', 'email', 'instagram', 'site',
-  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila', 'edicoesPreferenciaConjuge', 'preferenciaConjuge', 'mostrarPosicaoFila', 'impressaoTitulo', 'impressaoSubtitulo', 'impressaoTextoDireita']
+  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila', 'edicoesPreferenciaConjuge', 'preferenciaConjuge', 'casaisExigeSenior', 'mostrarPosicaoFila', 'impressaoTitulo', 'impressaoSubtitulo', 'impressaoTextoDireita']
 
 /** Publicação na internet pela Cloudflare: o administrador liga ou desliga. */
 function Publicacao({ nomeCurto }) {
@@ -426,6 +426,18 @@ export default function Configuracoes({ marca, onSalvar }) {
               </div>
               <small className="dica">PNG, JPG, WEBP ou SVG até 1 MB. Os textos são salvos com o botão "Salvar configurações".</small>
             </div>
+          </section>
+
+          <section>
+            <h2>Modalidade Casais</h2>
+            <Campo id="cfg-casais" rotulo="Para a modalidade Casais é necessário ter feito o Sênior?"
+              dica="Sim: quem se inscreve e o cônjuge precisam já ter feito o Sênior. Não: basta o cônjuge já ser campista cadastrado (de qualquer modalidade). Em ambos os casos, o cônjuge precisa já estar cadastrado como campista no sistema. A regra varia de acampamento para acampamento.">
+              <select id="cfg-casais" value={m.casaisExigeSenior === false ? 'nao' : 'sim'}
+                onChange={(e) => setM({ ...m, casaisExigeSenior: e.target.value === 'sim' })}>
+                <option value="sim">Sim: os dois precisam ter feito o Sênior</option>
+                <option value="nao">Não: não é obrigatório</option>
+              </select>
+            </Campo>
           </section>
 
           <section>

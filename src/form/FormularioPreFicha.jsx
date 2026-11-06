@@ -5,7 +5,7 @@ import {
   COMO_CONHECEU, ESTADOS_CIVIS, MODALIDADES, RELIGIOES, SEXOS, UFS,
 } from '../../shared/opcoes.js'
 import {
-  calcularIdade, mascaraCep, mascaraTelefone, modalidadesCompativeis, somenteDigitos,
+  calcularIdade, mascaraCep, mascaraCpf, mascaraTelefone, modalidadesCompativeis, somenteDigitos,
 } from '../../shared/util.js'
 import { INICIAL, temConjuge, validar } from '../../shared/validacao.js'
 
@@ -67,7 +67,7 @@ function SimNao({ id, rotulo, valor, onChange, erro }) {
 /**
  * modo: 'anonimo' (sem conta), 'nova' (inscrição pela conta) ou 'editar' (alterar os próprios dados).
  */
-export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = null, jaFeitas = [], onConcluido, onCancelar }) {
+export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = null, jaFeitas = [], fezSenior = false, onConcluido, onCancelar }) {
   const editar = modo === 'editar'
   const [f, setF] = useState(() => ({ ...INICIAL, ...(inicial ?? {}), aceites: [], website: '' }))
   const [erros, setErros] = useState({})
@@ -394,21 +394,32 @@ export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = 
           <div className="modalidades">
             {MODALIDADES.map((m) => {
               const jaFez = feitas.includes(m.valor)
-              const desabilitada = jaFez || (idade != null && !compativeis.includes(m.valor))
+              // Casais só pela conta (o servidor confere o CPF do cônjuge) e, se o acampamento exigir, só para quem fez o Sênior
+              const motivoCasais = m.valor !== 'casais' ? '' : modo !== 'nova' ? 'entre na sua conta'
+                : marca.casaisExigeSenior !== false && !fezSenior ? 'só para quem já fez o Sênior' : ''
+              const desabilitada = editar || jaFez || Boolean(motivoCasais) || (idade != null && !compativeis.includes(m.valor))
               return (
                 <label key={m.valor}
                   className={`modalidade ${f.modalidade === m.valor ? 'ativa' : ''} ${desabilitada ? 'desabilitada' : ''}`}>
                   <input type="radio" name="modalidade" value={m.valor} disabled={desabilitada}
                     checked={f.modalidade === m.valor} onChange={() => set('modalidade')(m.valor)} />
                   <strong>{m.rotulo}</strong>
-                  <span>{jaFez ? 'você já fez' : m.faixa}</span>
+                  <span>{jaFez ? 'você já fez' : motivoCasais || m.faixa}</span>
                 </label>
               )
             })}
           </div>
           {idade == null && <small className="dica">Informe a data de nascimento para ver as modalidades disponíveis.</small>}
+          {editar && <small className="dica">A modalidade não pode ser alterada por aqui. Para mudar, fale com o acampamento.</small>}
           {erros.modalidade && <small className="erro">{erros.modalidade}</small>}
         </fieldset>
+        {f.modalidade === 'casais' && !editar && (
+          <Campo id="conjuge_cpf" rotulo="CPF do cônjuge" obrigatorio erro={erros.conjuge_cpf}
+            dica={`O cônjuge precisa já ser campista cadastrado no sistema${marca.casaisExigeSenior !== false ? ' e ter feito o Sênior' : ''}. Se ele(a) não for encontrado(a), a inscrição é recusada.`}>
+            <input id="conjuge_cpf" inputMode="numeric" autoComplete="off" placeholder="000.000.000-00" value={f.conjuge_cpf}
+              onChange={(e) => set('conjuge_cpf')(mascaraCpf(e.target.value))} maxLength={14} />
+          </Campo>
+        )}
       </section>
 
       <section>

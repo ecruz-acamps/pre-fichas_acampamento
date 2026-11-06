@@ -29,6 +29,7 @@ export const MODALIDADES = [
   { valor: 'fac', rotulo: 'FAC', faixa: '13 a 18 anos', min: 13, max: 18 },
   { valor: 'juvenil', rotulo: 'Juvenil', faixa: '18 a 30 anos', min: 18, max: 30 },
   { valor: 'senior', rotulo: 'Sênior', faixa: 'casado(a) ou 30 anos em diante', min: 30, max: 200 },
+  { valor: 'casais', rotulo: 'Casais', faixa: 'casal casado(a), com o cônjuge já campista', min: 18, max: 200 },
 ]
 
 export const STATUS = [

@@ -8,6 +8,7 @@ import { criarProtecaoLogin } from '../protecao.js'
 import { carregarMarca } from '../marca.js'
 import { licencaAtivada } from '../licenca.js'
 import { registrarPreFicha } from './publico.js'
+import { fezSenior, validarCasais } from '../casais.js'
 import { transacao } from '../db.js'
 import {
   COOKIE_CONTA, STATUS_ATIVOS, buscarPorLogin, buscarSessaoConta, criarRedefinicao, criarSessaoConta,
@@ -17,11 +18,15 @@ import {
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
 const STATUS_NA_FILA_CONTA = ['aguardando', 'em_contato']
 // Campos da ficha que a pessoa pode alterar depois (a data da inscrição e a fila nunca mudam)
-const EDITAVEIS = Object.keys(montarRegistro(normalizarEntrada({ data_nascimento: '2000-01-01' }))).filter((c) => c !== 'termos_aceitos')
+// 'modalidade' e 'conjuge_cpf' não mudam pela área do participante: trocar a modalidade pularia a conferência do
+// casal (Casais) e mudaria a fila; quem precisar alterar fala com o acampamento.
+const EDITAVEIS = Object.keys(montarRegistro(normalizarEntrada({ data_nascimento: '2000-01-01' })))
+  .filter((c) => !['termos_aceitos', 'modalidade', 'conjuge_cpf'].includes(c))
 const DADOS_GUARDADOS = (f) => { const { aceites, website, ...resto } = f; return resto } // eslint-disable-line no-unused-vars
 
 export default async function rotasConta(app) {
   const { pool, config } = app
+  const falhasCasais = new Map() // participante -> { n, desde }
   const protecao = criarProtecaoLogin(config.protecaoLogin)
   const email = app.email
   const limite = { rateLimit: { max: config.limiteLoginPorMinuto, timeWindow: '1 minute' } }
@@ -70,7 +75,7 @@ export default async function rotasConta(app) {
         ficha.posicao = STATUS_NA_FILA_CONTA.includes(ultima.status) && f ? Number(f.posicao) : null
       }
     }
-    return { conta: { cpf: p.cpf, email: p.email, nome: p.nome }, dados: p.dados, ficha, modalidadesFeitas: await modalidadesFeitas(id, p.cpf), mostrarPosicao: marca.mostrarPosicaoFila, recuperacao, contaObrigatoria: config.contaObrigatoria }
+    return { conta: { cpf: p.cpf, email: p.email, nome: p.nome }, dados: p.dados, ficha, modalidadesFeitas: await modalidadesFeitas(id, p.cpf), fezSenior: await fezSenior(pool, id, p.cpf), mostrarPosicao: marca.mostrarPosicaoFila, recuperacao, contaObrigatoria: config.contaObrigatoria }
   })
 
   // ------------------------------------------------------------ criar conta
@@ -188,12 +193,34 @@ export default async function rotasConta(app) {
     if (!erros.modalidade && (await modalidadesFeitas(id, req.participante.cpf)).includes(f.modalidade)) {
       erros.modalidade = 'Você já fez esta modalidade. Escolha outra para a qual tenha os requisitos.'
     }
+    let casal = false
+    if (!Object.keys(erros).length && f.modalidade === 'casais') {
+      // limite de tentativas erradas de CPF de cônjuge por conta (evita descobrir quem é campista)
+      const lim = falhasCasais.get(id)
+      if (lim && lim.n >= 5 && Date.now() - lim.desde < 3_600_000) {
+        return reply.code(429).send({ mensagem: 'Muitas tentativas de confirmar o cônjuge. Tente de novo mais tarde ou fale com a coordenação do acampamento.' })
+      }
+      const v = await validarCasais(pool, { marca, participanteId: id, cpf: req.participante.cpf, conjugeCpf: somenteDigitos(f.conjuge_cpf) })
+      if (v.falhaConjuge) {
+        const atual = lim && Date.now() - lim.desde < 3_600_000 ? lim : { n: 0, desde: Date.now() }
+        falhasCasais.set(id, { n: atual.n + 1, desde: atual.desde })
+        req.log.warn({ participante: id }, 'Casais: cônjuge não confirmado')
+      }
+      Object.assign(erros, v.erros)
+      casal = true
+    }
     if (Object.keys(erros).length) return reply.code(400).send({ mensagem: 'Dados inválidos.', erros })
     const registro = montarRegistro(f, marca.termos)
     const r = await registrarPreFicha(pool, config, registro, { ip: req.ip, log: req.log, participanteId: id, cpf: req.participante.cpf })
     if (r.id) {
       await pool.query('update participantes set dados = $1, nome = $2, data_nascimento = $3 where id = $4',
         [JSON.stringify(DADOS_GUARDADOS(f)), registro.nome_completo, registro.data_nascimento, id])
+      if (casal) {
+        falhasCasais.delete(id)
+        await pool.query(
+          `insert into pre_fichas_historico (pre_ficha_id, tipo, observacao) values ($1, 'observacao', $2)`,
+          [r.id, `Inscrição de casal: cônjuge (CPF terminado em ${registro.conjuge_cpf.slice(-2)}) confirmado como campista no sistema${marca.casaisExigeSenior !== false ? ', com o Sênior feito pelos dois' : ''}.`])
+      }
     }
     return reply.code(r.codigo).send(r.corpo)
   })
@@ -202,6 +229,8 @@ export default async function rotasConta(app) {
   app.put('/api/conta/dados', { onRequest: [logado], config: limite }, async (req, reply) => {
     const id = req.participante.id
     const f = normalizarEntrada(req.body)
+    const atual = await fichaAtiva(id)
+    if (atual) { f.modalidade = atual.modalidade; f.conjuge_cpf = atual.conjuge_cpf ?? '' } // não mudam por aqui
     const erros = validar(f, 0)
     if (Object.keys(erros).length) return reply.code(400).send({ mensagem: 'Dados inválidos.', erros })
     const registro = montarRegistro(f, [])

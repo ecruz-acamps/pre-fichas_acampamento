@@ -61,7 +61,7 @@ export default function FichaImpressao({ f, marca, posicao, nomeNucleo, usuario 
       <Linha>
         <C r="Estado civil" c={5}>{rotuloDe(ESTADOS_CIVIS, f.estado_civil)}</C>
         <C r="Cônjuge é campista?" c={4}>{conjugeCampista}</C>
-        <C r="Nome cônjuge" c={3}>{[f.conjuge_nome, f.conjuge_telefone].filter(Boolean).join(' · ')}</C>
+        <C r="Nome cônjuge" c={3}>{[f.conjuge_nome, f.conjuge_cpf && mascaraCpf(f.conjuge_cpf), f.conjuge_telefone].filter(Boolean).join(' · ')}</C>
       </Linha>
       <Linha>
         <C r="Paróquia que participa" c={3}>{f.paroquia}</C>

@@ -27,6 +27,9 @@ Para guardar a configuração feita pelo painel: `node server/cli.js marca expor
 
 ## Campos
 
+> `casaisExigeSenior` (`true`/`false`): na modalidade Casais, os dois precisam ter feito o Sênior? (padrão `true`). Também está em Configurações → Modalidade Casais.
+
+
 | Campo | O que é |
 |---|---|
 | `nome` | Nome completo, aparece no topo do formulário e na aba do navegador |
