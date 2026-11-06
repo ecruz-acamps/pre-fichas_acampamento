@@ -1,5 +1,17 @@
 # Histórico de versões
 
+## 2.1.0 — modalidade Casais
+
+- **Nova modalidade Casais.** Ao escolhê-la, o formulário pede o **CPF do cônjuge**. A inscrição é **recusada** se o cônjuge
+  não estiver cadastrado como campista no sistema (participação em algum acampamento). Só vale para casado(a) ou união estável
+  e só pela conta do participante (o servidor confere o CPF do inscrito e do cônjuge).
+- **Configurações → "Modalidade Casais":** menu **"Para a modalidade Casais é necessário ter feito o Sênior?" Sim ou Não**.
+  Com **Sim**, os dois precisam ter feito o Sênior e a opção só abre para quem já fez; com **Não**, basta o cônjuge já ser campista.
+- Segurança: a recusa do cônjuge usa a mesma mensagem para "CPF não encontrado" e "não atende" (não revela quem é campista),
+  com limite de 5 tentativas erradas por hora por conta; o casal não é inscrito duas vezes; **a modalidade e o CPF do cônjuge não
+  podem mais ser trocados pela área do participante** (antes, a modalidade podia ser editada depois da inscrição).
+- Painel: aba **Casais** na fila, CPF do cônjuge na ficha e na impressão; acampamentos da modalidade Casais podem ser cadastrados.
+
 ## 2.0.0 — vários acampamentos na mesma VM
 
 **Ordem de implantação:** 1) painel central → 2) acampamentos (criados pelo painel).

@@ -188,7 +188,7 @@ function MinhaArea({ marca, info, recarregar, onSair }) {
   const voltar = (msg = '') => { setAviso(msg); setTela('inicio'); recarregar() }
 
   if (tela === 'inscrever') {
-    return <FormularioPreFicha marca={marca} modo="nova" inicial={{ ...inicial, modalidade: '' }} jaFeitas={info.modalidadesFeitas ?? []} onConcluido={() => voltar()} onCancelar={() => setTela('inicio')} />
+    return <FormularioPreFicha marca={marca} modo="nova" inicial={{ ...inicial, modalidade: '' }} jaFeitas={info.modalidadesFeitas ?? []} fezSenior={info.fezSenior === true} onConcluido={() => voltar()} onCancelar={() => setTela('inicio')} />
   }
   if (tela === 'editar') {
     return <FormularioPreFicha marca={marca} modo="editar" inicial={inicial} onConcluido={voltar} onCancelar={() => setTela('inicio')} />

@@ -3,7 +3,7 @@
 import {
   COMO_CONHECEU, ESTADOS_CIVIS, MODALIDADES, RELIGIOES, SEXOS, UFS,
 } from './opcoes.js'
-import { calcularIdade, modalidadesCompativeis, somenteDigitos } from './util.js'
+import { calcularIdade, cpfValido, modalidadesCompativeis, somenteDigitos } from './util.js'
 
 /** Formato dos dados do formulário (e valores iniciais). */
 export const INICIAL = {
@@ -16,6 +16,7 @@ export const INICIAL = {
   email: '', instagram: '', facebook: '',
   cep: '', logradouro: '', numero: '', complemento: '', bairro: '', cidade: '', uf: '',
   como_conheceu: '', como_conheceu_outro: '', motivo: '', modalidade: '',
+  conjuge_cpf: '', // só na modalidade Casais
   possui_vicio: null, vicio_qual: '', restricoes_medicas: '', retiros_anteriores: '',
   aceites: [], // uma marcação (true) para cada declaração configurada na marca
   website: '', // honeypot anti-robô (fica escondido)
@@ -32,7 +33,7 @@ export const MAXIMO = {
   email: 200, instagram: 100, facebook: 150,
   cep: 9, logradouro: 200, numero: 20, complemento: 100, bairro: 100, cidade: 100,
   como_conheceu_outro: 180, motivo: 2000, vicio_qual: 200,
-  restricoes_medicas: 1000, retiros_anteriores: 1000, website: 200,
+  restricoes_medicas: 1000, retiros_anteriores: 1000, website: 200, conjuge_cpf: 14,
 }
 
 /**
@@ -120,6 +121,10 @@ export function validar(f, quantidadeTermos = 0) {
   obrig('modalidade', 'Escolha a modalidade.'); umDe('modalidade', MODALIDADES)
   if (!e.modalidade && idade != null && !modalidadesCompativeis(idade, f.estado_civil).includes(f.modalidade))
     e.modalidade = 'Esta modalidade não corresponde à sua idade / estado civil.'
+  if (f.modalidade === 'casais') {
+    obrig('conjuge_cpf', 'Informe o CPF do cônjuge.')
+    if (!e.conjuge_cpf && !cpfValido(f.conjuge_cpf)) e.conjuge_cpf = 'CPF do cônjuge inválido.'
+  }
 
   obrig('possui_vicio', 'Selecione uma opção.')
   if (f.possui_vicio) obrig('vicio_qual', 'Qual vício?')
@@ -171,6 +176,7 @@ export function montarRegistro(f, termos = []) {
     como_conheceu: f.como_conheceu === 'Outro' ? `Outro: ${f.como_conheceu_outro.trim()}` : f.como_conheceu,
     motivo: f.motivo.trim(),
     modalidade: f.modalidade,
+    conjuge_cpf: f.modalidade === 'casais' ? somenteDigitos(f.conjuge_cpf) : null,
     possui_vicio: f.possui_vicio,
     vicio_qual: f.possui_vicio ? t(f.vicio_qual) : null,
     restricoes_medicas: t(f.restricoes_medicas),

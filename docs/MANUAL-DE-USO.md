@@ -35,7 +35,7 @@ Este manual explica **como usar o sistema no dia a dia**. Para instalar e manter
 | **Coordenador de núcleo** | `…/admin/` | Fila e pré-fichas **só das cidades/bairros do seu núcleo**; consulta campistas de todos os núcleos |
 
 **A regra da fila:** a ordem é a **data e hora de envio da pré-ficha**, separada por **modalidade**
-(Mirim, FAC, Juvenil, Sênior). Ninguém fura a fila: a posição só muda quando a pessoa vai para o
+(Mirim, FAC, Juvenil, Sênior e Casais). Ninguém fura a fila: a posição só muda quando a pessoa vai para o
 **fim da fila**, por recusas seguidas ou decisão registrada, e tudo fica na auditoria.
 
 ---
@@ -69,6 +69,13 @@ primeira senha. Se o e-mail não chegar, olhe a caixa de **spam**.
 4. Marque as **declarações** e clique em **Enviar ficha de inscrição**.
 
 A data e a hora do envio definem sua posição na fila.
+
+**Modalidade Casais:** ao escolher Casais, o formulário pede o **CPF do cônjuge**. A inscrição só é aceita se:
+- o cônjuge **já for campista cadastrado no sistema** (já participou de algum acampamento). Se não for encontrado(a), a inscrição é recusada;
+- você for **casado(a) ou em união estável**;
+- **quando o acampamento exigir** (Configurações → Modalidade Casais), **os dois já tiverem feito o Sênior**. Nesse caso a opção Casais só abre para quem já fez o Sênior.
+
+A inscrição de casal é feita **uma vez só**, por um dos dois, e só pela **conta do participante**. Depois de enviada, a modalidade e o CPF do cônjuge não podem ser alterados pela área do participante; para mudar, fale com o acampamento.
 
 ### 2.5 Acompanhar, editar, desistir e se inscrever de novo
 - **Situação**: aguardando, em contato, confirmado… Se o acampamento permitir, aparece também a
@@ -105,7 +112,7 @@ A aba **Fila** mostra quem está aguardando, na ordem da fila.
 | **Status** | Pode ser trocado direto na lista |
 
 **Filtros e ferramentas**
-- **Abas de modalidade** (Todas, Mirim, FAC, Juvenil, Sênior), com o total na fila.
+- **Abas de modalidade** (Todas, Mirim, FAC, Juvenil, Sênior, Casais), com o total na fila.
 - **Busca** por nome, e-mail, telefone, CPF (4 dígitos ou mais), bairro ou paróquia.
 - **Status**: "Na fila" (aguardando + em contato), todos ou um status específico.
 - **Núcleo, cidade e bairro**.
@@ -246,6 +253,7 @@ hora, sem reiniciar.
 |---|---|
 | **Identidade** | Nome, nome curto, cor, **logo** (também vira o ícone do site e a imagem da prévia no WhatsApp), contatos (WhatsApp, e-mail, Instagram, site) |
 | **Formulário** | Título, texto de apresentação, mensagem de sucesso e **declarações** obrigatórias |
+| **Modalidade Casais** | Menu **"Para a modalidade Casais é necessário ter feito o Sênior?"**: **Sim** (os dois precisam ter feito o Sênior) ou **Não** (basta o cônjuge já ser campista). A regra varia de acampamento para acampamento |
 | **Regras da fila** | Recusas seguidas que levam ao fim da fila · **Preferência do cônjuge** (liga/desliga) e quantas edições vale |
 | **Impressão da ficha** | Título, linha acima do título, texto ao lado do logo e **logo da esquerda** (ex.: brasão da paróquia), com prévia |
 | **Área do participante** | Mostrar ou não a **posição na fila** para a pessoa · **Contas dos participantes**: importar contas antigas por planilha CSV (colunas `cpf`, `email`, `nome`, `data_nascimento`) |

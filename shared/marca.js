@@ -37,6 +37,8 @@ export const MARCA_PADRAO = {
   edicoesPreferenciaConjuge: 2,
   // Liga/desliga a função de preferência do cônjuge (pergunta no formulário, selos, filtros e benefícios)
   preferenciaConjuge: true,
+  // Modalidade Casais: os DOIS precisam ter feito o Sênior? (depende da regra de cada acampamento)
+  casaisExigeSenior: true,
   // Área do participante: mostrar a posição na fila (desligado = mostra só a situação)
   mostrarPosicaoFila: false,
   // Cabeçalho da ficha impressa (vazio = usa o nome do acampamento)
@@ -90,6 +92,7 @@ export function validarMarca(entrada) {
     else m.edicoesPreferenciaConjuge = n
   }
 
+  if (bruto.casaisExigeSenior !== undefined) m.casaisExigeSenior = bruto.casaisExigeSenior === true
   if (bruto.preferenciaConjuge !== undefined) m.preferenciaConjuge = bruto.preferenciaConjuge === true
   if (bruto.mostrarPosicaoFila !== undefined) m.mostrarPosicaoFila = bruto.mostrarPosicaoFila === true
 

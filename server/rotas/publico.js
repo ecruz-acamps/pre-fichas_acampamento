@@ -143,6 +143,8 @@ export default async function rotasPublicas(app) {
 
     const marca = await carregarMarca(pool)
     const erros = validar(f, marca.termos.length)
+    // Casais exige conferir o CPF do inscrito e do cônjuge: só pela conta do participante
+    if (f.modalidade === 'casais') erros.modalidade = 'Para a modalidade Casais, entre na sua conta (ou crie uma) e faça a inscrição por lá.'
     if (Object.keys(erros).length) return reply.code(400).send({ mensagem: 'Dados inválidos.', erros })
 
     if (!(await conferirCaptcha(config.captcha, req.body?.captcha, req.ip))) {

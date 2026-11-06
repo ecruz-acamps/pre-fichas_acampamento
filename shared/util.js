@@ -32,6 +32,7 @@ export function modalidadesCompativeis(idade, estadoCivil) {
   const casado = estadoCivil === 'casado' || estadoCivil === 'uniao_estavel'
   return MODALIDADES.filter((m) => {
     if (m.valor === 'senior') return idade >= 30 || (casado && idade >= 18)
+    if (m.valor === 'casais') return casado && idade >= 18 // casal: casado(a) ou em união estável
     return idade >= m.min && idade <= m.max
   }).map((m) => m.valor)
 }
