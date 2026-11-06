@@ -2,6 +2,7 @@ import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
 import { api } from '../lib/api.js'
 import { carregarMarca } from '../lib/marca.jsx'
 import Login from './Login.jsx'
+import RedefinirSenha from './RedefinirSenha.jsx'
 import Fila from './Fila.jsx'
 import Resumo from './Resumo.jsx'
 const Acampamentos = lazy(() => import('./Acampamentos.jsx')) // carregada só quando abrir a tela
@@ -30,6 +31,8 @@ const TELAS = [
 export default function App() {
   const [usuario, setUsuario] = useState(undefined) // undefined = carregando
   const [licencaAtivada, setLicencaAtivada] = useState(true)
+  const [esqueci, setEsqueci] = useState(false)
+  const [tokenRedefinir, setTokenRedefinir] = useState(() => new URLSearchParams(window.location.search).get('redefinir'))
   const [marca, setMarca] = useState(null)
   const [nucleos, setNucleos] = useState([])
   const [tela, setTela] = useState('fila')
@@ -83,8 +86,11 @@ export default function App() {
   }
 
   if (usuario === undefined) return <main className="pagina estreita"><p className="carregando">Carregando…</p></main>
+  if (!usuario && (esqueci || tokenRedefinir)) {
+    return <RedefinirSenha marca={marca} token={tokenRedefinir} onVoltar={() => { setEsqueci(false); setTokenRedefinir(null) }} />
+  }
   if (!usuario) {
-    return <Login marca={marca} onEntrar={(r) => { limparCacheFichas(); setUsuario(r.usuario); setLicencaAtivada(r.licencaAtivada !== false); setTela('fila') }} />
+    return <Login marca={marca} onEsqueci={() => setEsqueci(true)} onEntrar={(r) => { limparCacheFichas(); setUsuario(r.usuario); setLicencaAtivada(r.licencaAtivada !== false); setTela('fila') }} />
   }
   if (usuario.trocar_senha) {
     return <AlterarSenha primeiroAcesso onConcluir={() => setUsuario({ ...usuario, trocar_senha: false })} onSair={sair} />

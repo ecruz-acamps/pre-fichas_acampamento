@@ -395,6 +395,7 @@ Para manter um servidor existente na 1.0, veja a seção 11g do [manual de insta
 **Segurança**
 - As regras valem no servidor, inclusive o que cada papel enxerga. A data da inscrição é protegida pelo banco e a auditoria não pode ser alterada.
 - Senhas com scrypt, verificação em duas etapas (obrigatória no painel central), bloqueio por tentativas, cookies `HttpOnly`/`SameSite=Strict`, proteção CSRF e CSP.
+- "Esqueci minha senha" também para administradores/equipe do acampamento e para o painel central (link por e-mail com validade de 1 hora, uso único e, com as duas etapas ativas, o código do aplicativo continua obrigatório). O servidor de e-mail é configurado pela interface do painel central.
 - O painel central pode abrir pela internet em HTTPS (porta 443, **sem VPN**), protegido por senha + autenticador obrigatório, bloqueio por usuário e por IP, cookie `Secure` e HSTS; ele **não executa nada sozinho**: um executor do sistema valida cada pedido antes de agir.
 - Banco e aplicações não ficam expostos; imagens enviadas são conferidas (SVG com script é recusado); dados pessoais na impressão e na exportação seguem as boas práticas da LGPD descritas no manual.
 

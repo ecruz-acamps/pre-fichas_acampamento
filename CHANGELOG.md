@@ -1,5 +1,20 @@
 # Histórico de versões
 
+## 2.3.0 — "Esqueci minha senha" e servidor de e-mail pelo painel central
+
+- **Esqueci minha senha no painel do acampamento** (administradores e equipe): o login tem o link; o e-mail leva um link que vale
+  1 hora e uma única vez. Com a verificação em duas etapas ativa, o link sozinho não basta: é preciso também o código do
+  aplicativo (a recuperação não desliga as duas etapas). Ao trocar a senha, a pessoa sai de todos os aparelhos.
+- **Esqueci minha senha no painel central da VM:** link por e-mail **mais o código do autenticador (obrigatório)**; senha nova com
+  12+ caracteres; limite de pedidos por origem e por e-mail; o executor só envia para usuário ativo do painel e só com link no formato esperado.
+- **Servidor de e-mail pela interface** (painel central → Configurações → "Servidor de e-mail"): servidor, porta, usuário, senha de app
+  e remetente. O servidor **envia um e-mail de teste antes de guardar**; a senha fica só num arquivo do administrador do sistema e nunca volta
+  para a tela, a auditoria ou o log. Há "Enviar e-mail de teste", "Aplicar aos acampamentos" (grava nos já criados) e "Remover".
+- Participantes já tinham "Esqueci minha senha" (sem mudança).
+- Correção: se a criação de um acampamento falha, o painel agora remove a pasta incompleta (só a que ele criou), em vez de bloquear a
+  próxima tentativa com "já existe".
+- Migração `011` (tokens de redefinição dos usuários do painel).
+
 ## 2.2.0 — painel central sem depender de VPN
 
 - **O painel central abre pela porta web normal (HTTPS, 443)**, com domínio próprio e certificado do Let's Encrypt emitido

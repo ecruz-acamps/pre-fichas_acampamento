@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { api } from '../lib/api.js'
 
-export default function Login({ marca, onEntrar }) {
+export default function Login({ marca, onEntrar, onEsqueci }) {
   const [email, setEmail] = useState('')
   const [senha, setSenha] = useState('')
   const [codigo, setCodigo] = useState('')
@@ -55,7 +55,8 @@ export default function Login({ marca, onEntrar }) {
         <div className="acoes">
           <button className="botao-principal" disabled={carregando}>{carregando ? 'Entrando…' : 'Entrar'}</button>
         </div>
-        <p className="dica centro">Esqueceu a senha ou perdeu o celular? Peça a um administrador uma senha nova.</p>
+        <p className="centro"><button type="button" className="link" onClick={onEsqueci}>Esqueci minha senha</button></p>
+        <p className="dica centro">Perdeu o celular do autenticador? Peça a um administrador para redefinir o seu acesso.</p>
       </form>
     </main>
   )

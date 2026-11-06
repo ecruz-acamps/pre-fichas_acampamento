@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 const base = mkdtempSync(join(tmpdir(), 'gerenciador-'))
+const base_ = base
 for (const d of ['dados', 'pedidos', 'estado']) mkdirSync(join(base, d))
 process.env.DADOS = join(base, 'dados'); process.env.PEDIDOS = join(base, 'pedidos'); process.env.ESTADO = join(base, 'estado')
 process.env.REDES_PERMITIDAS = '127.0.0.1/32,10.20.0.0/16'
@@ -141,4 +142,40 @@ test('arquivos do painel: só nomes simples (sem ../)', async () => {
   assert.equal((await fetch(`${url}/`)).status, 200)
   assert.equal((await fetch(`${url}/..%2fservidor.mjs`)).status, 404)
   assert.equal((await fetch(`${url}/servidor.mjs`)).status, 404)
+})
+
+test('servidor de e-mail pela aba Configurações: valida, não vaza a senha e "esqueci" avisa quando não está pronto', async () => {
+  const post = (corpo) => fetch(`${url}/api/tarefas`, { method: 'POST', headers: { ...H, cookie: globalThis.cookie }, body: JSON.stringify(corpo) })
+  const base = { acao: 'email', host: 'smtp.gmail.com', porta: 465, usuario: 'inscricoes@gmail.com', senha: 'abcd efgh ijkl mnop', remetente: 'inscricoes@gmail.com' }
+  for (const ruim of [
+    { host: 'x; rm -rf /' }, { host: 'localhost' }, { porta: 22 }, { porta: '465; id' }, { usuario: 'a b' }, { usuario: '`id`@x.com' },
+    { senha: 'tem"aspas1234' }, { senha: 'cifrao$1234' }, { senha: 'barra\\invertida1' }, { senha: 'a'.repeat(200) }, { remetente: 'nao-e-email' },
+  ]) {
+    const r = await post({ ...base, ...ruim })
+    assert.equal(r.status, 400, JSON.stringify(ruim))
+  }
+  assert.equal((await post({ ...base, usuario: 'sem-arroba', remetente: '' })).status, 400, 'remetente é obrigatório quando o usuário não é e-mail')
+  const antes = new Set(readdirSync(join(base_, 'pedidos')))
+  const ok = await post(base)
+  assert.equal(ok.status, 201)
+  const novos = readdirSync(join(base_, 'pedidos')).filter((f) => !antes.has(f))
+  assert.equal(novos.length, 1)
+  const pedido = JSON.parse(readFileSync(join(base_, 'pedidos', novos[0]), 'utf8'))
+  assert.equal(pedido.senha, 'abcdefghijklmnop', 'espaços da senha de app são removidos; o executor recebe a senha')
+  assert.equal(pedido.por, 'adm@x.com')
+  // senha em branco = manter a guardada; remetente assume o usuário quando ele é um e-mail
+  const manter = await post({ ...base, senha: '', remetente: '' })
+  assert.equal(manter.status, 201)
+  for (const acao of ['email-teste', 'email-aplicar', 'email-remover']) assert.equal((await post({ acao })).status, 201, acao)
+  // a senha não aparece na auditoria nem na lista de pendentes
+  const aud = readFileSync(join(base_, 'dados', 'auditoria.jsonl'), 'utf8')
+  assert.doesNotMatch(aud, /abcdefghijklmnop|abcd efgh/)
+  assert.match(aud, /pedido-email/)
+  const lista = JSON.stringify(await (await fetch(`${url}/api/tarefas`, { headers: { cookie: globalThis.cookie } })).json())
+  assert.doesNotMatch(lista, /abcdefghijklmnop/)
+  // sem login não se mexe no servidor de e-mail
+  assert.equal((await fetch(`${url}/api/tarefas`, { method: 'POST', headers: H, body: JSON.stringify(base) })).status, 401)
+  // sem domínio publicado / e-mail pronto, o "esqueci minha senha" avisa em vez de fingir que enviou
+  const esq = await fetch(`${url}/api/esqueci`, { method: 'POST', headers: H, body: JSON.stringify({ email: 'adm@x.com' }) })
+  assert.equal(esq.status, 503)
 })

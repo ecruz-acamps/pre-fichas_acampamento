@@ -102,10 +102,26 @@ const sessoes = new Map() // hash do token -> { email, expira }
 const falhas = new Map()  // email -> { n, ate }
 const falhasIp = new Map() // ip -> { n, ate }: limite por origem (além do limite por e-mail)
 const LIMITE_IP = 20
+const pedidosPorChave = new Map() // limite de pedidos de "esqueci minha senha": chave -> instantes
+/** true se a chave já passou de `max` pedidos na janela (e registra este pedido). */
+function excedeu(chave, max, janelaMs) {
+  const agora = Date.now()
+  const lista = (pedidosPorChave.get(chave) ?? []).filter((t) => t > agora - janelaMs)
+  lista.push(agora); pedidosPorChave.set(chave, lista)
+  return lista.length > max
+}
+// tokens do link "Esqueci minha senha": só o hash fica no disco; valem 1 hora e uma vez
+const ARQ_REDEF = join(DADOS, 'redefinicoes.json')
+function lerRedefinicoes() {
+  const l = lerJson(ARQ_REDEF, {}); const agora = Date.now()
+  for (const [k, v] of Object.entries(l)) if (!(v.expira > agora)) delete l[k]
+  return l
+}
 setInterval(() => { // não deixa as tabelas crescerem sem limite
   const agora = Date.now()
   for (const t of [falhas, falhasIp]) for (const [k, v] of t) if (v.ate <= agora && (v.visto ?? 0) < agora - 15 * 60000) t.delete(k)
   for (const [k, v] of sessoes) if (v.expira < agora) sessoes.delete(k)
+  for (const [k, l] of pedidosPorChave) if (!l.some((t) => t > agora - 3600000)) pedidosPorChave.delete(k)
 }, 10 * 60000).unref()
 const hashToken = (t) => createHash('sha256').update(t).digest('hex')
 function auditar(quem, acao, detalhes = {}) {
@@ -132,6 +148,9 @@ const RE = {
   tokenCf: /^[A-Za-z0-9_-]{20,200}$/,
   psk: /^[\x20-\x7E]{4,128}$/,
   senhaVpn: /^[^\x00-\x1f\x7f]{1,128}$/u,
+  hostSmtp: /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/,
+  usuarioSmtp: /^[A-Za-z0-9._%+@-]{3,120}$/,
+  senhaSmtp: /^[A-Za-z0-9._~+=:@%!*,;?/-]{4,128}$/,   // sem aspas, espaços, $, # nem \ (a senha vai para arquivos .env)
 }
 function validarPedido(c) {
   const acao = c?.acao
@@ -176,6 +195,23 @@ function validarPedido(c) {
     if (Object.keys(e).length) return { erros: e }
     return { pedido: { acao, ...(psk ? { psk } : {}), ...(senha ? { senha } : {}) } }
   }
+  if (acao === 'email') {
+    const e = {}
+    const host = String(c.host ?? '').trim().toLowerCase()
+    const porta = Number(c.porta)
+    const usuario = String(c.usuario ?? '').trim()
+    const senha = String(c.senha ?? '').replace(/\s/g, '')   // senhas de app do Google vêm com espaços
+    const remetente = String(c.remetente ?? '').trim() || (RE.email.test(usuario) ? usuario : '')
+    if (!RE.hostSmtp.test(host)) e.host = 'Servidor inválido (ex.: smtp.gmail.com).'
+    if (![25, 465, 587, 2525].includes(porta)) e.porta = 'Porta inválida. Use 465 (SSL) ou 587 (STARTTLS).'
+    if (!RE.usuarioSmtp.test(usuario)) e.usuario = 'Usuário inválido (normalmente é o seu e-mail).'
+    // senha em branco = manter a que já está guardada (o executor confere se existe)
+    if (senha && !RE.senhaSmtp.test(senha)) e.senha = 'Senha inválida: use só letras, números e . _ ~ + = : @ % ! * , ; ? / - (sem espaços nem aspas).'
+    if (!RE.email.test(remetente)) e.remetente = 'E-mail do remetente inválido.'
+    if (Object.keys(e).length) return { erros: e }
+    return { pedido: { acao, host, porta, usuario, remetente, aplicar: c.aplicar === true, ...(senha ? { senha } : {}) } }
+  }
+  if (acao === 'email-teste' || acao === 'email-remover' || acao === 'email-aplicar') return { pedido: { acao } }
   return { erros: { acao: 'Ação desconhecida.' } }
 }
 
@@ -213,6 +249,66 @@ const servidor = createServer(async (req, res) => {
       return res.end(readFileSync(arq))
     }
     if (req.method !== 'GET' && req.headers['x-requested-with'] !== 'fetch') return responder(res, 403, { mensagem: 'Requisição recusada.' })
+
+    // ---------- esqueci minha senha (sem login): o link vai por e-mail, enviado pelo executor do servidor
+    if (req.method === 'POST' && url.pathname === '/api/esqueci') {
+      const c = await lerCorpo(req)
+      const email = String(c.email ?? '').trim().toLowerCase().slice(0, 200)
+      const resposta = { ok: true, mensagem: 'Se houver um usuário com este e-mail, enviamos um link para redefinir a senha. Confira também a caixa de spam.' }
+      if (excedeu(`esq-ip:${ip}`, 5, 15 * 60000)) return responder(res, 429, { mensagem: 'Muitos pedidos. Aguarde alguns minutos.' })
+      const cfgEmail = lerJson(join(ESTADO, 'configuracoes.json'), {}).email
+      if (!PAINEL_DOMINIO || !cfgEmail?.configurado) {
+        return responder(res, 503, { mensagem: 'A recuperação de senha por e-mail ainda não está configurada neste servidor. Peça a quem administra o servidor uma senha nova (comando nova-senha).' })
+      }
+      if (!RE.email.test(email)) return responder(res, 200, resposta)
+      const u = lerUsuarios().find((x) => x.email === email && x.ativo !== false)
+      const pendentes = readdirSync(PEDIDOS).filter((f) => f.endsWith('.json')).length
+      if (!u || pendentes >= 30 || excedeu(`esq-em:${email}`, 3, 3600000)) return responder(res, 200, resposta)
+      const reg = lerRedefinicoes()
+      for (const [k, v] of Object.entries(reg)) if (v.email === email) delete reg[k]   // um link por vez
+      const token = randomBytes(32).toString('base64url')
+      reg[hashToken(token)] = { email, expira: Date.now() + 3600000 }
+      gravarJson(ARQ_REDEF, reg)
+      gravarJson(join(PEDIDOS, `${randomUUID()}.json`), {
+        acao: 'email-redefinicao', para: email, por: email, pedido_em: new Date().toISOString(),
+        link: `https://${PAINEL_DOMINIO}/?redefinir=${token}`,
+      })
+      auditar(email, 'esqueci-senha', { ip })
+      return responder(res, 200, resposta)
+    }
+    if (req.method === 'POST' && url.pathname === '/api/redefinir') {
+      const c = await lerCorpo(req)
+      if (excedeu(`red-ip:${ip}`, 10, 15 * 60000)) return responder(res, 429, { mensagem: 'Muitas tentativas. Aguarde 15 minutos.' })
+      const senha = String(c.senha ?? '')
+      if (senha.length < 12 || senha.length > 200) return responder(res, 400, { mensagem: 'A senha deve ter de 12 a 200 caracteres.' })
+      const invalido = () => responder(res, 400, { mensagem: 'Link inválido ou vencido. Peça um novo em "Esqueci minha senha".' })
+      const token = String(c.token ?? '')
+      if (!/^[A-Za-z0-9_-]{20,100}$/.test(token)) return invalido()
+      const reg = lerRedefinicoes(); const chave = hashToken(token)
+      const entrada = reg[chave]
+      if (!entrada) return invalido()
+      const u0 = lerUsuarios().find((x) => x.email === entrada.email && x.ativo !== false)
+      if (!u0) return invalido()
+      const f = falhas.get(u0.email)
+      if (f && f.ate > Date.now()) return responder(res, 429, { mensagem: 'Muitas tentativas. Aguarde 15 minutos.' })
+      // o link do e-mail sozinho não basta: o código do autenticador continua obrigatório
+      const passo = conferirTotp(u0.totp, c.codigo, u0.totp_ultimo)
+      if (passo === null) {
+        const n = (f && f.ate && f.ate <= Date.now() ? 0 : (f?.n ?? 0)) + 1
+        falhas.set(u0.email, { n, ate: n >= 5 ? Date.now() + 15 * 60000 : 0, visto: Date.now() })
+        auditar(u0.email, 'redefinicao-recusada', { ip })
+        return responder(res, 401, { mensagem: 'Código do autenticador incorreto ou já usado. Confira o aplicativo e tente de novo.' })
+      }
+      delete reg[chave]; gravarJson(ARQ_REDEF, reg)   // consome o link antes de qualquer espera: uso único
+      const hash = await gerarHash(senha)
+      const usuarios = lerUsuarios(); const u = usuarios.find((x) => x.email === u0.email)
+      u.senha = hash; u.totp_ultimo = passo
+      gravarJson(ARQ_USUARIOS, usuarios)
+      for (const [k, v] of sessoes) if (v.email === u.email) sessoes.delete(k)   // sai de todos os aparelhos
+      falhas.delete(u.email)
+      auditar(u.email, 'senha-redefinida', { ip })
+      return responder(res, 200, { ok: true })
+    }
 
     // ---------- login
     if (req.method === 'POST' && url.pathname === '/api/login') {
@@ -274,7 +370,7 @@ const servidor = createServer(async (req, res) => {
       const lista = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.json'))
         .map((f) => lerJson(join(dir, f))).filter(Boolean).sort((a, b) => String(b.inicio).localeCompare(String(a.inicio))).slice(0, 30) : []
       const pendentes = readdirSync(PEDIDOS).filter((f) => f.endsWith('.json')).map((f) => ({ id: f.slice(0, -5), situacao: 'na fila', ...lerJson(join(PEDIDOS, f), {}) }))
-      for (const p of pendentes) { delete p.chave; delete p.token; delete p.psk; delete p.senha }
+      for (const p of pendentes) { delete p.chave; delete p.token; delete p.psk; delete p.senha; delete p.link }
       return responder(res, 200, { pendentes, tarefas: lista })
     }
     const mt = /^\/api\/tarefas\/([a-z0-9-]{8,40})$/.exec(url.pathname)
