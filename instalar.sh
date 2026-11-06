@@ -98,6 +98,7 @@ if [ "$INSTALAR" = painel ]; then
   if [ "$TEM_TTY" = 1 ] && [ -z "${CF_API_TOKEN:-}" ] && [ ! -s /etc/prefichas/cloudflare.env ]; then
     read -r -p "Domínio base da Cloudflare [${DOMINIO_BASE}]: " db </dev/tty; DOMINIO_BASE="${db:-$DOMINIO_BASE}"
     echo "Token da API da Cloudflare (Conta › Cloudflare Tunnel › Editar e Zona › DNS › Editar)."
+    echo "(Se preferir, deixe em branco e cole o token depois na aba Configurações do painel central.)"
     read -r -s -p "Token — ENTER para configurar depois: " CF_API_TOKEN </dev/tty; echo
   fi
   [[ "$DOMINIO_BASE" =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$ ]] || erro "Domínio base inválido."

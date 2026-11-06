@@ -140,6 +140,24 @@ vigiar)
   logger -t prefichas-vpn "Túnel FortiClient fora do ar: reconectando o perfil ${VPN_PERFIL:-$PERFIL}"
   timeout 90 forticlient vpn connect "${VPN_PERFIL:-$PERFIL}" --always-up </dev/null >/dev/null 2>&1 || true
   ;;
+estado-json)
+  # usado pelo painel central: situação em JSON (sem segredos)
+  conf=false; [ -r "$ESTADO" ] && conf=true
+  con=false; tunel_ativo && con=true
+  vig=false; systemctl is-active "${VIGIA}.timer" >/dev/null 2>&1 && vig=true
+  det="$(timeout 10 forticlient vpn status 2>/dev/null | head -c 300 || true)"
+  jq -n --argjson c "$conf" --argjson k "$con" --argjson v "$vig" --arg r "${VPN_REDES:-}" --arg d "$det" --arg perfil "${VPN_PERFIL:-$PERFIL}" \
+    '{tipo:"forticlient", configurada:$c, conectada:$k, vigia:$v, redes:($r|split(",")|map(select(length>0))), perfil:$perfil, detalhe:$d, troca_credenciais:false}'
+  ;;
+reconectar)
+  [ -r "$ESTADO" ] || erro "A VPN ainda não foi configurada neste servidor (use: vpn-fortinet.sh configurar)."
+  echo "→ Reconectando a VPN (perfil ${VPN_PERFIL:-$PERFIL})…"
+  timeout 30 forticlient vpn disconnect >/dev/null 2>&1 || true
+  sleep 2
+  timeout 90 forticlient vpn connect "${VPN_PERFIL:-$PERFIL}" --always-up </dev/null >/dev/null 2>&1 || true
+  for _ in $(seq 1 20); do tunel_ativo && break; sleep 3; done
+  if tunel_ativo; then echo "✓ VPN reconectada."; else erro "A VPN não voltou. Veja: forticlient vpn status — a senha salva pode ter expirado: rode vpn-fortinet.sh configurar."; fi
+  ;;
 status)
   forticlient vpn status 2>/dev/null || echo "FortiClient não instalado ou sem perfil."
   if tunel_ativo; then echo "Túnel: ativo (rede ${VPN_REDES%%,*} pela VPN)"; else echo "Túnel: inativo"; fi

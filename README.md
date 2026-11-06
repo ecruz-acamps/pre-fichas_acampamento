@@ -64,7 +64,7 @@ Escolha **1) Painel central**. O instalador prepara a VM:
 5. **E-mail de envio** (Gmail com senha de app), usado no "Esqueci minha senha" de cada acampamento;
 6. **Painel central**: cria o seu usuário e mostra **a senha e a chave do autenticador uma única vez**.
 
-As etapas 2 a 5 podem ser puladas com ENTER e configuradas depois.
+As etapas 2 a 5 podem ser puladas com ENTER e configuradas depois. O **token da Cloudflare**, por exemplo, pode ser colado a qualquer momento na aba **Configurações** do painel central, sem reinstalar.
 
 ### Passo 2 — Acampamentos
 
@@ -186,6 +186,12 @@ Para manter um servidor existente na 1.0, veja a seção 11g do [manual de insta
 
 <p><em>Entrada com senha e código do autenticador</em><br />
 <img src="docs/imagens/40-painel-central-entrar.webp" alt="Painel central: login com autenticador" width="500" /></p>
+
+<p><em>Configurações: colar o token da Cloudflare (conferido antes de ser guardado)</em><br />
+<img src="docs/imagens/41-painel-central-configuracoes.webp" alt="Painel central: aba Configurações com o token da Cloudflare" /></p>
+
+<p><em>Configurações: VPN do servidor (situação, reconectar e troca de credenciais com retorno automático)</em><br />
+<img src="docs/imagens/42-painel-central-vpn-strongswan.webp" alt="Painel central: VPN do servidor" /></p>
 
 <p><em>Publicação na internet pela Cloudflare (painel do acampamento)</em><br />
 <img src="docs/imagens/39-configuracoes-publicacao-cloudflare.webp" alt="Ligar ou desligar a publicação pela Cloudflare" /></p>
@@ -353,6 +359,8 @@ Para manter um servidor existente na 1.0, veja a seção 11g do [manual de insta
 - **Ativação por chave** (`XXX-0000`) e **auditoria** de tudo o que é feito.
 
 **Painel central da VM** (versão 2.0)
+- **Aba Configurações, VPN:** situação do túnel, **Reconectar** e troca de chave/senha com **retorno automático** se o túnel não subir (strongSwan). A configuração inicial e o fechamento da porta 22 ficam só no terminal.
+- **Aba Configurações, Cloudflare:** cola o **token da Cloudflare** e o domínio, sem reinstalar; o servidor confere o token e ele nunca mais aparece em tela, auditoria ou log.
 - Mostra todas as instâncias (endereço, publicação, no ar ou fora, versão, memória, porta) e o servidor (CPU, memória, disco, proxy).
 - **Nova instância** pelo navegador; **Atualizar**, **Backup** e **Atualizar todas**; atualizar o próprio painel; tarefas com andamento ao vivo; auditoria.
 

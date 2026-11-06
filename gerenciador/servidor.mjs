@@ -102,6 +102,9 @@ const RE = {
   pessoa: /^[A-Za-zÀ-ÖØ-öø-ÿ .'-]{2,80}$/,
   chave: /^[A-Za-z0-9-]{3,20}$/,
   instancia: /^prefichas-[a-z0-9-]{1,80}$/,
+  tokenCf: /^[A-Za-z0-9_-]{20,200}$/,
+  psk: /^[\x20-\x7E]{4,128}$/,
+  senhaVpn: /^[^\x00-\x1f\x7f]{1,128}$/u,
 }
 function validarPedido(c) {
   const acao = c?.acao
@@ -125,6 +128,27 @@ function validarPedido(c) {
     return { pedido: { acao, instancia: c.instancia } }
   }
   if (acao === 'atualizar-todas' || acao === 'atualizar-painel') return { pedido: { acao } }
+  if (acao === 'cloudflare') {
+    const e = {}
+    const token = String(c.token ?? '').trim()
+    const base = String(c.dominio_base ?? '').trim().toLowerCase()
+    // token vazio = só trocar o domínio base (o token já guardado continua valendo)
+    if (token && !RE.tokenCf.test(token)) e.token = 'Token inválido: confira se copiou o token inteiro, sem espaços (só letras, números, "-" e "_").'
+    if (!RE.dominio.test(base)) e.dominio_base = 'Domínio inválido (ex.: movimentocampista.com.br).'
+    if (Object.keys(e).length) return { erros: e }
+    return { pedido: { acao, dominio_base: base, ...(token ? { token } : {}) } }
+  }
+  if (acao === 'cloudflare-remover') return { pedido: { acao } }
+  if (acao === 'vpn-reconectar') return { pedido: { acao } }
+  if (acao === 'vpn-credenciais') {
+    const e = {}
+    const psk = String(c.psk ?? ''), senha = String(c.senha ?? '')
+    if (!psk && !senha) e.psk = 'Informe a nova chave (PSK) e/ou a nova senha.'
+    if (psk && !RE.psk.test(psk)) e.psk = 'Chave (PSK) inválida: de 4 a 128 caracteres comuns, sem acentos.'
+    if (senha && !RE.senhaVpn.test(senha)) e.senha = 'Senha inválida (até 128 caracteres, sem quebra de linha).'
+    if (Object.keys(e).length) return { erros: e }
+    return { pedido: { acao, ...(psk ? { psk } : {}), ...(senha ? { senha } : {}) } }
+  }
   return { erros: { acao: 'Ação desconhecida.' } }
 }
 
@@ -204,12 +228,19 @@ const servidor = createServer(async (req, res) => {
         servidor: lerJson(join(ESTADO, 'servidor.json'), null),
       })
     }
+    if (req.method === 'GET' && url.pathname === '/api/configuracoes') {
+      // só a situação (configurado ou não); o token em si nunca volta para o navegador
+      return responder(res, 200, lerJson(join(ESTADO, 'configuracoes.json'), { cloudflare: { token_configurado: null } }))
+    }
+    if (req.method === 'GET' && url.pathname === '/api/vpn') {
+      return responder(res, 200, lerJson(join(ESTADO, 'vpn.json'), { configurada: null }))
+    }
     if (req.method === 'GET' && url.pathname === '/api/tarefas') {
       const dir = join(ESTADO, 'tarefas')
       const lista = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.json'))
         .map((f) => lerJson(join(dir, f))).filter(Boolean).sort((a, b) => String(b.inicio).localeCompare(String(a.inicio))).slice(0, 30) : []
       const pendentes = readdirSync(PEDIDOS).filter((f) => f.endsWith('.json')).map((f) => ({ id: f.slice(0, -5), situacao: 'na fila', ...lerJson(join(PEDIDOS, f), {}) }))
-      for (const p of pendentes) { delete p.chave }
+      for (const p of pendentes) { delete p.chave; delete p.token; delete p.psk; delete p.senha }
       return responder(res, 200, { pendentes, tarefas: lista })
     }
     const mt = /^\/api\/tarefas\/([a-z0-9-]{8,40})$/.exec(url.pathname)
@@ -224,7 +255,9 @@ const servidor = createServer(async (req, res) => {
       const id = randomUUID()
       const dados = { ...pedido, por: s.email, pedido_em: new Date().toISOString() }
       gravarJson(join(PEDIDOS, `${id}.json`), dados)
-      const { chave, ...semChave } = dados // eslint-disable-line no-unused-vars
+      const { chave, token, psk, senha, ...semChave } = dados // eslint-disable-line no-unused-vars
+      if (token) semChave.token = '(informado, não registrado)'
+      if (psk || senha) semChave.credenciais = '(informadas, não registradas)'
       auditar(s.email, `pedido-${pedido.acao}`, { id, ...semChave })
       return responder(res, 201, { id })
     }

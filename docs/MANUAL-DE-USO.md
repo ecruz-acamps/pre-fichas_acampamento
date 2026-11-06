@@ -258,6 +258,16 @@ hora, sem reiniciar.
 
 ---
 
+### Token da Cloudflare no painel central
+No painel central (o do servidor, não o do acampamento), aba **Configurações**: cole o **token da API da Cloudflare** e o
+domínio e clique em **Salvar token**. O servidor confere o token antes de guardar. Depois de salvo, a tela mostra só
+"token configurado". Para trocar, cole um novo; **Remover token** apaga do servidor.
+
+### VPN no painel central
+Na aba **Configurações → VPN do servidor** você vê se a VPN está **conectada**, usa **Reconectar** quando ela cair e, no
+strongSwan, **troca a chave ou a senha** com retorno automático se o túnel não subir. A configuração inicial e o
+fechamento da porta 22 são feitos só pelo terminal.
+
 ## 15. Atualizações do sistema
 
 *(Somente administrador.)*
