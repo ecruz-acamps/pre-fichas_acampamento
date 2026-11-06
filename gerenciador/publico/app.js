@@ -41,7 +41,71 @@ function telaEntrar() {
   h('div', { class: 'campo' }, h('label', { for: 'e' }, 'E-mail'), h('input', { id: 'e', name: 'email', type: 'email', required: true, autocomplete: 'username' })),
   h('div', { class: 'campo' }, h('label', { for: 's' }, 'Senha'), h('input', { id: 's', name: 'senha', type: 'password', required: true, autocomplete: 'current-password' })),
   h('div', { class: 'campo' }, h('label', { for: 'c' }, 'Código do autenticador'), h('input', { id: 'c', name: 'codigo', inputmode: 'numeric', pattern: '[0-9]{6}', maxlength: '6', required: true, autocomplete: 'one-time-code' })),
-  erro, h('button', { class: 'principal', type: 'submit' }, 'Entrar'))
+  erro, h('button', { class: 'principal', type: 'submit' }, 'Entrar'),
+  h('p', { class: 'dica' }, h('button', { class: 'link', type: 'button', onclick: telaEsqueci }, 'Esqueci minha senha')))
+  app.replaceChildren(form)
+}
+
+// "Esqueci minha senha", direto nesta tela: e-mail + código ATUAL do autenticador + senha nova.
+function telaSenhaAlterada() {
+  history.replaceState(null, '', location.pathname)   // tira qualquer token da barra de endereço
+  app.replaceChildren(h('div', { class: 'cartao entrar' }, h('h1', {}, 'Senha alterada'), h('p', {}, 'Você saiu de todos os aparelhos. Entre com a senha nova.'),
+    h('button', { class: 'principal', type: 'button', onclick: telaEntrar }, 'Ir para o login')))
+}
+function telaEsqueci() {
+  const aviso = h('div')
+  const form = h('form', { class: 'cartao entrar', onsubmit: async (e) => {
+    e.preventDefault(); aviso.replaceChildren()
+    const d = Object.fromEntries(new FormData(form))
+    if (d.senha !== d.confirmacao) return aviso.append(h('div', { class: 'alerta erro' }, 'A confirmação não confere com a senha nova.'))
+    try { await api('POST', '/api/redefinir-mfa', { email: d.email, codigo: d.codigo, senha: d.senha }); telaSenhaAlterada() } catch (err) { aviso.append(h('div', { class: 'alerta erro' }, err.message)) }
+  } },
+  h('h1', {}, 'Esqueci minha senha'),
+  h('p', { class: 'dica' }, 'Informe o seu e-mail, o código ATUAL do aplicativo autenticador e a senha nova. Não precisa de e-mail nem de VPN. Depois de trocar, você sai de todos os aparelhos.'),
+  h('div', { class: 'campo' }, h('label', { for: 'em' }, 'E-mail'), h('input', { id: 'em', name: 'email', type: 'email', required: true, autocomplete: 'username' })),
+  h('div', { class: 'campo' }, h('label', { for: 'cc' }, 'Código do autenticador'), h('input', { id: 'cc', name: 'codigo', inputmode: 'numeric', pattern: '[0-9]{6}', maxlength: '6', required: true, autocomplete: 'one-time-code' })),
+  h('div', { class: 'campo' }, h('label', { for: 'n1' }, 'Senha nova (mínimo 12 caracteres)'), h('input', { id: 'n1', name: 'senha', type: 'password', required: true, minlength: '12', maxlength: '200', autocomplete: 'new-password' })),
+  h('div', { class: 'campo' }, h('label', { for: 'n2' }, 'Repita a senha nova'), h('input', { id: 'n2', name: 'confirmacao', type: 'password', required: true, autocomplete: 'new-password' })),
+  aviso, h('button', { class: 'principal', type: 'submit' }, 'Trocar senha'),
+  h('p', { class: 'dica' }, h('button', { class: 'link', type: 'button', onclick: telaEntrar }, 'Voltar ao login'), ' · ',
+    h('button', { class: 'link', type: 'button', onclick: telaEsqueciEmail }, 'Prefiro receber um link por e-mail')),
+  h('p', { class: 'dica' }, 'Perdeu também o celular do autenticador? Peça a quem administra o servidor o comando novo-autenticador.'))
+  app.replaceChildren(form)
+}
+// Alternativa: o link chega por e-mail e, para entrar com a senha nova, ainda é preciso o código do autenticador.
+function telaEsqueciEmail() {
+  const aviso = h('div')
+  const form = h('form', { class: 'cartao entrar', onsubmit: async (e) => {
+    e.preventDefault(); aviso.replaceChildren()
+    try {
+      const r = await api('POST', '/api/esqueci', { email: form.querySelector('#em').value })
+      aviso.append(h('div', { class: 'alerta ok' }, r.mensagem))
+    } catch (err) { aviso.append(h('div', { class: 'alerta erro' }, err.message)) }
+  } },
+  h('h1', {}, 'Receber link por e-mail'), h('p', { class: 'dica' }, 'Informe o e-mail do seu usuário. Enviaremos um link para criar uma senha nova (você vai precisar do código do autenticador).'),
+  h('div', { class: 'campo' }, h('label', { for: 'em' }, 'E-mail'), h('input', { id: 'em', type: 'email', required: true, autocomplete: 'username' })),
+  aviso, h('button', { class: 'principal', type: 'submit' }, 'Enviar link'),
+  h('p', { class: 'dica' }, h('button', { class: 'link', type: 'button', onclick: telaEsqueci }, 'Voltar')))
+  app.replaceChildren(form)
+}
+function telaRedefinir(token) {
+  const aviso = h('div')
+  const sair = () => { history.replaceState(null, '', location.pathname); telaEntrar() }
+  const form = h('form', { class: 'cartao entrar', onsubmit: async (e) => {
+    e.preventDefault(); aviso.replaceChildren()
+    const d = Object.fromEntries(new FormData(form))
+    if (d.senha !== d.confirmacao) return aviso.append(h('div', { class: 'alerta erro' }, 'A confirmação não confere com a senha nova.'))
+    try {
+      await api('POST', '/api/redefinir', { token, senha: d.senha, codigo: d.codigo })
+      telaSenhaAlterada()
+    } catch (err) { aviso.append(h('div', { class: 'alerta erro' }, err.message)) }
+  } },
+  h('h1', {}, 'Crie uma senha nova'),
+  h('div', { class: 'campo' }, h('label', { for: 'n1' }, 'Senha nova (mínimo 12 caracteres)'), h('input', { id: 'n1', name: 'senha', type: 'password', required: true, minlength: '12', maxlength: '200', autocomplete: 'new-password' })),
+  h('div', { class: 'campo' }, h('label', { for: 'n2' }, 'Repita a senha nova'), h('input', { id: 'n2', name: 'confirmacao', type: 'password', required: true, autocomplete: 'new-password' })),
+  h('div', { class: 'campo' }, h('label', { for: 'cc' }, 'Código do autenticador'), h('input', { id: 'cc', name: 'codigo', inputmode: 'numeric', pattern: '[0-9]{6}', maxlength: '6', required: true, autocomplete: 'one-time-code' })),
+  aviso, h('button', { class: 'principal', type: 'submit' }, 'Salvar senha nova'),
+  h('p', { class: 'dica' }, h('button', { class: 'link', type: 'button', onclick: sair }, 'Voltar ao login')))
   app.replaceChildren(form)
 }
 
@@ -132,7 +196,7 @@ function telaNova(area) {
 // ------------------------------------------------------------------ tarefas
 async function telaTarefas(area) {
   const d = await api('GET', '/api/tarefas')
-  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas', 'atualizar-painel': 'Atualizar o painel', cloudflare: 'Token da Cloudflare', 'cloudflare-remover': 'Remover token da Cloudflare', 'vpn-reconectar': 'Reconectar a VPN', 'vpn-credenciais': 'Trocar credenciais da VPN' }
+  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas', 'atualizar-painel': 'Atualizar o painel', cloudflare: 'Token da Cloudflare', 'cloudflare-remover': 'Remover token da Cloudflare', 'email': 'Servidor de e-mail', 'email-teste': 'E-mail de teste', 'email-remover': 'Remover servidor de e-mail', 'email-aplicar': 'Aplicar e-mail aos acampamentos', 'vpn-reconectar': 'Reconectar a VPN', 'vpn-credenciais': 'Trocar credenciais da VPN' }
   const linha = (t) => h('tr', { style: 'cursor:pointer', onclick: () => { tarefaAberta = t.id; desenhar() } },
     h('td', {}, dataHora(t.inicio || t.pedido_em)), h('td', {}, nomeAcao[t.acao] ?? t.acao), h('td', {}, t.alvo || t.nome || t.instancia || '—'),
     h('td', {}, h('span', { class: `selo ${t.situacao === 'concluida' ? 'ok' : t.situacao === 'erro' ? 'erro' : 'neutro'}` }, t.situacao)), h('td', {}, t.por || '—'))
@@ -164,7 +228,8 @@ async function telaAuditoria(area) {
 
 // ------------------------------------------------------------------ configurações
 async function telaConfiguracoes(area) {
-  const cfg = (await api('GET', '/api/configuracoes')).cloudflare ?? {}
+  const conf = await api('GET', '/api/configuracoes')
+  const cfg = conf.cloudflare ?? {}
   const aviso = h('div')
   const token = h('input', { id: 'cf-token', name: 'token', type: 'password', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off',
     placeholder: cfg.token_configurado ? '•••••••• (já configurado — cole só para trocar)' : 'Cole aqui o token da API da Cloudflare' })
@@ -201,7 +266,53 @@ async function telaConfiguracoes(area) {
     if (confirm('Remover o token da Cloudflare do servidor? Os acampamentos já publicados continuam no ar; só não será possível criar novos pela Cloudflare até colar um token de novo.')) pedir({ acao: 'cloudflare-remover' })
   } }, 'Remover token'))
   area.append(form, h('p', { class: 'dica' }, cfg.atualizado_em ? `Último token guardado em ${dataHora(cfg.atualizado_em)}.` : ''))
+  cartaoEmail(area, conf.email ?? {})
   await cartaoVpn(area)
+}
+
+// Servidor de e-mail (SMTP): usado no "Esqueci minha senha" do painel central e dos acampamentos novos.
+// O servidor envia um e-mail de teste ANTES de guardar; a senha nunca volta para a tela.
+function cartaoEmail(area, e) {
+  const aviso = h('div')
+  const erros = {}
+  const campo = (id, rotulo, input, dica) => h('div', { class: 'campo' }, h('label', { for: id }, rotulo), input, dica && h('span', { class: 'dica' }, dica), erros[id] = h('span', { class: 'erro-campo' }))
+  const host = h('input', { id: 'host', name: 'host', value: e.host || 'smtp.gmail.com', maxlength: '120' })
+  const porta = h('select', { id: 'porta', name: 'porta' },
+    h('option', { value: '465' }, '465 — SSL (recomendado)'), h('option', { value: '587' }, '587 — STARTTLS'))
+  porta.value = String(e.porta === 587 ? 587 : 465)
+  const usuarioSmtp = h('input', { id: 'usuario', name: 'usuario', value: e.usuario || '', maxlength: '120', autocomplete: 'off', placeholder: 'voce@gmail.com' })
+  const senha = h('input', { id: 'senha', name: 'senha', type: 'password', autocomplete: 'off', spellcheck: 'false', autocapitalize: 'off',
+    placeholder: e.configurado ? '•••••••• (já configurada — preencha só para trocar)' : 'Senha de app do Google' })
+  const remetente = h('input', { id: 'remetente', name: 'remetente', type: 'email', value: e.remetente || '', maxlength: '200', placeholder: 'igual ao usuário, se for um e-mail' })
+  const aplicar = h('input', { id: 'aplicar', type: 'checkbox' })
+  const selo = e.configurado ? h('span', { class: 'selo ok' }, 'configurado') : h('span', { class: 'selo erro' }, 'não configurado')
+  const form = h('form', { class: 'cartao', autocomplete: 'off', onsubmit: async (ev) => {
+    ev.preventDefault(); aviso.replaceChildren(); Object.values(erros).forEach((x) => x.replaceChildren())
+    try {
+      const r = await api('POST', '/api/tarefas', { acao: 'email', host: host.value, porta: Number(porta.value), usuario: usuarioSmtp.value, senha: senha.value,
+        remetente: remetente.value, aplicar: aplicar.checked })
+      senha.value = ''   // a senha sai da tela na hora
+      tarefaAberta = r.id; tela = 'tarefas'; desenhar()
+    } catch (err) {
+      aviso.append(h('div', { class: 'alerta erro' }, err.message))
+      for (const [k, v] of Object.entries(err.dados?.erros ?? {})) erros[k]?.append(v)
+    }
+  } },
+  h('div', { class: 'topo' }, h('h2', {}, 'Servidor de e-mail'), selo),
+  h('p', { class: 'dica' }, 'Envia o link do "Esqueci minha senha" (deste painel e dos acampamentos) e fica guardado só no servidor, num arquivo que apenas o administrador do sistema lê. Ao salvar, o servidor manda um e-mail de teste para ',
+    h('b', {}, usuario), ' e só guarda se o envio funcionar. A senha não volta para nenhuma tela.'),
+  campo('host', 'Servidor (SMTP)', host), campo('porta', 'Porta', porta),
+  campo('usuario', 'Usuário', usuarioSmtp, 'Normalmente é o seu e-mail completo.'),
+  campo('senha', 'Senha', senha, 'No Gmail, use uma SENHA DE APP (myaccount.google.com → Segurança → Verificação em duas etapas → Senhas de app). Letras, números e . _ ~ + = : @ % ! * , ; ? / -'),
+  campo('remetente', 'E-mail do remetente', remetente, 'Aparece como "de quem" nos e-mails. No Gmail, use o mesmo e-mail do usuário.'),
+  h('div', { class: 'campo' }, h('label', { for: 'aplicar' }, aplicar, ' Aplicar também aos acampamentos já criados'),
+    h('span', { class: 'dica' }, 'Grava este servidor de e-mail em cada acampamento existente e reinicia o sistema deles por alguns segundos. Necessário para o "Esqueci minha senha" funcionar nos acampamentos que já existem.')),
+  aviso,
+  h('button', { class: 'principal', type: 'submit' }, 'Salvar e testar'), ' ',
+  e.configurado && h('button', { class: 'secundario', type: 'button', onclick: () => pedir({ acao: 'email-teste' }) }, 'Enviar e-mail de teste'), ' ',
+  e.configurado && h('button', { class: 'secundario', type: 'button', onclick: () => pedir({ acao: 'email-aplicar' }, 'Gravar o servidor de e-mail em todos os acampamentos e reiniciar o sistema deles por alguns segundos?') }, 'Aplicar aos acampamentos'), ' ',
+  e.configurado && h('button', { class: 'secundario', type: 'button', onclick: () => pedir({ acao: 'email-remover' }, 'Remover o servidor de e-mail do painel central? Os acampamentos já criados continuam com a configuração que têm.') }, 'Remover'))
+  area.append(form, h('p', { class: 'dica' }, e.atualizado_em ? `Último servidor de e-mail guardado em ${dataHora(e.atualizado_em)}.` : ''))
 }
 
 // VPN do servidor: situação, reconectar e (strongSwan) troca de credenciais com retorno automático.
@@ -252,7 +363,10 @@ async function desenhar() {
   clearTimeout(atualizador)
   if (usuario === null) {
     try { usuario = (await api('GET', '/api/eu')).email } catch { usuario = null }
-    if (!usuario) return telaEntrar()
+    if (!usuario) {
+      const token = new URLSearchParams(location.search).get('redefinir')
+      return token ? telaRedefinir(token) : telaEntrar()
+    }
   }
   const area = h('div')
   const aba = (id, rotulo) => h('button', { class: `aba ${tela === id ? 'ativa' : ''}`, onclick: () => { tela = id; if (id !== 'tarefas') tarefaAberta = null; desenhar() } }, rotulo)

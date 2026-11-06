@@ -1356,6 +1356,110 @@ describe('API', { skip: pular }, () => {
     })
   })
 
+
+  // ------------------------------------------------------------------ esqueci minha senha (painel do acampamento)
+  describe('esqueci minha senha do painel', () => {
+    const SENHA_NOVA = 'senha-nova-do-painel-1'
+    const outraApp = (extra) => construirApp({ pool, logger: false, chavesLicenca: chavesTeste, config: { ...app.config, ...extra } })
+    const pedir = (email, ip) => app.inject({ method: 'POST', url: '/api/auth/esqueci', headers: H, payload: { email }, remoteAddress: ip })
+    const redefinir = (payload, ip = '10.8.0.1') => app.inject({ method: 'POST', url: '/api/auth/redefinir', headers: H, payload, remoteAddress: ip })
+    const entrar = (email, senha, codigo, ip = '10.8.1.1') => app.inject({ method: 'POST', url: '/api/auth/login',
+      headers: { ...H, 'x-forwarded-for': ip }, payload: { email, senha, ...(codigo ? { codigo } : {}) } })
+    const tokenDoEmail = () => emailsEnviados.at(-1).texto.match(/redefinir=([\w-]+)/)[1]
+    const novoUsuario = (email, ativo = true) => pool.query(
+      `insert into usuarios (email, nome, papel, senha_hash, trocar_senha, ativo) values ($1, 'Pessoa Teste', 'equipe', $2, false, $3)`,
+      [email, '$placeholder', ativo])
+    before(async () => {
+      const hash = await gerarHash(SENHA)
+      for (const [email, ativo] of [['esq1@x.com', true], ['esq2@x.com', true], ['esq-dois@x.com', true], ['esq-inativo@x.com', false], ['esq-limite@x.com', true]]) {
+        await novoUsuario(email, ativo)
+        await pool.query('update usuarios set senha_hash = $1 where email = $2', [hash, email])
+      }
+    })
+
+    test('pede o link: mesma resposta para quem existe e para quem não existe; só usuário ativo recebe e-mail', async () => {
+      emailsEnviados.length = 0
+      const a = await pedir('esq1@x.com', '10.8.2.1')
+      const b = await pedir('naoexiste@x.com', '10.8.2.1')
+      const c = await pedir('esq-inativo@x.com', '10.8.2.1')
+      const d = await pedir('isto-nao-e-email', '10.8.2.1')
+      for (const r of [a, b, c, d]) assert.equal(r.statusCode, 200)
+      assert.equal(a.json().mensagem, b.json().mensagem); assert.equal(a.json().mensagem, c.json().mensagem)
+      assert.equal(emailsEnviados.length, 1)
+      assert.equal(emailsEnviados[0].para, 'esq1@x.com')
+      assert.match(emailsEnviados[0].texto, /https:\/\/prefichas\.teste\/admin\/\?redefinir=[\w-]{20,}/)
+      // novo pedido em menos de 2 minutos não manda outro e-mail (nem mostra isso na tela)
+      assert.equal((await pedir('esq1@x.com', '10.8.2.1')).statusCode, 200)
+      assert.equal(emailsEnviados.length, 1)
+      // o banco guarda só o hash do token
+      const { rows } = await pool.query('select id from usuarios_redefinicoes')
+      assert.ok(rows.every((r) => r.id !== tokenDoEmail()))
+    })
+
+    test('redefine a senha: link vale uma vez, senha fraca é recusada, sessões antigas caem, senha antiga deixa de valer', async () => {
+      const { cookie } = await login('esq2@x.com')
+      assert.equal((await app.inject({ method: 'GET', url: '/api/auth/eu', headers: { ...H, cookie } })).json().usuario.email, 'esq2@x.com')
+      emailsEnviados.length = 0
+      await pedir('esq2@x.com', '10.8.2.2')
+      const token = tokenDoEmail()
+      assert.equal((await redefinir({ token, senha: 'curta' })).statusCode, 400)
+      assert.equal((await redefinir({ token: 'x'.repeat(43), senha: SENHA_NOVA })).statusCode, 400)
+      assert.equal((await redefinir({ token, senha: SENHA_NOVA })).statusCode, 200)
+      assert.equal((await redefinir({ token, senha: 'outra-senha-9' })).statusCode, 400, 'o link vale uma vez só')
+      assert.equal((await entrar('esq2@x.com', SENHA)).statusCode, 401, 'a senha antiga deixou de valer')
+      assert.equal((await entrar('esq2@x.com', SENHA_NOVA)).statusCode, 200)
+      assert.equal((await app.inject({ method: 'GET', url: '/api/auth/eu', headers: { ...H, cookie } })).json().usuario, null, 'a sessão antiga caiu')
+    })
+
+    test('com duas etapas ativas o link sozinho não basta: precisa do código e a verificação continua ligada', async () => {
+      const { cookie } = await login('esq-dois@x.com')
+      const c = { ...H, cookie }
+      const { segredo } = (await app.inject({ method: 'POST', url: '/api/auth/2fa/iniciar', headers: c })).json()
+      const ativ = _codigoNoPasso(segredo, passoAtual())
+      assert.equal((await app.inject({ method: 'POST', url: '/api/auth/2fa/ativar', headers: c, payload: { codigo: ativ } })).statusCode, 200)
+      emailsEnviados.length = 0
+      await pedir('esq-dois@x.com', '10.8.2.3')
+      const token = tokenDoEmail()
+      const sem = await redefinir({ token, senha: SENHA_NOVA })
+      assert.deepEqual([sem.statusCode, sem.json().precisa2fa], [401, true])
+      assert.equal((await redefinir({ token, senha: SENHA_NOVA, codigo: '123456' })).statusCode, 401)
+      // tentativas sem o código certo não gastam o link
+      const ok = await redefinir({ token, senha: SENHA_NOVA, codigo: _codigoNoPasso(segredo, passoAtual() + 1) })
+      assert.equal(ok.statusCode, 200, ok.body)
+      const depois = await entrar('esq-dois@x.com', SENHA_NOVA)
+      assert.deepEqual([depois.statusCode, depois.json().precisa2fa], [401, true], 'as duas etapas seguem ativas')
+      const { rows: [u] } = await pool.query(`select totp_ativo from usuarios where email = 'esq-dois@x.com'`)
+      assert.equal(u.totp_ativo, true)
+    })
+
+    test('dois pedidos ao mesmo tempo com o mesmo link: só um vale', async () => {
+      emailsEnviados.length = 0
+      await pedir('esq1@x.com', '10.8.2.5')   // já houve pedido há instantes: força um novo token
+      await pool.query(`update usuarios_redefinicoes set criado_em = now() - interval '5 minutes' where usuario_id = (select id from usuarios where email = 'esq1@x.com')`)
+      emailsEnviados.length = 0
+      await pedir('esq1@x.com', '10.8.2.6')
+      const token = tokenDoEmail()
+      const r = await Promise.all([redefinir({ token, senha: 'corrida-um-123' }, '10.8.3.1'), redefinir({ token, senha: 'corrida-dois-123' }, '10.8.3.2')])
+      assert.deepEqual(r.map((x) => x.statusCode).sort(), [200, 400])
+    })
+
+    test('pedidos de link têm limite por origem', async () => {
+      const codigos = []
+      for (let i = 0; i < 7; i++) codigos.push((await pedir('esq-limite@x.com', '10.8.9.9')).statusCode)
+      assert.deepEqual(codigos.slice(0, 5), [200, 200, 200, 200, 200])
+      assert.equal(codigos[6], 429)
+    })
+
+    test('sem e-mail configurado, o servidor avisa em vez de fingir que enviou', async () => {
+      const a = await outraApp({ urlPublica: null })
+      try {
+        const r = await a.inject({ method: 'POST', url: '/api/auth/esqueci', headers: H, payload: { email: 'esq1@x.com' } })
+        assert.equal(r.statusCode, 503)
+        assert.match(r.json().mensagem, /administrador/)
+      } finally { await a.close() }
+    })
+  })
+
   test('site, cabeçalhos de segurança e logout', async () => {
     const r = await app.inject({ method: 'GET', url: '/api/saude' })
     assert.equal(r.statusCode, 200)

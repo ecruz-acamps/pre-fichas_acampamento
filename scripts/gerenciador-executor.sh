@@ -74,7 +74,21 @@ acao_nova() { # arquivo
   if [ -r "$ETC/cloudflare.env" ]; then set -a; . "$ETC/cloudflare.env"; set +a; fi
   # e-mail de envio ("Esqueci minha senha") guardado na preparação da VM
   if [ -r "$ETC/smtp.env" ]; then set -a; . "$ETC/smtp.env"; set +a; fi
-  (cd "$pasta" && ./scripts/novo-acampamento.sh "${args[@]}" </dev/null)
+  if ! (cd "$pasta" && ./scripts/novo-acampamento.sh "${args[@]}" </dev/null); then
+    # a pasta não existia antes deste pedido (conferido acima): remove o que ficou pela metade para a próxima tentativa
+    echo "✗ A criação falhou. Limpando o que ficou pela metade em $pasta (nada de dados de outro acampamento é tocado)…"
+    limpar_instancia_incompleta "$pasta"
+    return 1
+  fi
+}
+# Remove uma instância que acabou de ser criada e falhou. Só age em /opt/prefichas-<nome> e nunca em atalhos.
+limpar_instancia_incompleta() {
+  local pasta="$1"
+  casa "$pasta" '^/opt/prefichas-[a-z0-9-]{1,80}$' || return 0
+  case "$pasta" in /opt/prefichas-gerenciador|/opt/prefichas-proxy) return 0 ;; esac
+  [ -d "$pasta" ] && [ ! -L "$pasta" ] || return 0
+  [ -f "$pasta/docker-compose.yml" ] && (cd "$pasta" && timeout 120 docker compose down -v >/dev/null 2>&1) || true
+  rm -rf --one-file-system -- "$pasta"
 }
 acao_atualizar() { local i="$1"; casa "$i" "$RE_INST" && [ -f "/opt/$i/.env" ] || { echo "✗ Instância inválida: $i"; return 1; }
   echo "→ Atualizando $i…"; (cd "/opt/$i" && ./scripts/atualizar.sh); }
@@ -115,6 +129,116 @@ acao_cloudflare() { # arquivo do pedido
 acao_cloudflare_remover() {
   rm -f "$ETC/cloudflare.env"
   echo "✓ Token da Cloudflare removido do servidor. Os acampamentos já publicados continuam no ar (cada um tem o próprio túnel)."
+}
+
+# ---------------------------------------------------------------- E-mail de envio (aba Configurações)
+RE_HOST_SMTP='^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$'
+RE_USU_SMTP='^[A-Za-z0-9._%+@-]{3,120}$'
+RE_SENHA_SMTP='^[A-Za-z0-9._~+=:@%!*,;?/-]{4,128}$'   # sem aspas, espaços, $, # nem \ (a senha vai para arquivos .env)
+RE_LINK_REDEF='^https://[a-z0-9.-]{3,200}/\?redefinir=[A-Za-z0-9_-]{20,100}$'
+smtp_ler() { # HOST|PORTA|USUARIO|SENHA|REMETENTE do arquivo guardado
+  [ -r "$ETC/smtp.env" ] || return 0
+  ( . "$ETC/smtp.env" 2>/dev/null
+    case "$1" in HOST) printf '%s' "${SMTP_HOST:-}" ;; PORTA) printf '%s' "${SMTP_PORTA:-}" ;; USUARIO) printf '%s' "${SMTP_USUARIO:-}" ;;
+      SENHA) printf '%s' "${SMTP_SENHA:-}" ;; REMETENTE) printf '%s' "${SMTP_REMETENTE:-}" ;; esac )
+}
+# Envia uma mensagem de texto. A senha vai ao curl pela entrada padrão (não aparece em 'ps' nem em log).
+enviar_smtp() { # host porta usuario senha remetente para assunto texto
+  local host="$1" porta="$2" usuario="$3" senha="$4" rem="$5" para="$6" assunto="$7" texto="$8" msg url rc saida
+  local opcoes=()
+  msg="$(mktemp)"; chmod 600 "$msg"
+  {
+    printf 'From: =?UTF-8?B?%s?= <%s>\r\n' "$(printf 'Painel central Pré-fichas' | base64 -w0)" "$rem"
+    printf 'To: <%s>\r\nSubject: =?UTF-8?B?%s?=\r\nDate: %s\r\n' "$para" "$(printf '%s' "$assunto" | base64 -w0)" "$(date -R)"
+    printf 'MIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n'
+    printf '%s' "$texto" | base64 -w76 | sed 's/$/\r/'
+  } > "$msg"
+  case "$porta" in 465) url="smtps://${host}:${porta}" ;; *) url="smtp://${host}:${porta}"; opcoes=(--ssl-reqd) ;; esac
+  saida="$(printf 'user = "%s:%s"\n' "$usuario" "$senha" | curl -sS -m 40 -K - "${opcoes[@]}" --url "$url" --mail-from "$rem" --mail-rcpt "$para" -T "$msg" 2>&1)"; rc=$?
+  rm -f "$msg"
+  [ "$rc" = 0 ] || printf '%s' "${saida//"$senha"/***}" | tr -d '\r' | head -c 300
+  return "$rc"
+}
+smtp_configurado() { [ -n "$(smtp_ler HOST)" ] && [ -n "$(smtp_ler USUARIO)" ] && [ -n "$(smtp_ler SENHA)" ]; }
+acao_email() { # arquivo do pedido: confere com um envio de teste ANTES de guardar
+  local p="$1" host porta usuario senha rem aplicar por erro
+  host="$(jq -r '.host // empty' "$p")"; porta="$(jq -r '.porta // empty' "$p")"; usuario="$(jq -r '.usuario // empty' "$p")"
+  senha="$(jq -r '.senha // empty' "$p")"; rem="$(jq -r '.remetente // empty' "$p")"; aplicar="$(jq -r '.aplicar // false' "$p")"
+  por="$(jq -r '.por // empty' "$p" | head -c 200)"
+  casa "$host" "$RE_HOST_SMTP" || { echo "✗ Servidor de e-mail inválido."; return 1; }
+  case "$porta" in 25|465|587|2525) ;; *) echo "✗ Porta inválida."; return 1 ;; esac
+  casa "$usuario" "$RE_USU_SMTP" || { echo "✗ Usuário inválido."; return 1; }
+  casa "$rem" "$RE_EMAIL" || { echo "✗ E-mail do remetente inválido."; return 1; }
+  [ -n "$senha" ] || senha="$(smtp_ler SENHA)"          # senha em branco = manter a guardada
+  [ -n "$senha" ] || { echo "✗ Informe a senha (ainda não há uma guardada)."; return 1; }
+  casa "$senha" "$RE_SENHA_SMTP" || { echo "✗ Senha em formato inválido."; return 1; }
+  casa "$por" "$RE_EMAIL" || { echo "✗ O seu usuário do painel precisa ser um e-mail válido para receber a mensagem de teste."; return 1; }
+  echo "→ Enviando um e-mail de teste para ${por} pelo servidor ${host}:${porta}…"
+  erro="$(enviar_smtp "$host" "$porta" "$usuario" "$senha" "$rem" "$por" "Teste do servidor de e-mail — Painel central" \
+    "Este é um e-mail de teste do painel central.
+
+Se você está lendo, o servidor de e-mail foi configurado corretamente e já pode ser usado para o \"Esqueci minha senha\".")" \
+    || { echo "✗ O servidor de e-mail recusou: ${erro:-sem detalhes}"
+         echo "  Confira o servidor, a porta (465 SSL ou 587 STARTTLS), o usuário e a senha. No Gmail, use uma SENHA DE APP (não a senha normal)."
+         return 1; }
+  mkdir -p "$ETC" && chmod 700 "$ETC"
+  ( umask 077
+    printf 'SMTP_HOST=%q\nSMTP_PORTA=%q\nSMTP_USUARIO=%q\nSMTP_SENHA=%q\nSMTP_REMETENTE=%q\n' "$host" "$porta" "$usuario" "$senha" "$rem" > "$ETC/smtp.env.novo" \
+      && mv -f "$ETC/smtp.env.novo" "$ETC/smtp.env" )
+  echo "✓ Servidor de e-mail verificado (teste enviado para ${por}) e guardado no servidor."
+  if [ "$aplicar" = true ]; then acao_email_aplicar; fi
+}
+acao_email_teste() { # arquivo do pedido
+  local p="$1" por erro
+  por="$(jq -r '.por // empty' "$p" | head -c 200)"
+  smtp_configurado || { echo "✗ O servidor de e-mail ainda não foi configurado."; return 1; }
+  casa "$por" "$RE_EMAIL" || { echo "✗ O seu usuário do painel precisa ser um e-mail válido para receber o teste."; return 1; }
+  erro="$(enviar_smtp "$(smtp_ler HOST)" "$(smtp_ler PORTA)" "$(smtp_ler USUARIO)" "$(smtp_ler SENHA)" "$(smtp_ler REMETENTE)" "$por" \
+    "Teste do servidor de e-mail — Painel central" "Este é um e-mail de teste do painel central. Se você está lendo, o envio está funcionando.")" \
+    || { echo "✗ O servidor de e-mail recusou: ${erro:-sem detalhes}"; return 1; }
+  echo "✓ E-mail de teste enviado para ${por}."
+}
+acao_email_remover() {
+  rm -f "$ETC/smtp.env"
+  echo "✓ Servidor de e-mail removido do servidor. Os acampamentos já criados continuam com a configuração que têm."
+}
+# Grava o servidor de e-mail em cada acampamento já criado e reinicia só o necessário.
+acao_email_aplicar() {
+  smtp_configurado || { echo "✗ O servidor de e-mail ainda não foi configurado."; return 1; }
+  local i f tmp falhou=0 n=0
+  for i in $(instancias); do
+    f="/opt/$i/.env"; [ -f "$f" ] && [ ! -L "$f" ] || continue
+    tmp="$(mktemp "/opt/$i/.env.XXXXXX")"
+    { grep -vE '^SMTP_(HOST|PORTA|USUARIO|SENHA|REMETENTE)=' "$f" || true
+      printf 'SMTP_HOST=%s\nSMTP_PORTA=%s\nSMTP_USUARIO=%s\nSMTP_SENHA=%s\nSMTP_REMETENTE=%s\n' \
+        "$(smtp_ler HOST)" "$(smtp_ler PORTA)" "$(smtp_ler USUARIO)" "$(smtp_ler SENHA)" "$(smtp_ler REMETENTE)"
+    } > "$tmp"
+    chmod --reference="$f" "$tmp" && mv -f "$tmp" "$f"
+    echo "→ $i: e-mail gravado; reiniciando o sistema…"
+    if (cd "/opt/$i" && timeout 300 docker compose up -d >/dev/null 2>&1); then n=$((n+1)); else echo "✗ Falhou ao reiniciar $i"; falhou=1; fi
+  done
+  [ "$falhou" = 0 ] || return 1
+  echo "✓ Servidor de e-mail aplicado em ${n} acampamento(s)."
+}
+# "Esqueci minha senha" do painel central: manda o link. Só envia para um usuário ATIVO do painel e só com
+# link do formato esperado (o pedido vem de uma página sem login; o painel pode estar comprometido).
+acao_email_redefinicao() { # arquivo do pedido
+  local p="$1" para link
+  para="$(jq -r '.para // empty' "$p")"; link="$(jq -r '.link // empty' "$p")"
+  casa "$para" "$RE_EMAIL" && casa "$link" "$RE_LINK_REDEF" || { echo "✗ email-redefinicao: pedido inválido."; return 1; }
+  jq -e --arg e "$para" 'any(.[]; .email == $e and .ativo != false)' "$BASE/dados/usuarios.json" >/dev/null 2>&1 \
+    || { echo "✗ email-redefinicao: destinatário não é usuário ativo do painel."; return 1; }
+  smtp_configurado || { echo "✗ email-redefinicao: servidor de e-mail não configurado."; return 1; }
+  enviar_smtp "$(smtp_ler HOST)" "$(smtp_ler PORTA)" "$(smtp_ler USUARIO)" "$(smtp_ler SENHA)" "$(smtp_ler REMETENTE)" "$para" \
+    "Redefinir senha do painel central" \
+    "Para criar uma senha nova no painel central, abra o link abaixo (vale por 1 hora, uma única vez):
+
+${link}
+
+Você vai precisar do código do aplicativo autenticador.
+Se não foi você que pediu, ignore este e-mail: sua senha continua a mesma." >/dev/null \
+    || { echo "✗ email-redefinicao: falha ao enviar."; return 1; }
+  echo "✓ email-redefinicao: link enviado."
 }
 
 # ---------------------------------------------------------------- VPN (aba Configurações)
@@ -162,7 +286,9 @@ processar() { # arquivo do pedido
   fi
   local tmp; tmp="$(mktemp)"; cp "$arq" "$tmp"; rm -f "$arq"   # trabalha numa cópia do root
   acao="$(jq -r '.acao // empty' "$tmp")"; por="$(jq -r '.por // empty' "$tmp" | head -c 200)"
-  alvo="$(jq -r '.instancia // .nome // (if (.acao|startswith("cloudflare")) then "Cloudflare" elif (.acao|startswith("vpn")) then "VPN" else "todas" end)' "$tmp" | head -c 120)"
+  alvo="$(jq -r '.instancia // .nome // (if (.acao|startswith("cloudflare")) then "Cloudflare" elif (.acao|startswith("vpn")) then "VPN" elif (.acao|startswith("email")) then "E-mail" else "todas" end)' "$tmp" | head -c 120)"
+  # "Esqueci minha senha" é pedido por uma página sem login: não vira tarefa (não enche a lista) e o link nunca é registrado
+  if [ "$acao" = email-redefinicao ]; then acao_email_redefinicao "$tmp" 2>&1 | head -c 300; rm -f "$tmp"; return; fi
   inicio="$(date -Iseconds)"; log="$TAREFAS/$id.log"; : > "$log"
   estado_tarefa "$id" "$acao" "$alvo" executando "Em andamento" "$por" "$inicio"
   echo "▶ Tarefa $id: $acao · $alvo (por $por) — log: $log"
@@ -173,6 +299,10 @@ processar() { # arquivo do pedido
     atualizar-painel) acao_atualizar_painel >> "$log" 2>&1 && ok=1 ;;
     cloudflare) acao_cloudflare "$tmp" >> "$log" 2>&1 && ok=1 ;;
     cloudflare-remover) acao_cloudflare_remover >> "$log" 2>&1 && ok=1 ;;
+    email) acao_email "$tmp" >> "$log" 2>&1 && ok=1 ;;
+    email-teste) acao_email_teste "$tmp" >> "$log" 2>&1 && ok=1 ;;
+    email-remover) acao_email_remover >> "$log" 2>&1 && ok=1 ;;
+    email-aplicar) acao_email_aplicar >> "$log" 2>&1 && ok=1 ;;
     vpn-reconectar) acao_vpn_reconectar >> "$log" 2>&1 && ok=1 ;;
     vpn-credenciais) acao_vpn_credenciais "$tmp" >> "$log" 2>&1 && ok=1 ;;
     atualizar-todas)
@@ -218,8 +348,15 @@ coletar() {
   printf '%s' "$vj" | jq -c --arg em "$(date -Iseconds)" '. + {coletado_em:$em}' > "$ESTADO/vpn.json.tmp" && mv -f "$ESTADO/vpn.json.tmp" "$ESTADO/vpn.json" && chmod 644 "$ESTADO/vpn.json"
   local tk=false; grep -qE '^CF_API_TOKEN=.' "$ETC/cloudflare.env" 2>/dev/null && tk=true
   local dbase; dbase="$(valor_painel DOMINIO_BASE)"; dbase="${dbase:-movimentocampista.com.br}"
+  # só a situação do e-mail (servidor, porta, usuário, remetente): a senha nunca sai do arquivo do administrador
+  local ej='{"configurado":false}'
+  if smtp_configurado; then
+    ej="$(jq -nc --arg h "$(smtp_ler HOST)" --arg p "$(smtp_ler PORTA)" --arg u "$(smtp_ler USUARIO)" --arg r "$(smtp_ler REMETENTE)" --arg a "$(date -r "$ETC/smtp.env" -Iseconds)" \
+      '{configurado:true, host:$h, porta:($p|tonumber? // 0), usuario:$u, remetente:$r, atualizado_em:$a}')"
+  fi
   printf '{"cloudflare":{"token_configurado":%s,"dominio_base":%s,"atualizado_em":%s}}\n' "$tk" "$(json_str "$dbase")" \
-    "$( [ -f "$ETC/cloudflare.env" ] && json_str "$(date -r "$ETC/cloudflare.env" -Iseconds)" || echo null )" > "$ESTADO/configuracoes.json.tmp" \
+    "$( [ -f "$ETC/cloudflare.env" ] && json_str "$(date -r "$ETC/cloudflare.env" -Iseconds)" || echo null )" \
+    | jq -c --argjson e "$ej" '. + {email:$e}' > "$ESTADO/configuracoes.json.tmp" \
     && mv -f "$ESTADO/configuracoes.json.tmp" "$ESTADO/configuracoes.json"
   chmod 644 "$ESTADO/instancias.json" "$ESTADO/servidor.json" "$ESTADO/configuracoes.json"
 }

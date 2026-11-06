@@ -646,6 +646,20 @@ acampamentos já publicados.
 - Depois de salvo ele **nunca mais aparece** em tela, auditoria, lista de tarefas nem log. A tela só mostra "token configurado".
 - Ao criar o token na Cloudflare, use: *Conta › Cloudflare Tunnel › Editar* e *Zona › DNS › Editar*, com a sua conta e a zona do domínio.
 
+**Servidor de e-mail pelo painel central (aba Configurações → "Servidor de e-mail"):**
+- Informe servidor (ex.: `smtp.gmail.com`), porta (465 SSL ou 587 STARTTLS), usuário, senha e remetente. No Gmail, use uma **senha de app**
+  (Conta Google → Segurança → Verificação em duas etapas → Senhas de app).
+- Ao salvar, o servidor **manda um e-mail de teste para o seu usuário do painel** e só guarda se o envio funcionar. A senha fica só em
+  `/etc/prefichas/smtp.env` (pasta `700`, arquivo `600`) e nunca volta para a tela, a auditoria, a lista de tarefas nem o log.
+- **Aplicar também aos acampamentos já criados** (caixa ao salvar, ou o botão "Aplicar aos acampamentos"): grava o servidor de e-mail em cada
+  acampamento existente e reinicia o sistema deles por alguns segundos. Acampamentos novos já nascem com ele.
+- É esse servidor que envia o link do **"Esqueci minha senha"**: do painel central, do painel de cada acampamento (administradores e equipe)
+  e dos participantes. Em cada acampamento o link vale 1 hora e uma única vez; com a verificação em duas etapas ativa, também é preciso o
+  código do aplicativo. No painel central o código do autenticador é sempre obrigatório.
+- **Painel central, sem e-mail:** a tela "Esqueci minha senha" também troca a senha direto, com o e-mail do usuário e o código atual do autenticador (código de uso único,
+  só o atual e o anterior, 3 erros travam o caminho por 1 hora, sessões derrubadas). Para desligar esse caminho: `REDEFINIR_POR_MFA: "false"` no `docker-compose.yml` do painel e `docker compose up -d`.
+- Quem perdeu a senha **e** o celular do autenticador no painel central usa o terminal (`cli.mjs nova-senha` e `novo-autenticador`); no acampamento, outro administrador redefine o acesso.
+
 **VPN pelo painel central (aba Configurações → "VPN do servidor"):**
 - **Situação:** conectada ou desconectada, redes pelo túnel e, no strongSwan, o IP do servidor na VPN. É atualizada a cada minuto.
 - **Reconectar:** reinicia o túnel (FortiClient ou strongSwan). Se você acessa o painel pela VPN, ele pode ficar alguns segundos sem resposta; a tela de Tarefas tenta de novo sozinha.
