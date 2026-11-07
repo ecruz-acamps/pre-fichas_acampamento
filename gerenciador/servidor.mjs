@@ -212,7 +212,7 @@ function validarPedido(c) {
     if (Object.keys(e).length) return { erros: e }
     return { pedido: { acao, host, porta, usuario, remetente, aplicar: c.aplicar === true, ...(senha ? { senha } : {}) } }
   }
-  if (acao === 'email-teste' || acao === 'email-remover' || acao === 'email-aplicar') return { pedido: { acao } }
+  if (acao === 'email-teste' || acao === 'email-remover' || acao === 'email-aplicar' || acao === 'tunel-unificar') return { pedido: { acao } }
   return { erros: { acao: 'Ação desconhecida.' } }
 }
 

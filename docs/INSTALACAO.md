@@ -646,6 +646,15 @@ acampamentos já publicados.
 - Depois de salvo ele **nunca mais aparece** em tela, auditoria, lista de tarefas nem log. A tela só mostra "token configurado".
 - Ao criar o token na Cloudflare, use: *Conta › Cloudflare Tunnel › Editar* e *Zona › DNS › Editar*, com a sua conta e a zona do domínio.
 
+**Túnel único da Cloudflare (a partir da 2.4):**
+- A VM tem **um** túnel e **um** `cloudflared` (container `prefichas-tunel`, rede do host). O primeiro acampamento publicado pela Cloudflare cria o túnel; os
+  seguintes só acrescentam o endereço (`endereço → 127.0.0.1:porta`) e o registro DNS. Quem administra: `sudo ./scripts/tunel-compartilhado.sh listar|adicionar|remover|verificar`.
+- O token da API precisa de **Conta › Cloudflare Tunnel › Editar**, **Zona › DNS › Editar** e **Zona › Zona › Ler** (com a conta e a zona em "Recursos"). Antes de instalar um acampamento,
+  o sistema confere isso e diz o que falta.
+- **Acampamentos antigos, com túnel próprio:** painel central → Configurações → "Túnel único da Cloudflare" → **Unificar túneis** (ou `sudo ./scripts/tunel-compartilhado.sh unificar`).
+  Cada um é publicado no túnel único, o site é conferido e só depois o túnel antigo é desligado e apagado; se o site não responder, o DNS volta ao túnel antigo.
+- Se o `cloudflared` único parar, **todos** os acampamentos publicados pela Cloudflare saem do ar juntos (ele reinicia sozinho: `restart: unless-stopped`). Ver: `docker logs --tail 30 prefichas-tunel`.
+
 **Servidor de e-mail pelo painel central (aba Configurações → "Servidor de e-mail"):**
 - Informe servidor (ex.: `smtp.gmail.com`), porta (465 SSL ou 587 STARTTLS), usuário, senha e remetente. No Gmail, use uma **senha de app**
   (Conta Google → Segurança → Verificação em duas etapas → Senhas de app).

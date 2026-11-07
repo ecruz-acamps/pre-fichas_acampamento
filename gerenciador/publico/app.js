@@ -196,7 +196,7 @@ function telaNova(area) {
 // ------------------------------------------------------------------ tarefas
 async function telaTarefas(area) {
   const d = await api('GET', '/api/tarefas')
-  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas', 'atualizar-painel': 'Atualizar o painel', cloudflare: 'Token da Cloudflare', 'cloudflare-remover': 'Remover token da Cloudflare', 'email': 'Servidor de e-mail', 'email-teste': 'E-mail de teste', 'email-remover': 'Remover servidor de e-mail', 'email-aplicar': 'Aplicar e-mail aos acampamentos', 'vpn-reconectar': 'Reconectar a VPN', 'vpn-credenciais': 'Trocar credenciais da VPN' }
+  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas', 'atualizar-painel': 'Atualizar o painel', cloudflare: 'Token da Cloudflare', 'cloudflare-remover': 'Remover token da Cloudflare', 'tunel-unificar': 'Unificar túneis da Cloudflare', 'email': 'Servidor de e-mail', 'email-teste': 'E-mail de teste', 'email-remover': 'Remover servidor de e-mail', 'email-aplicar': 'Aplicar e-mail aos acampamentos', 'vpn-reconectar': 'Reconectar a VPN', 'vpn-credenciais': 'Trocar credenciais da VPN' }
   const linha = (t) => h('tr', { style: 'cursor:pointer', onclick: () => { tarefaAberta = t.id; desenhar() } },
     h('td', {}, dataHora(t.inicio || t.pedido_em)), h('td', {}, nomeAcao[t.acao] ?? t.acao), h('td', {}, t.alvo || t.nome || t.instancia || '—'),
     h('td', {}, h('span', { class: `selo ${t.situacao === 'concluida' ? 'ok' : t.situacao === 'erro' ? 'erro' : 'neutro'}` }, t.situacao)), h('td', {}, t.por || '—'))
@@ -266,8 +266,25 @@ async function telaConfiguracoes(area) {
     if (confirm('Remover o token da Cloudflare do servidor? Os acampamentos já publicados continuam no ar; só não será possível criar novos pela Cloudflare até colar um token de novo.')) pedir({ acao: 'cloudflare-remover' })
   } }, 'Remover token'))
   area.append(form, h('p', { class: 'dica' }, cfg.atualizado_em ? `Último token guardado em ${dataHora(cfg.atualizado_em)}.` : ''))
+  cartaoTunel(area, conf.tunel ?? {})
   cartaoEmail(area, conf.email ?? {})
   await cartaoVpn(area)
+}
+
+// Túnel único da Cloudflare: todos os acampamentos publicados pela Cloudflare usam o mesmo túnel (um só cloudflared).
+function cartaoTunel(area, t) {
+  const n = (t.enderecos ?? []).length
+  const selo = !t.existe ? h('span', { class: 'selo neutro' }, 'ainda não criado')
+    : t.rodando ? h('span', { class: 'selo ok' }, `no ar · ${n} endereço(s)`) : h('span', { class: 'selo erro' }, 'parado')
+  const partes = [h('div', { class: 'topo' }, h('h2', {}, 'Túnel único da Cloudflare'), selo),
+    h('p', { class: 'dica' }, 'Todos os acampamentos publicados pela Cloudflare passam por UM só túnel desta VM (um único cloudflared). Cada acampamento novo é só um endereço a mais dentro dele; o túnel é criado sozinho no primeiro.')]
+  if (n) partes.push(h('ul', { class: 'dica' }, ...(t.enderecos ?? []).map((e) => h('li', {}, e))))
+  if (t.proprios > 0) {
+    partes.push(h('div', { class: 'alerta erro' }, `${t.proprios} acampamento(s) ainda usam um túnel próprio (versão antiga). Unifique para usar só o túnel único e apagar os antigos.`),
+      h('p', { class: 'dica' }, 'Para cada acampamento, o sistema publica no túnel único, confere que o site responde por ele e só então desliga o túnel antigo. Se não responder, o endereço volta ao túnel antigo e nada muda para o público.'),
+      h('button', { class: 'principal', type: 'button', onclick: () => pedir({ acao: 'tunel-unificar' }, `Mover ${t.proprios} acampamento(s) para o túnel único? O site de cada um é conferido antes de desligar o túnel antigo.`) }, 'Unificar túneis'))
+  }
+  area.append(h('section', { class: 'cartao' }, ...partes))
 }
 
 // Servidor de e-mail (SMTP): usado no "Esqueci minha senha" do painel central e dos acampamentos novos.
