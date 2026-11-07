@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Liga ou desliga a publicação na internet pela Cloudflare (túnel cloudflared).
+# Liga ou desliga a publicação na internet pela Cloudflare (túnel ÚNICO da VM; ver tunel-compartilhado.sh).
 # Executado como root pelo atualizador do servidor quando o painel pede
 # (Configurações → Publicação na internet). Também pode ser usado no terminal:
 #   sudo ./scripts/publicacao.sh ligar NOME      # publica NOME.<DOMINIO_BASE>
@@ -38,14 +38,17 @@ case "$ACAO" in
     [[ "$SUB" =~ ^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$ ]] || { echo "✗ Endereço inválido: use letras minúsculas, números e hífen."; registrar false "" false "Endereço inválido"; exit 1; }
     HOST="${SUB}.${BASE}"
     echo "→ Publicando ${HOST} na Cloudflare…"
-    TOKEN="$(./scripts/cloudflare-tunel.sh "$HOST" http://app:3000)" || TOKEN=""
-    if [ -z "$TOKEN" ]; then
+    PORTA_APP="$(valor_env PORTA_LOCAL)"; PORTA_APP="${PORTA_APP:-3000}"
+    if ! ./scripts/tunel-compartilhado.sh adicionar "$HOST" "$PORTA_APP"; then
       echo "✗ A Cloudflare não publicou o endereço (confira o token e o domínio)."
       registrar false "" false "A Cloudflare recusou: confira o token da API e o domínio ${BASE}"
       exit 1
     fi
-    definir_env TUNEL_TOKEN "$TOKEN"
-    definir_env COMPOSE_PROFILES "${sem_tunel:+${sem_tunel},}tunel"
+    # versões antigas tinham um cloudflared por acampamento: não é mais necessário
+    docker compose stop tunel >/dev/null 2>&1 || true
+    docker compose rm -f tunel >/dev/null 2>&1 || true
+    definir_env TUNEL_TOKEN ""
+    definir_env COMPOSE_PROFILES "$sem_tunel"
     definir_env URL_PUBLICA "https://${HOST}"
     definir_env ENDERECO_PUBLICO "$HOST"
     docker compose up -d >/dev/null 2>&1 || docker compose up -d
@@ -61,6 +64,11 @@ case "$ACAO" in
       PORTA_HTTP="$p"; URL_LOCAL="http://${IP}$([ "$p" = 80 ] || echo ":$p")"
       sem_tunel="caddy"
       definir_env DOMINIO ":80"; definir_env PORTA_HTTP "$p"; definir_env COOKIE_SEGURO false
+    fi
+    # tira o endereço do túnel único (o túnel e os outros acampamentos continuam)
+    ENDERECO="$(valor_env ENDERECO_PUBLICO)"
+    if [ -n "$ENDERECO" ]; then
+      ./scripts/tunel-compartilhado.sh remover "$ENDERECO" || echo "! Não consegui tirar $ENDERECO do túnel agora (confira o token da Cloudflare)."
     fi
     docker compose stop tunel >/dev/null 2>&1 || true
     docker compose rm -f tunel >/dev/null 2>&1 || true

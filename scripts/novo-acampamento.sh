@@ -20,7 +20,8 @@
 #   --marca ARQ        (avançado) arquivo de marca completo, ver marcas/modelo.json
 #   --compartilhado    publica o --dominio pelo proxy HTTPS compartilhado da VM (vários acampamentos
 #                      diretos no mesmo servidor; ver scripts/proxy-compartilhado.sh)
-#   --cloudflare       publica o --dominio pelo Cloudflare Tunnel (HTTPS sem usar portas 80/443;
+#   --cloudflare       publica o --dominio pelo túnel ÚNICO da Cloudflare da VM (HTTPS sem usar portas 80/443;
+#                      todos os acampamentos usam o mesmo túnel; ver scripts/tunel-compartilhado.sh;
 #                      precisa de CF_API_TOKEN ou /etc/prefichas/cloudflare.env)
 #   --multi            vários acampamentos atrás de um proxy compartilhado (sem Caddy próprio)
 #   --forcar           sobrescreve um .env existente (CUIDADO: troca a senha do banco gerada antes)
@@ -109,7 +110,10 @@ ls /opt/prefichas-*/.env >/dev/null 2>&1 && [ "$PORTA" = 3000 ] && PORTA=3001
 PORTA=$(porta_local_livre "$PORTA")
 if [ "$CLOUDFLARE" = 1 ]; then
   [ -n "$DOMINIO" ] || { echo "--cloudflare precisa de --dominio (ex.: nome.movimentocampista.com.br)."; exit 1; }
-  PERFIS="tunel"
+  # Um túnel ÚNICO para a VM inteira (scripts/tunel-compartilhado.sh): sem cloudflared por acampamento.
+  # Confere token, zona e permissões ANTES de instalar, para falhar cedo.
+  ./scripts/tunel-compartilhado.sh verificar "$DOMINIO" || exit 1
+  PERFIS=""
 elif [ "$COMPARTILHADO" = 1 ]; then
   [ -n "$DOMINIO" ] || { echo "--compartilhado precisa de --dominio (ex.: prefichas.seuacampamento.com.br)."; exit 1; }
   PERFIS=""; MULTI=1
@@ -174,12 +178,6 @@ if [ -n "${SMTP_USUARIO:-}" ]; then
 fi
 echo "✓ Configuração criada (${PROJETO})"
 
-if [ "$CLOUDFLARE" = 1 ]; then
-  echo "→ Publicando ${DOMINIO} na Cloudflare…"
-  TOKEN_TUNEL="$(./scripts/cloudflare-tunel.sh "$DOMINIO" http://app:3000)" || { rm -f .env; exit 1; }
-  echo "TUNEL_TOKEN=${TOKEN_TUNEL}" >> .env
-fi
-
 # Versão do código (aparece no painel e permite avisar quando houver atualização)
 VERSAO_COMMIT="$(git rev-parse HEAD 2>/dev/null || true)"
 VERSAO_DATA="$(git log -1 --format=%cI 2>/dev/null || true)"
@@ -196,6 +194,12 @@ for _ in $(seq 1 90); do
 done
 curl -fsS "http://127.0.0.1:${PORTA}/api/saude" >/dev/null || { echo; echo "✗ O sistema não respondeu. Veja: docker compose logs app"; exit 1; }
 
+if [ "$CLOUDFLARE" = 1 ]; then
+  echo "→ Publicando ${DOMINIO} no túnel único da Cloudflare…"
+  ./scripts/tunel-compartilhado.sh adicionar "$DOMINIO" "$PORTA" || {
+    echo "✗ Não foi possível publicar na Cloudflare. Desfazendo a instalação para você poder tentar de novo."
+    docker compose down -v >/dev/null 2>&1 || true; rm -f .env; exit 1; }
+fi
 if [ "$COMPARTILHADO" = 1 ]; then
   echo "→ Publicando ${DOMINIO} no proxy compartilhado da VM…"
   ./scripts/proxy-compartilhado.sh adicionar "$DOMINIO" "$PORTA" || {

@@ -286,7 +286,7 @@ processar() { # arquivo do pedido
   fi
   local tmp; tmp="$(mktemp)"; cp "$arq" "$tmp"; rm -f "$arq"   # trabalha numa cópia do root
   acao="$(jq -r '.acao // empty' "$tmp")"; por="$(jq -r '.por // empty' "$tmp" | head -c 200)"
-  alvo="$(jq -r '.instancia // .nome // (if (.acao|startswith("cloudflare")) then "Cloudflare" elif (.acao|startswith("vpn")) then "VPN" elif (.acao|startswith("email")) then "E-mail" else "todas" end)' "$tmp" | head -c 120)"
+  alvo="$(jq -r '.instancia // .nome // (if (.acao|startswith("cloudflare")) then "Cloudflare" elif (.acao|startswith("vpn")) then "VPN" elif (.acao|startswith("email")) then "E-mail" elif (.acao|startswith("tunel")) then "Túnel da Cloudflare" else "todas" end)' "$tmp" | head -c 120)"
   # "Esqueci minha senha" é pedido por uma página sem login: não vira tarefa (não enche a lista) e o link nunca é registrado
   if [ "$acao" = email-redefinicao ]; then acao_email_redefinicao "$tmp" 2>&1 | head -c 300; rm -f "$tmp"; return; fi
   inicio="$(date -Iseconds)"; log="$TAREFAS/$id.log"; : > "$log"
@@ -299,6 +299,7 @@ processar() { # arquivo do pedido
     atualizar-painel) acao_atualizar_painel >> "$log" 2>&1 && ok=1 ;;
     cloudflare) acao_cloudflare "$tmp" >> "$log" 2>&1 && ok=1 ;;
     cloudflare-remover) acao_cloudflare_remover >> "$log" 2>&1 && ok=1 ;;
+    tunel-unificar) "$CODIGO/scripts/tunel-compartilhado.sh" unificar >> "$log" 2>&1 && ok=1 ;;
     email) acao_email "$tmp" >> "$log" 2>&1 && ok=1 ;;
     email-teste) acao_email_teste "$tmp" >> "$log" 2>&1 && ok=1 ;;
     email-remover) acao_email_remover >> "$log" 2>&1 && ok=1 ;;
@@ -354,9 +355,16 @@ coletar() {
     ej="$(jq -nc --arg h "$(smtp_ler HOST)" --arg p "$(smtp_ler PORTA)" --arg u "$(smtp_ler USUARIO)" --arg r "$(smtp_ler REMETENTE)" --arg a "$(date -r "$ETC/smtp.env" -Iseconds)" \
       '{configurado:true, host:$h, porta:($p|tonumber? // 0), usuario:$u, remetente:$r, atualizado_em:$a}')"
   fi
+  # túnel único da Cloudflare: existe? o cloudflared está no ar? quais endereços? quantos acampamentos ainda têm túnel próprio?
+  local rod=false ender='[]' prop=0 existe=false
+  docker ps --format '{{.Names}}' 2>/dev/null | grep -qx prefichas-tunel && rod=true
+  [ -r "$ETC/tunel-hosts" ] && ender="$(awk 'NF{print $1}' "$ETC/tunel-hosts" | jq -R . | jq -sc . 2>/dev/null || echo '[]')"
+  [ -r "$ETC/tunel.env" ] && existe=true
+  for i in $(instancias); do case ",$(valor_env "$i" COMPOSE_PROFILES)," in *,tunel,*) prop=$((prop + 1)) ;; esac; done
+  local tj; tj="$(jq -nc --argjson r "$rod" --argjson e "$ender" --argjson p "$prop" --argjson x "$existe" '{existe:$x, rodando:$r, enderecos:$e, proprios:$p}')"
   printf '{"cloudflare":{"token_configurado":%s,"dominio_base":%s,"atualizado_em":%s}}\n' "$tk" "$(json_str "$dbase")" \
     "$( [ -f "$ETC/cloudflare.env" ] && json_str "$(date -r "$ETC/cloudflare.env" -Iseconds)" || echo null )" \
-    | jq -c --argjson e "$ej" '. + {email:$e}' > "$ESTADO/configuracoes.json.tmp" \
+    | jq -c --argjson e "$ej" --argjson t "$tj" '. + {email:$e, tunel:$t}' > "$ESTADO/configuracoes.json.tmp" \
     && mv -f "$ESTADO/configuracoes.json.tmp" "$ESTADO/configuracoes.json"
   chmod 644 "$ESTADO/instancias.json" "$ESTADO/servidor.json" "$ESTADO/configuracoes.json"
 }

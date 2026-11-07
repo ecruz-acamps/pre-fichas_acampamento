@@ -1,7 +1,7 @@
 {
   "name": "pre-fichas-acampamento",
   "private": true,
-  "version": "2.3.0",
+  "version": "2.4.0",
   "type": "module",
   "engines": {
     "node": ">=22"
@@ -13,7 +13,7 @@
     "start": "node --env-file-if-exists=.env server/index.js",
     "usuarios": "node --env-file-if-exists=.env server/cli.js",
     "test": "node --env-file-if-exists=.env --test \"server/teste/*.test.js\"",
-    "test:gerenciador": "node --test gerenciador/teste.mjs gerenciador/teste-publico.mjs"
+    "test:gerenciador": "node --test gerenciador/teste.mjs gerenciador/teste-publico.mjs gerenciador/teste-tunel.mjs"
   },
   "dependencies": {
     "@fastify/compress": "^8.3.1",
