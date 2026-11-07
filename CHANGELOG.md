@@ -1,5 +1,19 @@
 # Histórico de versões
 
+## 2.6.0 — coordenadores e equipe se cadastram sozinhos; o administrador só libera
+
+- **Cadastro pela própria pessoa:** na tela de login do painel há **"Quero me cadastrar"** (nome, e-mail e senha). O usuário nasce **sem nenhum acesso**
+  (pendente) e recebe um link para **confirmar o e-mail**.
+- **O administrador só libera:** em Usuários, a seção **"Cadastros aguardando liberação"** mostra quem pediu (com o selo "e-mail confirmado" ou
+  "não confirmado") e permite escolher o **papel** (padrão: Coordenador de núcleo) e os **núcleos** e **Liberar acesso**, ou **Recusar**. A permissão continua vindo do
+  cadastro do usuário; só quem pode criar e liberar é o administrador. A pessoa é avisada por e-mail quando é liberada, e os administradores são avisados quando um
+  cadastro confirma o e-mail (se o servidor de e-mail estiver configurado).
+- **Segurança:** quem se cadastra não vê nem altera nada até ser liberado; o login explica o motivo só a quem acertou a senha; **cadastrar um e-mail que já existe não
+  muda nada** (não dá para tomar a conta de um administrador) e a resposta é igual; limite de 5 cadastros por hora por origem; no máximo 50 pedidos pendentes (e pedidos
+  com mais de 30 dias são descartados); pendente não recebe "Esqueci minha senha" nem "Nova senha".
+- **Interruptor em Configurações → "Cadastro da equipe":** Sim/Não. Em "Não", só o administrador cria usuários (como antes).
+- Migração `013`.
+
 ## 2.5.0 — foto (opcional) na conta do participante
 
 - **Foto na criação da conta**, opcional: o participante tira ou escolhe uma foto ao se cadastrar (no celular abre a câmera ou a galeria) e pode

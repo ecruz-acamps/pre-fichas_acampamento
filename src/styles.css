@@ -522,6 +522,9 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
 
 /* ---------- impressão da pré-ficha ---------- */
 .topo-botoes { display: flex; gap: 8px; align-items: center; }
+.pendentes { border-left: 4px solid var(--cor-principal, #7a5412); }
+.pendente { padding: 10px 0; border-top: 1px solid var(--borda, #e5e5e5); }
+.pendente-quem { margin-bottom: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .foto-perfil .foto-linha { display: flex; align-items: center; gap: 16px; margin: 6px 0 4px; }
 .foto-previa { width: 84px; height: 112px; border-radius: 10px; overflow: hidden; background: var(--fundo-suave, #f1f1f1); border: 1px solid var(--borda, #ddd); display: grid; place-items: center; font-size: 1.8rem; flex: none; }
 .foto-previa img { width: 100%; height: 100%; object-fit: cover; display: block; }

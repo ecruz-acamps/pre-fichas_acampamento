@@ -33,3 +33,24 @@ export async function consumirRedefinicaoUsuario(pool, tokenId) {
     'update usuarios_redefinicoes set usado_em = now() where id = $1 and usado_em is null', [tokenId])
   return rowCount === 1
 }
+
+// ---------------------------------------------------------------- confirmação do e-mail do cadastro da equipe
+/** Cria o link de confirmação (24 h). */
+export async function criarConfirmacaoEmail(pool, usuarioId) {
+  await pool.query('delete from usuarios_confirmacoes where usuario_id = $1', [usuarioId])
+  const token = randomBytes(32).toString('base64url')
+  await pool.query(
+    `insert into usuarios_confirmacoes (id, usuario_id, expira_em) values ($1, $2, now() + interval '24 hours')`, [hash(token), usuarioId])
+  return token
+}
+/** Consome o link (uma vez só) e marca o e-mail como confirmado. Devolve o usuário ou null. */
+export async function confirmarEmail(pool, token) {
+  if (typeof token !== 'string' || token.length < 20 || token.length > 100) return null
+  const { rows: [r] } = await pool.query(
+    `update usuarios_confirmacoes set usado_em = now()
+      where id = $1 and usado_em is null and expira_em > now() returning usuario_id`, [hash(token)])
+  if (!r) return null
+  const { rows: [u] } = await pool.query(
+    'update usuarios set email_confirmado = true where id = $1 returning id, nome, email, pendente', [r.usuario_id])
+  return u ?? null
+}

@@ -266,6 +266,13 @@ hora, sem reiniciar.
 
 ---
 
+### Cadastro de coordenadores e equipe
+- **A pessoa** abre o painel (`/admin/`), clica em **"Quero me cadastrar"** e informa nome, e-mail e senha. Depois abre o link de confirmação que chega por e-mail. Ela **não tem acesso a nada**
+  até o administrador liberar.
+- **O administrador** vai em **Usuários → "Cadastros aguardando liberação"**, escolhe o **papel** (Coordenador de núcleo, Equipe ou Administrador) e, para coordenador, os **núcleos**, e clica em
+  **Liberar acesso**. O selo "e-mail não confirmado" avisa que a pessoa ainda não abriu o link (pode não ser a dona do e-mail). **Recusar** apaga o pedido.
+- Em **Configurações → Cadastro da equipe** dá para **fechar** o cadastro (Não): aí só o administrador cria usuários. Quem já tem acesso e esqueceu a senha usa "Esqueci minha senha".
+
 ### Foto do participante
 - **Participante:** ao criar a conta (e depois, na área dele) há o campo **Sua foto (opcional)**. No celular abre a câmera ou a galeria. A foto é reduzida no aparelho
   e vale para todas as inscrições. Dá para **trocar** ou **remover** a qualquer momento.

@@ -1,10 +1,11 @@
 import { PAPEIS as LISTA_PAPEIS } from '../../shared/opcoes.js'
 import { transacao } from '../db.js'
 import { gerarHash, gerarSenhaTemporaria } from '../senha.js'
+import { carregarMarca } from '../marca.js'
 
 const PAPEIS = LISTA_PAPEIS.map((p) => p.valor)
 const EMAIL = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
-const CAMPOS = 'id, email, nome, papel, ativo, trocar_senha, criado_em, ultimo_login, totp_ativo'
+const CAMPOS = 'id, email, nome, papel, ativo, trocar_senha, criado_em, ultimo_login, totp_ativo, pendente, email_confirmado, solicitado_em'
 const SQL_USUARIOS = (where) => `
   select ${CAMPOS},
     coalesce((select array_agg(un.nucleo_id order by un.nucleo_id) from usuario_nucleos un
@@ -81,6 +82,8 @@ export default async function rotasUsuarios(app) {
     if (nome !== undefined && (typeof nome !== 'string' || !nome.trim() || nome.length > 120))
       return reply.code(400).send({ mensagem: 'Nome inválido.' })
 
+    const { rows: [antes] } = await pool.query('select pendente from usuarios where id = $1', [id])
+    const liberando = antes?.pendente === true
     const perdeAdmin = ativo === false || (papel !== undefined && papel !== 'admin')
     if (perdeAdmin && id === req.usuario.id) {
       return reply.code(400).send({ mensagem: 'Você não pode remover o seu próprio acesso de administrador.' })
@@ -91,7 +94,8 @@ export default async function rotasUsuarios(app) {
 
     const u = await transacao(pool, async (db) => {
       const r = await db.query(
-        `update usuarios set nome = coalesce($1, nome), papel = coalesce($2, papel), ativo = coalesce($3, ativo)
+        `update usuarios set nome = coalesce($1, nome), papel = coalesce($2, papel), ativo = coalesce($3, ativo),
+                pendente = case when $3::boolean is true then false else pendente end
           where id = $4`, [nome?.trim() ?? null, papel ?? null, ativo ?? null, id])
       if (!r.rowCount) return null
       if (nucleos !== undefined) await gravarNucleos(db, id, nucleos)
@@ -99,11 +103,31 @@ export default async function rotasUsuarios(app) {
     })
     if (!u) return reply.code(404).send({ mensagem: 'Usuário não encontrado.' })
     if (ativo === false) await pool.query('delete from sessoes where usuario_id = $1', [id])
+    // liberou um cadastro feito pela própria pessoa: avisa por e-mail (se o servidor de e-mail estiver configurado)
+    if (ativo === true && liberando && app.email && app.config.urlPublica) {
+      const marca = await carregarMarca(pool)
+      app.email.enviar({
+        para: u.email, nomeRemetente: marca.nome, assunto: `Seu acesso foi liberado — ${marca.nome}`,
+        texto: `Olá, ${u.nome.split(' ')[0]}!\n\nSeu acesso ao painel de ${marca.nome} foi liberado como ${u.papel === 'admin' ? 'administrador' : u.papel === 'coordenador' ? 'coordenador de núcleo' : 'equipe'}.\n` +
+          `Entre em ${app.config.urlPublica}/admin/ com o e-mail e a senha que você cadastrou.`,
+      }).catch(() => {})
+    }
     return { usuario: u }
+  })
+
+  // Recusar um cadastro pendente apaga o pedido (só vale para quem ainda não foi liberado)
+  app.delete('/api/admin/usuarios/:id/pendente', soAdmin(), async (req, reply) => {
+    const id = Number(req.params.id)
+    const { rowCount } = await pool.query('delete from usuarios where id = $1 and pendente', [id])
+    if (!rowCount) return reply.code(404).send({ mensagem: 'Cadastro pendente não encontrado.' })
+    req.log.info({ por: req.usuario.email, id }, 'Cadastro pendente recusado')
+    return { ok: true }
   })
 
   app.post('/api/admin/usuarios/:id/redefinir-senha', soAdmin(), async (req, reply) => {
     const id = Number(req.params.id)
+    const { rows: [pend] } = await pool.query('select pendente from usuarios where id = $1', [id])
+    if (pend?.pendente) return reply.code(400).send({ mensagem: 'Este cadastro ainda não foi liberado. Libere o acesso ou recuse o pedido.' })
     const senhaTemporaria = gerarSenhaTemporaria()
     const { rows: [u] } = await pool.query(
       // também desliga a verificação em duas etapas (recuperação de quem perdeu o celular)
