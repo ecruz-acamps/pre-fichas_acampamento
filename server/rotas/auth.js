@@ -4,7 +4,7 @@ import { licencaAtivada } from '../licenca.js'
 import { criarProtecaoLogin } from '../protecao.js'
 import { carregarMarca } from '../marca.js'
 import { conferirCodigo, gerarSegredo, uriAutenticador } from '../totp.js'
-import { consultarRedefinicaoUsuario, consumirRedefinicaoUsuario, criarRedefinicaoUsuario } from '../redefinicao.js'
+import { confirmarEmail, consultarRedefinicaoUsuario, consumirRedefinicaoUsuario, criarConfirmacaoEmail, criarRedefinicaoUsuario } from '../redefinicao.js'
 
 export default async function rotasAuth(app) {
   const { pool, config } = app
@@ -37,11 +37,17 @@ export default async function rotasAuth(app) {
     }
 
     const { rows } = await pool.query(
-      'select id, senha_hash, ativo, totp_ativo, totp_segredo, totp_ultimo_passo from usuarios where email = $1', [email])
+      'select id, senha_hash, ativo, pendente, email_confirmado, totp_ativo, totp_segredo, totp_ultimo_passo from usuarios where email = $1', [email])
     const usuario = rows[0]
     let ok
     try { ok = await conferirSenha(senha, usuario?.senha_hash) } catch (e) { if (e.code === 'OCUPADO') return ocupado(reply); throw e }
     if (!ok || !usuario?.ativo) {
+      // quem acertou a senha mas ainda não foi liberado recebe o motivo (só quem sabe a senha vê isso)
+      if (ok && usuario?.pendente) {
+        return reply.code(403).send({ pendente: true, mensagem: usuario.email_confirmado
+          ? 'Seu cadastro foi recebido e está aguardando a liberação de um administrador.'
+          : 'Seu cadastro foi recebido. Confirme o seu e-mail pelo link que enviamos e aguarde a liberação de um administrador.' })
+      }
       protecao.falhou(email)
       req.log.warn({ email, ip: req.ip }, 'Login recusado')
       return reply.code(401).send({ mensagem: 'E-mail ou senha incorretos.' })
@@ -96,6 +102,65 @@ export default async function rotasAuth(app) {
       [await gerarHash(nova), req.usuario.id])
     await encerrarOutrasSessoes(pool, req.usuario.id, req.cookies[COOKIE])
     return { ok: true }
+  })
+
+  // ----- Cadastro da equipe feito pela própria pessoa: nasce SEM acesso (pendente) até um administrador liberar -----
+  const MAX_PENDENTES = 50
+  app.post('/api/auth/cadastro', { config: { rateLimit: { max: 5, timeWindow: '1 hour' } } }, async (req, reply) => {
+    if (!(await licencaAtivada(pool))) return reply.code(503).send({ mensagem: 'O sistema ainda não foi ativado.' })
+    if ((await carregarMarca(pool)).cadastroEquipe === false) {
+      return reply.code(403).send({ mensagem: 'O cadastro de novos usuários está fechado. Peça a um administrador para criar o seu acesso.' })
+    }
+    const nome = String(req.body?.nome ?? '').trim()
+    const email = String(req.body?.email ?? '').trim().toLowerCase()
+    const senha = String(req.body?.senha ?? '')
+    const erros = {}
+    if (nome.length < 3 || nome.length > 120) erros.nome = 'Informe o seu nome completo.'
+    if (email.length > 200 || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) erros.email = 'E-mail inválido.'
+    const fraca = senhaForte(senha)
+    if (fraca) erros.senha = fraca
+    if (Object.keys(erros).length) return reply.code(400).send({ mensagem: 'Confira os campos destacados.', erros })
+
+    // o hash é calculado sempre: o tempo da resposta não revela se o e-mail já existe
+    let hash
+    try { hash = await protecao.limitar(() => gerarHash(senha)) } catch (e) { if (e.code === 'OCUPADO') return ocupado(reply); throw e }
+    await pool.query(`delete from usuarios where pendente and solicitado_em < now() - interval '30 days'`)   // pedidos esquecidos
+    const { rows: [{ n }] } = await pool.query('select count(*)::int as n from usuarios where pendente')
+    if (n >= MAX_PENDENTES) return reply.code(429).send({ mensagem: 'Há muitos cadastros aguardando liberação. Tente mais tarde ou fale com um administrador.' })
+
+    const resposta = { ok: true, mensagem: 'Cadastro recebido! Se o e-mail ainda não estava cadastrado, enviamos um link para confirmá-lo. Depois, aguarde um administrador liberar o seu acesso. Se você já tem acesso, use "Esqueci minha senha".' }
+    const { rows: [novo] } = await pool.query(
+      `insert into usuarios (email, nome, papel, senha_hash, trocar_senha, ativo, pendente, email_confirmado, solicitado_em)
+       values ($1, $2, 'coordenador', $3, false, false, true, false, now()) on conflict (email) do nothing returning id`, [email, nome, hash])
+    if (!novo) return reply.code(201).send(resposta)
+    if (app.email && config.urlPublica) {
+      const token = await criarConfirmacaoEmail(pool, novo.id)
+      const marca = await carregarMarca(pool)
+      app.email.enviar({
+        para: email, nomeRemetente: marca.nome, assunto: `Confirme o seu e-mail — ${marca.nome}`,
+        texto: `Olá, ${nome.split(' ')[0]}!\n\nRecebemos o seu cadastro no painel de ${marca.nome}. Para confirmar o seu e-mail, abra o link abaixo (vale por 24 horas):\n\n` +
+          `${config.urlPublica}/admin/?confirmar=${token}\n\nDepois, um administrador vai liberar o seu acesso. Se não foi você, ignore este e-mail.`,
+      }).catch(() => {})
+    }
+    req.log.info({ usuario: novo.id }, 'Cadastro de usuário da equipe recebido (pendente)')
+    return reply.code(201).send(resposta)
+  })
+
+  app.post('/api/auth/confirmar-email', { config: { rateLimit: { max: 20, timeWindow: '1 hour' } } }, async (req, reply) => {
+    const u = await confirmarEmail(pool, req.body?.token)
+    if (!u) return reply.code(400).send({ mensagem: 'Link inválido ou vencido.' })
+    // avisa os administradores (se o e-mail do servidor estiver configurado): há alguém esperando liberação
+    if (u.pendente && app.email && config.urlPublica) {
+      const { rows: admins } = await pool.query(`select email from usuarios where papel = 'admin' and ativo`)
+      const marca = await carregarMarca(pool)
+      for (const a of admins) {
+        app.email.enviar({
+          para: a.email, nomeRemetente: marca.nome, assunto: `Novo cadastro aguardando liberação — ${marca.nome}`,
+          texto: `${u.nome} (${u.email}) se cadastrou no painel e confirmou o e-mail.\n\nPara liberar o acesso (papel e núcleos), abra ${config.urlPublica}/admin/ → Usuários.`,
+        }).catch(() => {})
+      }
+    }
+    return { ok: true, pendente: u.pendente }
   })
 
   // ----- Esqueci minha senha (link por e-mail; a verificação em duas etapas, se ativa, continua valendo) -----

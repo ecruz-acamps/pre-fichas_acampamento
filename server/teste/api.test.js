@@ -1586,6 +1586,134 @@ describe('API', { skip: pular }, () => {
     })
   })
 
+
+  // ------------------------------------------------------------------ cadastro da equipe (coordenadores) feito pela própria pessoa
+  describe('cadastro da equipe', () => {
+    const SENHA_NOVA = 'senha-do-coordenador-1'
+    const cadastrar = (payload, ip = '10.7.0.1') => app.inject({ method: 'POST', url: '/api/auth/cadastro', headers: H, payload, remoteAddress: ip })
+    const entrar = (email, senha) => app.inject({ method: 'POST', url: '/api/auth/login', headers: { ...H, 'x-forwarded-for': '10.7.9.9' }, payload: { email, senha } })
+    const marcaAtual = async () => (await app.inject({ method: 'GET', url: '/api/marca' })).json()
+    const cadastroEquipe = async (v) => assert.equal((await req('admin', 'PUT', '/api/admin/marca', { ...(await marcaAtual()), cadastroEquipe: v })).statusCode, 200)
+    const linha = async (email) => (await pool.query('select * from usuarios where email = $1', [email])).rows[0]
+    const tokenConfirmacao = () => emailsEnviados.filter((m) => /confirmar=/.test(m.texto)).at(-1).texto.match(/confirmar=([\w-]+)/)[1]
+    let nucleoPoa
+
+    before(async () => {
+      const r = await req('admin', 'POST', '/api/admin/nucleos', { nome: 'Núcleo Teste Porto Alegre', areas: [{ uf: 'RS', cidade: 'PORTO ALEGRE' }] })
+      assert.equal(r.statusCode, 201, r.body); nucleoPoa = r.json().id
+    })
+    after(() => cadastroEquipe(true))
+
+    test('cadastro nasce SEM acesso: pendente, e-mail de confirmação, e o login explica o motivo só a quem acertou a senha', async () => {
+      emailsEnviados.length = 0
+      const r = await cadastrar({ nome: 'Marta Coordenadora', email: 'Marta@Coord.TESTE', senha: SENHA_NOVA })
+      assert.equal(r.statusCode, 201, r.body)
+      const u = await linha('marta@coord.teste')
+      assert.deepEqual([u.pendente, u.ativo, u.email_confirmado, u.papel, u.trocar_senha], [true, false, false, 'coordenador', false])
+      assert.equal(emailsEnviados.length, 1); assert.equal(emailsEnviados[0].para, 'marta@coord.teste')
+      assert.match(emailsEnviados[0].texto, /https:\/\/prefichas\.teste\/admin\/\?confirmar=[\w-]{20,}/)
+      const certa = await entrar('marta@coord.teste', SENHA_NOVA)
+      assert.equal(certa.statusCode, 403); assert.equal(certa.json().pendente, true); assert.match(certa.json().mensagem, /Confirme o seu e-mail/)
+      assert.equal(certa.cookies.length, 0, 'nenhuma sessão é criada')
+      assert.equal((await entrar('marta@coord.teste', 'senha-errada-123')).statusCode, 401, 'senha errada: mensagem genérica')
+      assert.equal((await entrar('ninguem@coord.teste', SENHA_NOVA)).statusCode, 401)
+      // o painel continua fechado: sem sessão não há acesso a nada
+      assert.equal((await app.inject({ method: 'GET', url: '/api/admin/pre-fichas', headers: H })).statusCode, 401)
+    })
+
+    test('e-mail que já existe: mesma resposta e NADA muda (não dá para tomar a conta de um administrador)', async () => {
+      const antes = await linha('admin@x.com')
+      const novo = await cadastrar({ nome: 'Quem Tenta Tomar', email: 'admin@x.com', senha: 'senha-do-invasor-1' }, '10.7.0.2')
+      const real = await cadastrar({ nome: 'Marta Repetida', email: 'marta@coord.teste', senha: 'outra-senha-9999' }, '10.7.0.2')
+      assert.equal(novo.statusCode, 201); assert.equal(novo.body, real.body)
+      const depois = await linha('admin@x.com')
+      assert.deepEqual([depois.papel, depois.ativo, depois.pendente, depois.senha_hash], [antes.papel, true, false, antes.senha_hash])
+      assert.equal((await entrar('admin@x.com', SENHA)).statusCode, 200, 'a senha do administrador segue valendo')
+      assert.equal((await entrar('admin@x.com', 'senha-do-invasor-1')).statusCode, 401)
+    })
+
+    test('validações, limite por origem, teto de pendentes e interruptor nas configurações', async () => {
+      const ruim = await cadastrar({ nome: 'X', email: 'nao-e-email', senha: 'curta' }, '10.7.0.3')
+      assert.equal(ruim.statusCode, 400); assert.ok(ruim.json().erros.nome && ruim.json().erros.email && ruim.json().erros.senha)
+      const codigos = []
+      for (let i = 0; i < 7; i++) codigos.push((await cadastrar({ nome: `Pessoa Limite ${i}`, email: `limite${i}@coord.teste`, senha: SENHA_NOVA }, '10.7.0.4')).statusCode)
+      assert.deepEqual(codigos.slice(0, 5), [201, 201, 201, 201, 201]); assert.equal(codigos[6], 429)
+      await pool.query(`delete from usuarios where email like 'limite%@coord.teste'`)
+      // teto: com 50 pendentes, não entra mais ninguém
+      await pool.query(`insert into usuarios (email, nome, senha_hash, ativo, pendente, solicitado_em) select 'teto' || g || '@coord.teste', 'Teto ' || g, 'x', false, true, now() from generate_series(1, 50) g`)
+      assert.equal((await cadastrar({ nome: 'Pessoa Do Teto', email: 'doteto@coord.teste', senha: SENHA_NOVA }, '10.7.0.5')).statusCode, 429)
+      await pool.query(`delete from usuarios where email like 'teto%@coord.teste'`)
+      // pedido esquecido há mais de 30 dias é descartado
+      await pool.query(`update usuarios set solicitado_em = now() - interval '40 days' where email = 'marta@coord.teste'`)
+      assert.equal((await cadastrar({ nome: 'Pessoa Nova Limpa', email: 'limpa@coord.teste', senha: SENHA_NOVA }, '10.7.0.6')).statusCode, 201)
+      assert.equal(await linha('marta@coord.teste'), undefined)
+      await cadastrar({ nome: 'Marta Coordenadora', email: 'marta@coord.teste', senha: SENHA_NOVA }, '10.7.0.7')
+      // interruptor (só o administrador mexe)
+      assert.equal((await req('equipe', 'PUT', '/api/admin/marca', { ...(await marcaAtual()), cadastroEquipe: false })).statusCode, 403)
+      await cadastroEquipe(false)
+      const fechado = await cadastrar({ nome: 'Pessoa Fechado', email: 'fechado@coord.teste', senha: SENHA_NOVA }, '10.7.0.8')
+      assert.equal(fechado.statusCode, 403); assert.match(fechado.json().mensagem, /fechado/)
+      await cadastroEquipe(true)
+    })
+
+    test('confirmação do e-mail: link de uso único; os administradores são avisados', async () => {
+      await pool.query(`delete from usuarios_confirmacoes`)
+      emailsEnviados.length = 0
+      await cadastrar({ nome: 'Carlos Confirma', email: 'carlos@coord.teste', senha: SENHA_NOVA }, '10.7.0.9')
+      const token = tokenConfirmacao()
+      assert.equal((await app.inject({ method: 'POST', url: '/api/auth/confirmar-email', headers: H, payload: { token: 'x'.repeat(43) } })).statusCode, 400)
+      const ok = await app.inject({ method: 'POST', url: '/api/auth/confirmar-email', headers: H, payload: { token } })
+      assert.equal(ok.statusCode, 200, ok.body)
+      assert.equal((await linha('carlos@coord.teste')).email_confirmado, true)
+      assert.equal((await app.inject({ method: 'POST', url: '/api/auth/confirmar-email', headers: H, payload: { token } })).statusCode, 400, 'uma vez só')
+      assert.ok(emailsEnviados.some((m) => m.para === 'admin@x.com' && /aguardando liberação/.test(m.assunto)), 'o administrador é avisado')
+      // confirmou, mas ainda não tem acesso
+      const e = await entrar('carlos@coord.teste', SENHA_NOVA)
+      assert.equal(e.statusCode, 403); assert.match(e.json().mensagem, /aguardando a liberação/)
+    })
+
+    test('o administrador libera escolhendo papel e núcleo: só ele, e o coordenador passa a ver só o que o núcleo permite', async () => {
+      const { id } = await linha('carlos@coord.teste')
+      emailsEnviados.length = 0
+      const lista = (await req('admin', 'GET', '/api/admin/usuarios')).json().find((x) => x.id === id)
+      assert.deepEqual([lista.pendente, lista.email_confirmado, lista.ativo], [true, true, false])
+      assert.equal((await req('equipe', 'PATCH', `/api/admin/usuarios/${id}`, { ativo: true })).statusCode, 403, 'equipe não libera')
+      assert.equal((await req('coord', 'PATCH', `/api/admin/usuarios/${id}`, { ativo: true })).statusCode, 403, 'coordenador não libera')
+      assert.equal((await entrar('carlos@coord.teste', SENHA_NOVA)).statusCode, 403, 'ainda sem acesso')
+
+      const lib = await req('admin', 'PATCH', `/api/admin/usuarios/${id}`, { ativo: true, papel: 'coordenador', nucleos: [nucleoPoa] })
+      assert.equal(lib.statusCode, 200, lib.body)
+      assert.deepEqual([lib.json().usuario.pendente, lib.json().usuario.ativo, lib.json().usuario.nucleos], [false, true, [nucleoPoa]])
+      assert.ok(emailsEnviados.some((m) => m.para === 'carlos@coord.teste' && /liberado/.test(m.assunto)), 'a pessoa é avisada')
+      const { r, cookie } = await login('carlos@coord.teste', SENHA_NOVA)
+      assert.equal(r.statusCode, 200, r.body); assert.equal(r.json().usuario.trocar_senha, false)
+      // núcleo de Porto Alegre: não vê as fichas de Florianópolis
+      const vendo = await app.inject({ method: 'GET', url: '/api/admin/pre-fichas', headers: { ...H, cookie } })
+      assert.equal(vendo.statusCode, 200); assert.equal(vendo.json().length, 0)
+      // o administrador amplia a permissão depois, e a lista aparece
+      const { rows: [floripa] } = await pool.query(`select id from nucleos limit 1`)
+      assert.equal((await req('admin', 'PATCH', `/api/admin/usuarios/${id}`, { nucleos: [nucleoPoa, floripa.id] })).statusCode, 200)
+      // quem não é administrador não alcança a administração de usuários
+      assert.equal((await app.inject({ method: 'GET', url: '/api/admin/usuarios', headers: { ...H, cookie } })).statusCode, 403)
+    })
+
+    test('recusar apaga só cadastro PENDENTE; pendente não ganha "nova senha" nem link de "esqueci minha senha"', async () => {
+      await cadastrar({ nome: 'Rita Recusada', email: 'rita@coord.teste', senha: SENHA_NOVA }, '10.7.1.1')
+      const { id } = await linha('rita@coord.teste')
+      emailsEnviados.length = 0
+      const e = await app.inject({ method: 'POST', url: '/api/auth/esqueci', headers: H, payload: { email: 'rita@coord.teste' }, remoteAddress: '10.7.1.2' })
+      assert.equal(e.statusCode, 200); assert.equal(emailsEnviados.length, 0, 'pendente não recebe link de redefinição')
+      assert.equal((await req('admin', 'POST', `/api/admin/usuarios/${id}/redefinir-senha`)).statusCode, 400)
+      assert.equal((await req('equipe', 'DELETE', `/api/admin/usuarios/${id}/pendente`)).statusCode, 403)
+      assert.equal((await req('admin', 'DELETE', `/api/admin/usuarios/${id}/pendente`)).statusCode, 200)
+      assert.equal(await linha('rita@coord.teste'), undefined)
+      // usuário de verdade (liberado) nunca é apagado por esta rota
+      const { id: idAdmin } = await linha('admin@x.com'); const { id: idCarlos } = await linha('carlos@coord.teste')
+      for (const alvo of [idAdmin, idCarlos, 999999]) assert.equal((await req('admin', 'DELETE', `/api/admin/usuarios/${alvo}/pendente`)).statusCode, 404)
+      assert.ok(await linha('admin@x.com') && await linha('carlos@coord.teste'))
+    })
+  })
+
   test('site, cabeçalhos de segurança e logout', async () => {
     const r = await app.inject({ method: 'GET', url: '/api/saude' })
     assert.equal(r.statusCode, 200)
