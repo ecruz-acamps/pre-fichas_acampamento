@@ -1,3 +1,4 @@
+import FotoPerfil from './FotoPerfil.jsx'
 import { StrictMode, useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import FormularioPreFicha from './FormularioPreFicha.jsx'
@@ -74,6 +75,7 @@ function Entrar({ marca, irPara, onEntrou }) {
 
 function Cadastro({ irPara, onEntrou }) {
   const [d, setD] = useState({ cpf: '', email: '', senha: '', confirmar: '' })
+  const [foto, setFoto] = useState(null)
   const [erros, setErros] = useState({})
   const [erro, setErro] = useState('')
   const [enviando, setEnviando] = useState(false)
@@ -91,6 +93,8 @@ function Cadastro({ irPara, onEntrou }) {
     setEnviando(true)
     try {
       await api.post('/api/conta/cadastro', { cpf: d.cpf, email: d.email, senha: d.senha })
+      // a foto é opcional: se falhar, a conta já existe e a pessoa pode enviá-la depois, na área dela
+      if (foto) await api.enviarArquivo('/api/conta/foto', foto).catch(() => {})
       onEntrou()
     } catch (err) {
       if (err.dados?.erros) setErros(err.dados.erros)
@@ -105,6 +109,7 @@ function Cadastro({ irPara, onEntrou }) {
       <CampoTexto id="email" rotulo="E-mail" type="email" value={d.email} onChange={(e) => set('email')(e.target.value)} autoComplete="email" maxLength={200} erro={erros.email} />
       <CampoSenha id="nova-senha" rotulo="Senha (mínimo 8 caracteres)" valor={d.senha} onChange={set('senha')} erro={erros.senha} autoComplete="new-password" />
       <CampoSenha id="confirmar" rotulo="Repita a senha" valor={d.confirmar} onChange={set('confirmar')} erro={erros.confirmar} autoComplete="new-password" />
+      <FotoPerfil onChange={setFoto} desabilitado={enviando} />
       {erro && <div className="alerta-erro" role="alert">{erro}</div>}
       <div className="acoes"><button className="botao-principal largo" disabled={enviando}>{enviando ? 'Criando…' : 'Criar conta'}</button></div>
       <p className="criar-conta">Já tem conta? <button type="button" className="link inline grande" onClick={() => irPara('entrar')}>Entrar</button></p>
@@ -179,6 +184,20 @@ function Redefinir({ token, onEntrou, irPara }) {
 
 /* ---------- área do participante ---------- */
 
+/** Foto da conta, dentro da área do participante: adicionar, trocar ou remover (salva na hora). */
+function MinhaFoto({ conta, recarregar, onAviso }) {
+  const [salvando, setSalvando] = useState(false)
+  async function mudou(blob) {
+    setSalvando(true)
+    try {
+      if (blob) await api.enviarArquivo('/api/conta/foto', blob); else await api.delete('/api/conta/foto')
+      onAviso(blob ? 'Foto salva.' : 'Foto removida.')
+      recarregar()
+    } catch (e) { onAviso(e.dados?.mensagem || 'Não foi possível salvar a foto.') } finally { setSalvando(false) }
+  }
+  return <FotoPerfil key={conta.fotoVersao ?? 'sem'} urlAtual={conta.temFoto ? `/api/conta/foto?v=${conta.fotoVersao}` : null} rotulo="Sua foto" onChange={mudou} desabilitado={salvando} />
+}
+
 function MinhaArea({ marca, info, recarregar, onSair }) {
   const [tela, setTela] = useState('inicio')
   const [aviso, setAviso] = useState('')
@@ -211,6 +230,7 @@ function MinhaArea({ marca, info, recarregar, onSair }) {
       </div>
       <p className="dica">CPF {mascaraCpf(conta.cpf)} · {conta.email}</p>
       {aviso && <div className="alerta-ok">{aviso}</div>}
+      <MinhaFoto conta={conta} recarregar={recarregar} onAviso={setAviso} />
 
       {ficha?.ativa ? (
         <div className="bloco-situacao">

@@ -1,5 +1,17 @@
 # Histórico de versões
 
+## 2.5.0 — foto (opcional) na conta do participante
+
+- **Foto na criação da conta**, opcional: o participante tira ou escolhe uma foto ao se cadastrar (no celular abre a câmera ou a galeria) e pode
+  **trocar ou remover** quando quiser, na área dele. A foto vale para todas as inscrições da conta.
+- **Aparece para a equipe** no detalhe da ficha (seção "Conta do participante") e na **ficha impressa** (canto superior direito, formato 3x4).
+  Quem pode ver a ficha pode ver a foto: o escopo por núcleo vale também para a foto.
+- **Preparada no aparelho:** recorte retrato (3:4), redução (máx. 640 px) e conversão para JPG, saindo com poucas dezenas de KB.
+- **Segurança e privacidade:** o servidor não confia no navegador. Só aceita JPEG de até 300 KB (32–2000 px), confere a estrutura do arquivo
+  (recusa truncado, formatos disfarçados e bytes escondidos depois do fim da imagem) e **remove EXIF/GPS, miniaturas e comentários**. A foto fica numa
+  tabela própria (não pesa nas listas e não vai nas exportações), é servida sem cache compartilhado e com `nosniff`, e some junto com a conta.
+- Migração `012` (tabela `participantes_fotos`).
+
 ## 2.4.0 — um túnel único da Cloudflare para a VM inteira
 
 - **Um só túnel e um só `cloudflared` para todos os acampamentos.** Antes, cada acampamento publicado pela Cloudflare criava o próprio túnel e

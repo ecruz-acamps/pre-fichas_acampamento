@@ -34,6 +34,7 @@ function ContaParticipante({ f, podeGerir, onFichaAtualizada }) {
   return (
     <>
       <h3>Conta do participante</h3>
+      {f.foto_versao && <img className="foto-ficha" src={`/api/admin/pre-fichas/${f.id}/foto?v=${Math.round(f.foto_versao)}`} alt={`Foto de ${f.nome_completo}`} loading="lazy" />}
       <dl className="grade">
         <Item rotulo="Conta">
           {f.tem_conta ? (
