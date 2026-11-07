@@ -266,6 +266,21 @@ hora, sem reiniciar.
 
 ---
 
+### Cadastro de coordenadores e equipe
+- **A pessoa** abre o painel (`/admin/`), clica em **"Quero me cadastrar"** e informa nome, e-mail e senha. Depois abre o link de confirmação que chega por e-mail. Ela **não tem acesso a nada**
+  até o administrador liberar.
+- **O administrador** vai em **Usuários → "Cadastros aguardando liberação"**, escolhe o **papel** (Coordenador de núcleo, Equipe ou Administrador) e, para coordenador, os **núcleos**, e clica em
+  **Liberar acesso**. O selo "e-mail não confirmado" avisa que a pessoa ainda não abriu o link (pode não ser a dona do e-mail). **Recusar** apaga o pedido.
+- Em **Configurações → Cadastro da equipe** dá para **fechar** o cadastro (Não): aí só o administrador cria usuários. Quem já tem acesso e esqueceu a senha usa "Esqueci minha senha".
+
+### Foto do participante
+- **Participante:** ao criar a conta (e depois, na área dele) há o campo **Sua foto (opcional)**. No celular abre a câmera ou a galeria. A foto é reduzida no aparelho
+  e vale para todas as inscrições. Dá para **trocar** ou **remover** a qualquer momento.
+- **Equipe:** a foto aparece no detalhe da ficha (seção "Conta do participante") e na **ficha impressa**, no canto superior direito. Só quem pode ver a ficha vê a foto.
+  Fichas sem conta, ou de contas sem foto, aparecem normalmente, sem a foto.
+- **Privacidade (LGPD):** a foto é dado pessoal. Use só para identificar a pessoa no acampamento e guarde as fichas impressas com cuidado. Para menores de idade, confirme
+  com o responsável. Ao apagar a conta, a foto é apagada junto.
+
 ### Esqueci minha senha
 - **Participante:** na tela de entrada, "Esqueci minha senha" (CPF ou e-mail).
 - **Administrador ou equipe do acampamento:** na tela de login do painel (`/admin/`), "Esqueci minha senha", informe o e-mail do usuário e abra o link

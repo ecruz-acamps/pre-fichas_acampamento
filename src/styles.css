@@ -522,6 +522,15 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
 
 /* ---------- impressão da pré-ficha ---------- */
 .topo-botoes { display: flex; gap: 8px; align-items: center; }
+.pendentes { border-left: 4px solid var(--cor-principal, #7a5412); }
+.pendente { padding: 10px 0; border-top: 1px solid var(--borda, #e5e5e5); }
+.pendente-quem { margin-bottom: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.foto-perfil .foto-linha { display: flex; align-items: center; gap: 16px; margin: 6px 0 4px; }
+.foto-previa { width: 84px; height: 112px; border-radius: 10px; overflow: hidden; background: var(--fundo-suave, #f1f1f1); border: 1px solid var(--borda, #ddd); display: grid; place-items: center; font-size: 1.8rem; flex: none; }
+.foto-previa img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.foto-acoes { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.rotulo-foto { display: block; font-weight: 600; }
+.foto-ficha { width: 96px; height: 128px; object-fit: cover; border-radius: 8px; border: 1px solid var(--borda, #ddd); float: right; margin: 0 0 8px 12px; }
 .ficha-impressao { display: none; }
 @media print {
   @page { size: A4; margin: 10mm 10mm; }
@@ -538,6 +547,7 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
   .imp-dir-texto { display: flex; flex-direction: column; line-height: 1.05; }
   .imp-dir-1 { font-size: 13pt; font-weight: 800; letter-spacing: .02em; }
   .imp-dir-2 { font-size: 12pt; letter-spacing: .04em; }
+  .imp-foto { float: right; width: 26mm; height: 35mm; object-fit: cover; border: 1px solid #999; margin: 0 0 4px 8px; }
   .imp-linha { display: grid; grid-template-columns: repeat(12, 1fr); gap: 10px; padding: 5px 0 7px; border-bottom: 1px solid #e3e3e3; break-inside: avoid; }
   .imp-campo { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
   .imp-rotulo { font-size: 6.8pt; font-weight: 700; text-transform: uppercase; letter-spacing: .03em; color: #444; }

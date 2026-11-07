@@ -15,6 +15,7 @@ import { esquecerLicenca, gerarHashChave } from '../licenca.js'
 import { _codigoNoPasso, passoAtual } from '../totp.js'
 import { gerarHash } from '../senha.js'
 import { modalidadesCompativeis } from '../../shared/util.js'
+import { limparJpeg } from '../foto.js'
 
 const URL_TESTE = process.env.DATABASE_URL_TESTE
 const pular = !URL_TESTE && 'defina DATABASE_URL_TESTE para rodar os testes de integração'
@@ -1457,6 +1458,259 @@ describe('API', { skip: pular }, () => {
         assert.equal(r.statusCode, 503)
         assert.match(r.json().mensagem, /administrador/)
       } finally { await a.close() }
+    })
+  })
+
+
+  // ------------------------------------------------------------------ foto da conta do participante
+  describe('foto da conta', () => {
+    const JPEG = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAAwACgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDLooor50+2CiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//9k=', 'base64')                 // 40x48 px
+    const cpfValidoDe = (base) => {
+      const d = base.split('').map(Number)
+      const dv = (n) => { let t = 0; for (let i = 0; i < n; i++) t += d[i] * (n + 1 - i); const r = (t * 10) % 11; return r === 10 ? 0 : r }
+      d.push(dv(9)); d.push(dv(10)); return d.join('')
+    }
+    // insere um segmento logo depois do SOI (como as câmeras fazem com o EXIF)
+    const comSegmento = (buf, marcador, conteudo) => {
+      const c = Buffer.from(conteudo, 'latin1'); const seg = Buffer.alloc(4 + c.length)
+      seg[0] = 0xff; seg[1] = marcador; seg.writeUInt16BE(2 + c.length, 2); c.copy(seg, 4)
+      return Buffer.concat([buf.subarray(0, 2), seg, buf.subarray(2)])
+    }
+    const novaConta = async (base) => {
+      const cpf = cpfValidoDe(base)
+      const r = await app.inject({ method: 'POST', url: '/api/conta/cadastro', headers: H, payload: { cpf, email: `${cpf}@foto.teste`, senha: 'senha-foto-123' } })
+      assert.equal(r.statusCode, 201, r.body)
+      const ck = r.cookies.find((x) => x.name === 'prefichas_conta')
+      const headers = { ...H, cookie: `${ck.name}=${ck.value}` }
+      return { cpf, email: `${cpf}@foto.teste`, api: (metodo, url, payload, extra = {}) => app.inject({ method: metodo, url, payload, headers: { ...headers, ...extra } }) }
+    }
+    const enviar = (c, buf, tipo = 'image/jpeg') => c.api('PUT', '/api/conta/foto', buf, { 'content-type': tipo })
+    // tamanho (largura x altura) declarado no cabeçalho SOF
+    const redimensionar = (buf, w, h) => { const c = Buffer.from(buf); const i = c.indexOf(Buffer.from([0xff, 0xc0])); c.writeUInt16BE(h, i + 5); c.writeUInt16BE(w, i + 7); return c }
+
+    test('sem entrar na conta não se envia, vê nem apaga foto', async () => {
+      for (const [m, payload] of [['PUT', JPEG], ['GET'], ['DELETE']]) {
+        const r = await app.inject({ method: m, url: '/api/conta/foto', payload, headers: { ...H, 'content-type': 'image/jpeg' } })
+        assert.equal(r.statusCode, 401, m)
+      }
+    })
+
+    test('envia, mostra, troca e remove a própria foto; a conta informa se tem foto', async () => {
+      const c = await novaConta('300200101')
+      assert.equal((await c.api('GET', '/api/conta/eu')).json().conta.temFoto, false)
+      assert.equal((await c.api('GET', '/api/conta/foto')).statusCode, 404)
+      const ok = await enviar(c, JPEG)
+      assert.equal(ok.statusCode, 200, ok.body)
+      const eu = (await c.api('GET', '/api/conta/eu')).json().conta
+      assert.equal(eu.temFoto, true); assert.ok(eu.fotoVersao > 0)
+      const g = await c.api('GET', '/api/conta/foto')
+      assert.equal(g.statusCode, 200)
+      assert.equal(g.headers['content-type'], 'image/jpeg')
+      assert.equal(g.headers['x-content-type-options'], 'nosniff')
+      assert.match(g.headers['cache-control'], /private/)
+      assert.equal(limparJpeg(g.rawPayload) !== null, true, 'o que volta é um JPEG válido')
+      // trocar
+      const outra = Buffer.from(JPEG); outra[outra.length - 5] ^= 0x01
+      assert.equal((await enviar(c, outra)).statusCode, 200)
+      assert.equal((await pool.query('select count(*)::int n from participantes_fotos where participante_id = (select id from participantes where cpf = $1)', [c.cpf])).rows[0].n, 1, 'uma foto por conta')
+      // remover
+      assert.equal((await c.api('DELETE', '/api/conta/foto')).statusCode, 200)
+      assert.equal((await c.api('GET', '/api/conta/foto')).statusCode, 404)
+      assert.equal((await c.api('GET', '/api/conta/eu')).json().conta.temFoto, false)
+    })
+
+    test('metadados são removidos (EXIF/GPS, comentário, miniatura) e a imagem continua válida', async () => {
+      const c = await novaConta('300200102')
+      let suja = comSegmento(JPEG, 0xe1, 'Exif\0\0GPS-LATITUDE=-27.5954;GPS-LONGITUDE=-48.5480;DONO=Fulano')
+      suja = comSegmento(suja, 0xfe, 'COMENTARIO-SECRETO')
+      suja = comSegmento(suja, 0xed, 'Photoshop 3.0 DADO-PRIVADO')
+      assert.ok(suja.includes('GPS-LATITUDE'))
+      assert.equal((await enviar(c, suja)).statusCode, 200)
+      const salvo = (await c.api('GET', '/api/conta/foto')).rawPayload
+      for (const segredo of ['GPS-LATITUDE', 'COMENTARIO-SECRETO', 'DADO-PRIVADO', 'Exif']) assert.equal(salvo.includes(segredo), false, segredo)
+      assert.ok(limparJpeg(salvo), 'continua sendo um JPEG completo')
+      assert.ok(salvo.length < suja.length)
+    })
+
+    test('recusa o que não é uma foto JPG válida (outros formatos, truncado, bytes escondidos, tamanho absurdo)', async () => {
+      const c = await novaConta('300200103')
+      const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(300, 1)])
+      assert.equal((await enviar(c, png, 'image/png')).statusCode, 415, 'PNG: o navegador converte para JPG antes de enviar')
+      assert.equal((await enviar(c, Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>' + ' '.repeat(100)))).statusCode, 400, 'SVG disfarçado de JPG')
+      assert.equal((await enviar(c, Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400, 7)]))).statusCode, 400, 'cabeçalho de JPG com lixo')
+      assert.equal((await enviar(c, JPEG.subarray(0, JPEG.length - 30))).statusCode, 400, 'truncado')
+      assert.equal((await enviar(c, Buffer.concat([JPEG, Buffer.from('<?php system($_GET[0]); ?>')]))).statusCode, 400, 'dados escondidos depois do fim da imagem')
+      assert.equal((await enviar(c, redimensionar(JPEG, 16, 16))).statusCode, 400, 'pequena demais')
+      assert.equal((await enviar(c, redimensionar(JPEG, 5000, 5000))).statusCode, 400, 'dimensões absurdas')
+      assert.equal((await enviar(c, Buffer.concat([JPEG.subarray(0, JPEG.length - 2), Buffer.alloc(400 * 1024), Buffer.from([0xff, 0xd9])]))).statusCode >= 400, true, 'grande demais')
+      assert.equal((await c.api('GET', '/api/conta/eu')).json().conta.temFoto, false, 'nada foi gravado')
+    })
+
+    test('a equipe vê a foto da conta ligada à ficha (só quem pode ver a ficha); sem foto, 404; listas não carregam a imagem', async () => {
+      const c = await novaConta('300200104')
+      const sem = await novaConta('300200105')
+      for (const [pessoa, nome] of [[c, 'Foto Visivel Teste'], [sem, 'Sem Foto Teste']]) {
+        const r = await pessoa.api('POST', '/api/conta/pre-ficha', { ...FICHA, nome_completo: nome, email: pessoa.email, telefone: '(48) 99999-3001' })
+        assert.equal(r.statusCode, 201, r.body)
+      }
+      await enviar(c, JPEG)
+      const idComFoto = await idPorNome('Foto Visivel Teste'), idSem = await idPorNome('Sem Foto Teste')
+      const f = await req('admin', 'GET', `/api/admin/pre-fichas/${idComFoto}/foto`)
+      assert.equal(f.statusCode, 200); assert.equal(f.headers['content-type'], 'image/jpeg'); assert.match(f.headers['cache-control'], /private/)
+      assert.equal((await req('admin', 'GET', `/api/admin/pre-fichas/${idSem}/foto`)).statusCode, 404)
+      assert.equal((await app.inject({ method: 'GET', url: `/api/admin/pre-fichas/${idComFoto}/foto`, headers: H })).statusCode, 401, 'sem login')
+      assert.equal((await req('admin', 'GET', '/api/admin/pre-fichas/999999/foto')).statusCode, 404)
+      // escopo: a coordenadora do núcleo de Florianópolis vê a foto da sua área, mas não a de outra cidade
+      assert.equal((await req('coord', 'GET', `/api/admin/pre-fichas/${idComFoto}/foto`)).statusCode, 200, 'dentro do núcleo')
+      const longe = await novaConta('300200107')
+      assert.equal((await longe.api('POST', '/api/conta/pre-ficha', { ...FICHA, nome_completo: 'Foto Longe Teste', email: longe.email, telefone: '(41) 99999-3002',
+        cep: '80420-000', bairro: 'Batel', cidade: 'Curitiba', uf: 'PR' })).statusCode, 201)
+      await enviar(longe, JPEG)
+      const idLonge = await idPorNome('Foto Longe Teste')
+      assert.equal((await req('admin', 'GET', `/api/admin/pre-fichas/${idLonge}/foto`)).statusCode, 200)
+      assert.equal((await req('coord', 'GET', `/api/admin/pre-fichas/${idLonge}/foto`)).statusCode, 404, 'fora do núcleo da coordenadora')
+      const det = (await req('admin', 'GET', `/api/admin/pre-fichas/${idComFoto}`)).json()
+      assert.ok(det.foto_versao > 0); assert.equal((await req('admin', 'GET', `/api/admin/pre-fichas/${idSem}`)).json().foto_versao, null)
+      assert.doesNotMatch(JSON.stringify(det), /\/9j\/4AAQ|dados/, 'a ficha não carrega os bytes da foto')
+      const lista = await req('admin', 'GET', '/api/admin/pre-fichas')
+      assert.doesNotMatch(lista.body, /\/9j\/4AAQ/, 'a lista não carrega fotos')
+    })
+
+    test('ao apagar a conta, a foto vai junto', async () => {
+      const c = await novaConta('300200106')
+      await enviar(c, JPEG)
+      const { rows: [{ id }] } = await pool.query('select id from participantes where cpf = $1', [c.cpf])
+      assert.equal((await pool.query('select count(*)::int n from participantes_fotos where participante_id = $1', [id])).rows[0].n, 1)
+      await pool.query('delete from participantes where id = $1', [id])
+      assert.equal((await pool.query('select count(*)::int n from participantes_fotos where participante_id = $1', [id])).rows[0].n, 0)
+    })
+  })
+
+
+  // ------------------------------------------------------------------ cadastro da equipe (coordenadores) feito pela própria pessoa
+  describe('cadastro da equipe', () => {
+    const SENHA_NOVA = 'senha-do-coordenador-1'
+    const cadastrar = (payload, ip = '10.7.0.1') => app.inject({ method: 'POST', url: '/api/auth/cadastro', headers: H, payload, remoteAddress: ip })
+    const entrar = (email, senha) => app.inject({ method: 'POST', url: '/api/auth/login', headers: { ...H, 'x-forwarded-for': '10.7.9.9' }, payload: { email, senha } })
+    const marcaAtual = async () => (await app.inject({ method: 'GET', url: '/api/marca' })).json()
+    const cadastroEquipe = async (v) => assert.equal((await req('admin', 'PUT', '/api/admin/marca', { ...(await marcaAtual()), cadastroEquipe: v })).statusCode, 200)
+    const linha = async (email) => (await pool.query('select * from usuarios where email = $1', [email])).rows[0]
+    const tokenConfirmacao = () => emailsEnviados.filter((m) => /confirmar=/.test(m.texto)).at(-1).texto.match(/confirmar=([\w-]+)/)[1]
+    let nucleoPoa
+
+    before(async () => {
+      const r = await req('admin', 'POST', '/api/admin/nucleos', { nome: 'Núcleo Teste Porto Alegre', areas: [{ uf: 'RS', cidade: 'PORTO ALEGRE' }] })
+      assert.equal(r.statusCode, 201, r.body); nucleoPoa = r.json().id
+    })
+    after(() => cadastroEquipe(true))
+
+    test('cadastro nasce SEM acesso: pendente, e-mail de confirmação, e o login explica o motivo só a quem acertou a senha', async () => {
+      emailsEnviados.length = 0
+      const r = await cadastrar({ nome: 'Marta Coordenadora', email: 'Marta@Coord.TESTE', senha: SENHA_NOVA })
+      assert.equal(r.statusCode, 201, r.body)
+      const u = await linha('marta@coord.teste')
+      assert.deepEqual([u.pendente, u.ativo, u.email_confirmado, u.papel, u.trocar_senha], [true, false, false, 'coordenador', false])
+      assert.equal(emailsEnviados.length, 1); assert.equal(emailsEnviados[0].para, 'marta@coord.teste')
+      assert.match(emailsEnviados[0].texto, /https:\/\/prefichas\.teste\/admin\/\?confirmar=[\w-]{20,}/)
+      const certa = await entrar('marta@coord.teste', SENHA_NOVA)
+      assert.equal(certa.statusCode, 403); assert.equal(certa.json().pendente, true); assert.match(certa.json().mensagem, /Confirme o seu e-mail/)
+      assert.equal(certa.cookies.length, 0, 'nenhuma sessão é criada')
+      assert.equal((await entrar('marta@coord.teste', 'senha-errada-123')).statusCode, 401, 'senha errada: mensagem genérica')
+      assert.equal((await entrar('ninguem@coord.teste', SENHA_NOVA)).statusCode, 401)
+      // o painel continua fechado: sem sessão não há acesso a nada
+      assert.equal((await app.inject({ method: 'GET', url: '/api/admin/pre-fichas', headers: H })).statusCode, 401)
+    })
+
+    test('e-mail que já existe: mesma resposta e NADA muda (não dá para tomar a conta de um administrador)', async () => {
+      const antes = await linha('admin@x.com')
+      const novo = await cadastrar({ nome: 'Quem Tenta Tomar', email: 'admin@x.com', senha: 'senha-do-invasor-1' }, '10.7.0.2')
+      const real = await cadastrar({ nome: 'Marta Repetida', email: 'marta@coord.teste', senha: 'outra-senha-9999' }, '10.7.0.2')
+      assert.equal(novo.statusCode, 201); assert.equal(novo.body, real.body)
+      const depois = await linha('admin@x.com')
+      assert.deepEqual([depois.papel, depois.ativo, depois.pendente, depois.senha_hash], [antes.papel, true, false, antes.senha_hash])
+      assert.equal((await entrar('admin@x.com', SENHA)).statusCode, 200, 'a senha do administrador segue valendo')
+      assert.equal((await entrar('admin@x.com', 'senha-do-invasor-1')).statusCode, 401)
+    })
+
+    test('validações, limite por origem, teto de pendentes e interruptor nas configurações', async () => {
+      const ruim = await cadastrar({ nome: 'X', email: 'nao-e-email', senha: 'curta' }, '10.7.0.3')
+      assert.equal(ruim.statusCode, 400); assert.ok(ruim.json().erros.nome && ruim.json().erros.email && ruim.json().erros.senha)
+      const codigos = []
+      for (let i = 0; i < 7; i++) codigos.push((await cadastrar({ nome: `Pessoa Limite ${i}`, email: `limite${i}@coord.teste`, senha: SENHA_NOVA }, '10.7.0.4')).statusCode)
+      assert.deepEqual(codigos.slice(0, 5), [201, 201, 201, 201, 201]); assert.equal(codigos[6], 429)
+      await pool.query(`delete from usuarios where email like 'limite%@coord.teste'`)
+      // teto: com 50 pendentes, não entra mais ninguém
+      await pool.query(`insert into usuarios (email, nome, senha_hash, ativo, pendente, solicitado_em) select 'teto' || g || '@coord.teste', 'Teto ' || g, 'x', false, true, now() from generate_series(1, 50) g`)
+      assert.equal((await cadastrar({ nome: 'Pessoa Do Teto', email: 'doteto@coord.teste', senha: SENHA_NOVA }, '10.7.0.5')).statusCode, 429)
+      await pool.query(`delete from usuarios where email like 'teto%@coord.teste'`)
+      // pedido esquecido há mais de 30 dias é descartado
+      await pool.query(`update usuarios set solicitado_em = now() - interval '40 days' where email = 'marta@coord.teste'`)
+      assert.equal((await cadastrar({ nome: 'Pessoa Nova Limpa', email: 'limpa@coord.teste', senha: SENHA_NOVA }, '10.7.0.6')).statusCode, 201)
+      assert.equal(await linha('marta@coord.teste'), undefined)
+      await cadastrar({ nome: 'Marta Coordenadora', email: 'marta@coord.teste', senha: SENHA_NOVA }, '10.7.0.7')
+      // interruptor (só o administrador mexe)
+      assert.equal((await req('equipe', 'PUT', '/api/admin/marca', { ...(await marcaAtual()), cadastroEquipe: false })).statusCode, 403)
+      await cadastroEquipe(false)
+      const fechado = await cadastrar({ nome: 'Pessoa Fechado', email: 'fechado@coord.teste', senha: SENHA_NOVA }, '10.7.0.8')
+      assert.equal(fechado.statusCode, 403); assert.match(fechado.json().mensagem, /fechado/)
+      await cadastroEquipe(true)
+    })
+
+    test('confirmação do e-mail: link de uso único; os administradores são avisados', async () => {
+      await pool.query(`delete from usuarios_confirmacoes`)
+      emailsEnviados.length = 0
+      await cadastrar({ nome: 'Carlos Confirma', email: 'carlos@coord.teste', senha: SENHA_NOVA }, '10.7.0.9')
+      const token = tokenConfirmacao()
+      assert.equal((await app.inject({ method: 'POST', url: '/api/auth/confirmar-email', headers: H, payload: { token: 'x'.repeat(43) } })).statusCode, 400)
+      const ok = await app.inject({ method: 'POST', url: '/api/auth/confirmar-email', headers: H, payload: { token } })
+      assert.equal(ok.statusCode, 200, ok.body)
+      assert.equal((await linha('carlos@coord.teste')).email_confirmado, true)
+      assert.equal((await app.inject({ method: 'POST', url: '/api/auth/confirmar-email', headers: H, payload: { token } })).statusCode, 400, 'uma vez só')
+      assert.ok(emailsEnviados.some((m) => m.para === 'admin@x.com' && /aguardando liberação/.test(m.assunto)), 'o administrador é avisado')
+      // confirmou, mas ainda não tem acesso
+      const e = await entrar('carlos@coord.teste', SENHA_NOVA)
+      assert.equal(e.statusCode, 403); assert.match(e.json().mensagem, /aguardando a liberação/)
+    })
+
+    test('o administrador libera escolhendo papel e núcleo: só ele, e o coordenador passa a ver só o que o núcleo permite', async () => {
+      const { id } = await linha('carlos@coord.teste')
+      emailsEnviados.length = 0
+      const lista = (await req('admin', 'GET', '/api/admin/usuarios')).json().find((x) => x.id === id)
+      assert.deepEqual([lista.pendente, lista.email_confirmado, lista.ativo], [true, true, false])
+      assert.equal((await req('equipe', 'PATCH', `/api/admin/usuarios/${id}`, { ativo: true })).statusCode, 403, 'equipe não libera')
+      assert.equal((await req('coord', 'PATCH', `/api/admin/usuarios/${id}`, { ativo: true })).statusCode, 403, 'coordenador não libera')
+      assert.equal((await entrar('carlos@coord.teste', SENHA_NOVA)).statusCode, 403, 'ainda sem acesso')
+
+      const lib = await req('admin', 'PATCH', `/api/admin/usuarios/${id}`, { ativo: true, papel: 'coordenador', nucleos: [nucleoPoa] })
+      assert.equal(lib.statusCode, 200, lib.body)
+      assert.deepEqual([lib.json().usuario.pendente, lib.json().usuario.ativo, lib.json().usuario.nucleos], [false, true, [nucleoPoa]])
+      assert.ok(emailsEnviados.some((m) => m.para === 'carlos@coord.teste' && /liberado/.test(m.assunto)), 'a pessoa é avisada')
+      const { r, cookie } = await login('carlos@coord.teste', SENHA_NOVA)
+      assert.equal(r.statusCode, 200, r.body); assert.equal(r.json().usuario.trocar_senha, false)
+      // núcleo de Porto Alegre: não vê as fichas de Florianópolis
+      const vendo = await app.inject({ method: 'GET', url: '/api/admin/pre-fichas', headers: { ...H, cookie } })
+      assert.equal(vendo.statusCode, 200); assert.equal(vendo.json().length, 0)
+      // o administrador amplia a permissão depois, e a lista aparece
+      const { rows: [floripa] } = await pool.query(`select id from nucleos limit 1`)
+      assert.equal((await req('admin', 'PATCH', `/api/admin/usuarios/${id}`, { nucleos: [nucleoPoa, floripa.id] })).statusCode, 200)
+      // quem não é administrador não alcança a administração de usuários
+      assert.equal((await app.inject({ method: 'GET', url: '/api/admin/usuarios', headers: { ...H, cookie } })).statusCode, 403)
+    })
+
+    test('recusar apaga só cadastro PENDENTE; pendente não ganha "nova senha" nem link de "esqueci minha senha"', async () => {
+      await cadastrar({ nome: 'Rita Recusada', email: 'rita@coord.teste', senha: SENHA_NOVA }, '10.7.1.1')
+      const { id } = await linha('rita@coord.teste')
+      emailsEnviados.length = 0
+      const e = await app.inject({ method: 'POST', url: '/api/auth/esqueci', headers: H, payload: { email: 'rita@coord.teste' }, remoteAddress: '10.7.1.2' })
+      assert.equal(e.statusCode, 200); assert.equal(emailsEnviados.length, 0, 'pendente não recebe link de redefinição')
+      assert.equal((await req('admin', 'POST', `/api/admin/usuarios/${id}/redefinir-senha`)).statusCode, 400)
+      assert.equal((await req('equipe', 'DELETE', `/api/admin/usuarios/${id}/pendente`)).statusCode, 403)
+      assert.equal((await req('admin', 'DELETE', `/api/admin/usuarios/${id}/pendente`)).statusCode, 200)
+      assert.equal(await linha('rita@coord.teste'), undefined)
+      // usuário de verdade (liberado) nunca é apagado por esta rota
+      const { id: idAdmin } = await linha('admin@x.com'); const { id: idCarlos } = await linha('carlos@coord.teste')
+      for (const alvo of [idAdmin, idCarlos, 999999]) assert.equal((await req('admin', 'DELETE', `/api/admin/usuarios/${alvo}/pendente`)).statusCode, 404)
+      assert.ok(await linha('admin@x.com') && await linha('carlos@coord.teste'))
     })
   })
 

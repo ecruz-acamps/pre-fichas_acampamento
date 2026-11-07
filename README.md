@@ -80,7 +80,7 @@ Esse caminho também serve para um servidor com **um acampamento só**, sem pain
 
 | Publicação | Endereço | O que precisa |
 |---|---|---|
-| **Cloudflare** | `NOME.movimentocampista.com.br` | Token da API da Cloudflare (*Conta › Cloudflare Tunnel › Editar* e *Zona › DNS › Editar*). O DNS e o HTTPS são criados sozinhos, **sem abrir portas**. |
+| **Cloudflare** | `NOME.movimentocampista.com.br` | Token da API da Cloudflare (*Conta › Cloudflare Tunnel › Editar*, *Zona › DNS › Editar* e *Zona › Zona › Ler*). O DNS e o HTTPS são criados sozinhos, **sem abrir portas**, e **todos os acampamentos usam um único túnel** da VM. |
 | **Direta** | Domínio próprio | Um **registro A** do domínio apontando para o IP público da VM. Todos os diretos usam **um proxy HTTPS compartilhado** (Caddy) e o certificado do **Let's Encrypt** é emitido e renovado sozinho. |
 | **Só rede local** | `http://IP:8180` (porta livre) | Nada. Fica sem HTTPS, por isso não é indicado para a internet. |
 
@@ -395,6 +395,8 @@ Para manter um servidor existente na 1.0, veja a seção 11g do [manual de insta
 **Segurança**
 - As regras valem no servidor, inclusive o que cada papel enxerga. A data da inscrição é protegida pelo banco e a auditoria não pode ser alterada.
 - Senhas com scrypt, verificação em duas etapas (obrigatória no painel central), bloqueio por tentativas, cookies `HttpOnly`/`SameSite=Strict`, proteção CSRF e CSP.
+- **Coordenadores e equipe se cadastram sozinhos** ("Quero me cadastrar"): ficam sem acesso até o administrador liberar, escolhendo papel e núcleos; há um interruptor em Configurações.
+- **Foto opcional** na conta do participante (câmera ou galeria; reduzida e limpa de EXIF/GPS), visível à equipe no detalhe e na ficha impressa.
 - "Esqueci minha senha" também para administradores/equipe do acampamento e para o painel central (link por e-mail com validade de 1 hora, uso único e, com as duas etapas ativas, o código do aplicativo continua obrigatório). No painel central a senha também pode ser trocada direto na tela com o código do autenticador (sem e-mail e sem VPN). O servidor de e-mail é configurado pela interface do painel central.
 - O painel central pode abrir pela internet em HTTPS (porta 443, **sem VPN**), protegido por senha + autenticador obrigatório, bloqueio por usuário e por IP, cookie `Secure` e HSTS; ele **não executa nada sozinho**: um executor do sistema valida cada pedido antes de agir.
 - Banco e aplicações não ficam expostos; imagens enviadas são conferidas (SVG com script é recusado); dados pessoais na impressão e na exportação seguem as boas práticas da LGPD descritas no manual.

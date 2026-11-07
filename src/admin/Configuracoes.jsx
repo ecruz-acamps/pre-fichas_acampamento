@@ -4,7 +4,7 @@ import { carregarMarca, TextoMarca } from '../lib/marca.jsx'
 import { ajustarCor, corTextoSobre } from '../../shared/marca.js'
 
 const CAMPOS_EXPORTADOS = ['nome', 'nomeCurto', 'corPrimaria', 'whatsapp', 'email', 'instagram', 'site',
-  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila', 'edicoesPreferenciaConjuge', 'preferenciaConjuge', 'casaisExigeSenior', 'mostrarPosicaoFila', 'impressaoTitulo', 'impressaoSubtitulo', 'impressaoTextoDireita']
+  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila', 'edicoesPreferenciaConjuge', 'preferenciaConjuge', 'casaisExigeSenior', 'cadastroEquipe', 'mostrarPosicaoFila', 'impressaoTitulo', 'impressaoSubtitulo', 'impressaoTextoDireita']
 
 /** Publicação na internet pela Cloudflare: o administrador liga ou desliga. */
 function Publicacao({ nomeCurto }) {
@@ -426,6 +426,18 @@ export default function Configuracoes({ marca, onSalvar }) {
               </div>
               <small className="dica">PNG, JPG, WEBP ou SVG até 1 MB. Os textos são salvos com o botão "Salvar configurações".</small>
             </div>
+          </section>
+
+          <section>
+            <h2>Cadastro da equipe</h2>
+            <Campo id="cfg-cadastro-equipe" rotulo="Permitir que coordenadores e equipe se cadastrem sozinhos?"
+              dica="Sim: a tela de login mostra 'Quero me cadastrar'. A pessoa cria o usuário e fica SEM acesso até um administrador liberar (escolhendo o papel e os núcleos). Não: só o administrador cria usuários.">
+              <select id="cfg-cadastro-equipe" value={m.cadastroEquipe === false ? 'nao' : 'sim'}
+                onChange={(e) => setM({ ...m, cadastroEquipe: e.target.value === 'sim' })}>
+                <option value="sim">Sim: a pessoa se cadastra e o administrador libera</option>
+                <option value="nao">Não: só o administrador cria usuários</option>
+              </select>
+            </Campo>
           </section>
 
           <section>
