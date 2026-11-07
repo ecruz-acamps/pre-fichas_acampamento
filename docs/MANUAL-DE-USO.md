@@ -266,6 +266,14 @@ hora, sem reiniciar.
 
 ---
 
+### Foto do participante
+- **Participante:** ao criar a conta (e depois, na área dele) há o campo **Sua foto (opcional)**. No celular abre a câmera ou a galeria. A foto é reduzida no aparelho
+  e vale para todas as inscrições. Dá para **trocar** ou **remover** a qualquer momento.
+- **Equipe:** a foto aparece no detalhe da ficha (seção "Conta do participante") e na **ficha impressa**, no canto superior direito. Só quem pode ver a ficha vê a foto.
+  Fichas sem conta, ou de contas sem foto, aparecem normalmente, sem a foto.
+- **Privacidade (LGPD):** a foto é dado pessoal. Use só para identificar a pessoa no acampamento e guarde as fichas impressas com cuidado. Para menores de idade, confirme
+  com o responsável. Ao apagar a conta, a foto é apagada junto.
+
 ### Esqueci minha senha
 - **Participante:** na tela de entrada, "Esqueci minha senha" (CPF ou e-mail).
 - **Administrador ou equipe do acampamento:** na tela de login do painel (`/admin/`), "Esqueci minha senha", informe o e-mail do usuário e abra o link

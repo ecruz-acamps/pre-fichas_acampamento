@@ -9,6 +9,7 @@ import { carregarMarca } from '../marca.js'
 import { licencaAtivada } from '../licenca.js'
 import { registrarPreFicha } from './publico.js'
 import { fezSenior, validarCasais } from '../casais.js'
+import { cabecalhosFoto, FOTO_MAX_BYTES, lerFoto, limparJpeg, removerFoto, salvarFoto } from '../foto.js'
 import { transacao } from '../db.js'
 import {
   COOKIE_CONTA, STATUS_ATIVOS, buscarPorLogin, buscarSessaoConta, criarRedefinicao, criarSessaoConta,
@@ -75,7 +76,28 @@ export default async function rotasConta(app) {
         ficha.posicao = STATUS_NA_FILA_CONTA.includes(ultima.status) && f ? Number(f.posicao) : null
       }
     }
-    return { conta: { cpf: p.cpf, email: p.email, nome: p.nome }, dados: p.dados, ficha, modalidadesFeitas: await modalidadesFeitas(id, p.cpf), fezSenior: await fezSenior(pool, id, p.cpf), mostrarPosicao: marca.mostrarPosicaoFila, recuperacao, contaObrigatoria: config.contaObrigatoria }
+    const { rows: [pf] } = await pool.query('select atualizado_em from participantes_fotos where participante_id = $1', [id])
+    return { conta: { cpf: p.cpf, email: p.email, nome: p.nome, temFoto: !!pf, fotoVersao: pf ? new Date(pf.atualizado_em).getTime() : null }, dados: p.dados, ficha, modalidadesFeitas: await modalidadesFeitas(id, p.cpf), fezSenior: await fezSenior(pool, id, p.cpf), mostrarPosicao: marca.mostrarPosicaoFila, recuperacao, contaObrigatoria: config.contaObrigatoria }
+  })
+
+  // ------------------------------------------------------------ foto da conta (opcional)
+  // Corpo = o próprio JPEG. Só JPEG: o navegador converte e reduz antes de enviar; aqui o arquivo é conferido de novo e
+  // os metadados (EXIF/GPS) são removidos.
+  app.addContentTypeParser('image/jpeg', { parseAs: 'buffer', bodyLimit: FOTO_MAX_BYTES }, (req, corpo, feito) => feito(null, corpo))
+  app.put('/api/conta/foto', { onRequest: [logado], config: limite, bodyLimit: FOTO_MAX_BYTES }, async (req, reply) => {
+    const limpo = limparJpeg(req.body)
+    if (!limpo) return reply.code(400).send({ mensagem: 'Envie uma foto em JPG de até 300 KB (mínimo 32 px, máximo 2000 px).' })
+    await salvarFoto(pool, req.participante.id, limpo)
+    return { ok: true }
+  })
+  app.get('/api/conta/foto', { onRequest: [logado] }, async (req, reply) => {
+    const f = await lerFoto(pool, req.participante.id)
+    if (!f) return reply.code(404).send({ mensagem: 'Sem foto.' })
+    return cabecalhosFoto(reply, f.atualizado_em).send(f.dados)
+  })
+  app.delete('/api/conta/foto', { onRequest: [logado], config: limite }, async (req) => {
+    await removerFoto(pool, req.participante.id)
+    return { ok: true }
   })
 
   // ------------------------------------------------------------ criar conta
