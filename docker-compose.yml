@@ -120,8 +120,9 @@ services:
       - caddy_data:/data
       - caddy_config:/config
 
-  # Publicação pela Cloudflare (COMPOSE_PROFILES=tunel): HTTPS sem abrir portas no servidor.
-  # O token é criado por scripts/cloudflare-tunel.sh.
+  # LEGADO (versões até 2.3): um cloudflared por acampamento (COMPOSE_PROFILES=tunel). Desde a 2.4 todos os acampamentos
+  # usam UM túnel único da VM (scripts/tunel-compartilhado.sh); "Unificar túneis" no painel central move os antigos.
+  # Mantido só para quem ainda não unificou.
   tunel:
     image: cloudflare/cloudflared:latest
     profiles: ["tunel"]

@@ -15,6 +15,7 @@ import { esquecerLicenca, gerarHashChave } from '../licenca.js'
 import { _codigoNoPasso, passoAtual } from '../totp.js'
 import { gerarHash } from '../senha.js'
 import { modalidadesCompativeis } from '../../shared/util.js'
+import { limparJpeg } from '../foto.js'
 
 const URL_TESTE = process.env.DATABASE_URL_TESTE
 const pular = !URL_TESTE && 'defina DATABASE_URL_TESTE para rodar os testes de integração'
@@ -1457,6 +1458,131 @@ describe('API', { skip: pular }, () => {
         assert.equal(r.statusCode, 503)
         assert.match(r.json().mensagem, /administrador/)
       } finally { await a.close() }
+    })
+  })
+
+
+  // ------------------------------------------------------------------ foto da conta do participante
+  describe('foto da conta', () => {
+    const JPEG = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCAAwACgDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDLooor50+2CiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//9k=', 'base64')                 // 40x48 px
+    const cpfValidoDe = (base) => {
+      const d = base.split('').map(Number)
+      const dv = (n) => { let t = 0; for (let i = 0; i < n; i++) t += d[i] * (n + 1 - i); const r = (t * 10) % 11; return r === 10 ? 0 : r }
+      d.push(dv(9)); d.push(dv(10)); return d.join('')
+    }
+    // insere um segmento logo depois do SOI (como as câmeras fazem com o EXIF)
+    const comSegmento = (buf, marcador, conteudo) => {
+      const c = Buffer.from(conteudo, 'latin1'); const seg = Buffer.alloc(4 + c.length)
+      seg[0] = 0xff; seg[1] = marcador; seg.writeUInt16BE(2 + c.length, 2); c.copy(seg, 4)
+      return Buffer.concat([buf.subarray(0, 2), seg, buf.subarray(2)])
+    }
+    const novaConta = async (base) => {
+      const cpf = cpfValidoDe(base)
+      const r = await app.inject({ method: 'POST', url: '/api/conta/cadastro', headers: H, payload: { cpf, email: `${cpf}@foto.teste`, senha: 'senha-foto-123' } })
+      assert.equal(r.statusCode, 201, r.body)
+      const ck = r.cookies.find((x) => x.name === 'prefichas_conta')
+      const headers = { ...H, cookie: `${ck.name}=${ck.value}` }
+      return { cpf, email: `${cpf}@foto.teste`, api: (metodo, url, payload, extra = {}) => app.inject({ method: metodo, url, payload, headers: { ...headers, ...extra } }) }
+    }
+    const enviar = (c, buf, tipo = 'image/jpeg') => c.api('PUT', '/api/conta/foto', buf, { 'content-type': tipo })
+    // tamanho (largura x altura) declarado no cabeçalho SOF
+    const redimensionar = (buf, w, h) => { const c = Buffer.from(buf); const i = c.indexOf(Buffer.from([0xff, 0xc0])); c.writeUInt16BE(h, i + 5); c.writeUInt16BE(w, i + 7); return c }
+
+    test('sem entrar na conta não se envia, vê nem apaga foto', async () => {
+      for (const [m, payload] of [['PUT', JPEG], ['GET'], ['DELETE']]) {
+        const r = await app.inject({ method: m, url: '/api/conta/foto', payload, headers: { ...H, 'content-type': 'image/jpeg' } })
+        assert.equal(r.statusCode, 401, m)
+      }
+    })
+
+    test('envia, mostra, troca e remove a própria foto; a conta informa se tem foto', async () => {
+      const c = await novaConta('300200101')
+      assert.equal((await c.api('GET', '/api/conta/eu')).json().conta.temFoto, false)
+      assert.equal((await c.api('GET', '/api/conta/foto')).statusCode, 404)
+      const ok = await enviar(c, JPEG)
+      assert.equal(ok.statusCode, 200, ok.body)
+      const eu = (await c.api('GET', '/api/conta/eu')).json().conta
+      assert.equal(eu.temFoto, true); assert.ok(eu.fotoVersao > 0)
+      const g = await c.api('GET', '/api/conta/foto')
+      assert.equal(g.statusCode, 200)
+      assert.equal(g.headers['content-type'], 'image/jpeg')
+      assert.equal(g.headers['x-content-type-options'], 'nosniff')
+      assert.match(g.headers['cache-control'], /private/)
+      assert.equal(limparJpeg(g.rawPayload) !== null, true, 'o que volta é um JPEG válido')
+      // trocar
+      const outra = Buffer.from(JPEG); outra[outra.length - 5] ^= 0x01
+      assert.equal((await enviar(c, outra)).statusCode, 200)
+      assert.equal((await pool.query('select count(*)::int n from participantes_fotos where participante_id = (select id from participantes where cpf = $1)', [c.cpf])).rows[0].n, 1, 'uma foto por conta')
+      // remover
+      assert.equal((await c.api('DELETE', '/api/conta/foto')).statusCode, 200)
+      assert.equal((await c.api('GET', '/api/conta/foto')).statusCode, 404)
+      assert.equal((await c.api('GET', '/api/conta/eu')).json().conta.temFoto, false)
+    })
+
+    test('metadados são removidos (EXIF/GPS, comentário, miniatura) e a imagem continua válida', async () => {
+      const c = await novaConta('300200102')
+      let suja = comSegmento(JPEG, 0xe1, 'Exif\0\0GPS-LATITUDE=-27.5954;GPS-LONGITUDE=-48.5480;DONO=Fulano')
+      suja = comSegmento(suja, 0xfe, 'COMENTARIO-SECRETO')
+      suja = comSegmento(suja, 0xed, 'Photoshop 3.0 DADO-PRIVADO')
+      assert.ok(suja.includes('GPS-LATITUDE'))
+      assert.equal((await enviar(c, suja)).statusCode, 200)
+      const salvo = (await c.api('GET', '/api/conta/foto')).rawPayload
+      for (const segredo of ['GPS-LATITUDE', 'COMENTARIO-SECRETO', 'DADO-PRIVADO', 'Exif']) assert.equal(salvo.includes(segredo), false, segredo)
+      assert.ok(limparJpeg(salvo), 'continua sendo um JPEG completo')
+      assert.ok(salvo.length < suja.length)
+    })
+
+    test('recusa o que não é uma foto JPG válida (outros formatos, truncado, bytes escondidos, tamanho absurdo)', async () => {
+      const c = await novaConta('300200103')
+      const png = Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(300, 1)])
+      assert.equal((await enviar(c, png, 'image/png')).statusCode, 415, 'PNG: o navegador converte para JPG antes de enviar')
+      assert.equal((await enviar(c, Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>' + ' '.repeat(100)))).statusCode, 400, 'SVG disfarçado de JPG')
+      assert.equal((await enviar(c, Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(400, 7)]))).statusCode, 400, 'cabeçalho de JPG com lixo')
+      assert.equal((await enviar(c, JPEG.subarray(0, JPEG.length - 30))).statusCode, 400, 'truncado')
+      assert.equal((await enviar(c, Buffer.concat([JPEG, Buffer.from('<?php system($_GET[0]); ?>')]))).statusCode, 400, 'dados escondidos depois do fim da imagem')
+      assert.equal((await enviar(c, redimensionar(JPEG, 16, 16))).statusCode, 400, 'pequena demais')
+      assert.equal((await enviar(c, redimensionar(JPEG, 5000, 5000))).statusCode, 400, 'dimensões absurdas')
+      assert.equal((await enviar(c, Buffer.concat([JPEG.subarray(0, JPEG.length - 2), Buffer.alloc(400 * 1024), Buffer.from([0xff, 0xd9])]))).statusCode >= 400, true, 'grande demais')
+      assert.equal((await c.api('GET', '/api/conta/eu')).json().conta.temFoto, false, 'nada foi gravado')
+    })
+
+    test('a equipe vê a foto da conta ligada à ficha (só quem pode ver a ficha); sem foto, 404; listas não carregam a imagem', async () => {
+      const c = await novaConta('300200104')
+      const sem = await novaConta('300200105')
+      for (const [pessoa, nome] of [[c, 'Foto Visivel Teste'], [sem, 'Sem Foto Teste']]) {
+        const r = await pessoa.api('POST', '/api/conta/pre-ficha', { ...FICHA, nome_completo: nome, email: pessoa.email, telefone: '(48) 99999-3001' })
+        assert.equal(r.statusCode, 201, r.body)
+      }
+      await enviar(c, JPEG)
+      const idComFoto = await idPorNome('Foto Visivel Teste'), idSem = await idPorNome('Sem Foto Teste')
+      const f = await req('admin', 'GET', `/api/admin/pre-fichas/${idComFoto}/foto`)
+      assert.equal(f.statusCode, 200); assert.equal(f.headers['content-type'], 'image/jpeg'); assert.match(f.headers['cache-control'], /private/)
+      assert.equal((await req('admin', 'GET', `/api/admin/pre-fichas/${idSem}/foto`)).statusCode, 404)
+      assert.equal((await app.inject({ method: 'GET', url: `/api/admin/pre-fichas/${idComFoto}/foto`, headers: H })).statusCode, 401, 'sem login')
+      assert.equal((await req('admin', 'GET', '/api/admin/pre-fichas/999999/foto')).statusCode, 404)
+      // escopo: a coordenadora do núcleo de Florianópolis vê a foto da sua área, mas não a de outra cidade
+      assert.equal((await req('coord', 'GET', `/api/admin/pre-fichas/${idComFoto}/foto`)).statusCode, 200, 'dentro do núcleo')
+      const longe = await novaConta('300200107')
+      assert.equal((await longe.api('POST', '/api/conta/pre-ficha', { ...FICHA, nome_completo: 'Foto Longe Teste', email: longe.email, telefone: '(41) 99999-3002',
+        cep: '80420-000', bairro: 'Batel', cidade: 'Curitiba', uf: 'PR' })).statusCode, 201)
+      await enviar(longe, JPEG)
+      const idLonge = await idPorNome('Foto Longe Teste')
+      assert.equal((await req('admin', 'GET', `/api/admin/pre-fichas/${idLonge}/foto`)).statusCode, 200)
+      assert.equal((await req('coord', 'GET', `/api/admin/pre-fichas/${idLonge}/foto`)).statusCode, 404, 'fora do núcleo da coordenadora')
+      const det = (await req('admin', 'GET', `/api/admin/pre-fichas/${idComFoto}`)).json()
+      assert.ok(det.foto_versao > 0); assert.equal((await req('admin', 'GET', `/api/admin/pre-fichas/${idSem}`)).json().foto_versao, null)
+      assert.doesNotMatch(JSON.stringify(det), /\/9j\/4AAQ|dados/, 'a ficha não carrega os bytes da foto')
+      const lista = await req('admin', 'GET', '/api/admin/pre-fichas')
+      assert.doesNotMatch(lista.body, /\/9j\/4AAQ/, 'a lista não carrega fotos')
+    })
+
+    test('ao apagar a conta, a foto vai junto', async () => {
+      const c = await novaConta('300200106')
+      await enviar(c, JPEG)
+      const { rows: [{ id }] } = await pool.query('select id from participantes where cpf = $1', [c.cpf])
+      assert.equal((await pool.query('select count(*)::int n from participantes_fotos where participante_id = $1', [id])).rows[0].n, 1)
+      await pool.query('delete from participantes where id = $1', [id])
+      assert.equal((await pool.query('select count(*)::int n from participantes_fotos where participante_id = $1', [id])).rows[0].n, 0)
     })
   })
 

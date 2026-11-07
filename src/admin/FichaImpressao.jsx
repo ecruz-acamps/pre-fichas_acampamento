@@ -48,6 +48,7 @@ export default function FichaImpressao({ f, marca, posicao, nomeNucleo, usuario 
         </div>
       </header>
 
+      {f.foto_versao && <img className="imp-foto" src={`/api/admin/pre-fichas/${f.id}/foto?v=${Math.round(f.foto_versao)}`} alt="" />}
       <Linha><C r="Nome completo" c={8}>{f.nome_completo}</C><C r="CPF">{f.cpf ? mascaraCpf(f.cpf) : null}</C></Linha>
       <Linha><C r="Rua e número" c={8}>{rua}</C><C r="Complemento">{f.complemento}</C></Linha>
       <Linha><C r="Bairro" c={8}>{f.bairro}</C><C r="Cidade e estado">{f.cidade ? `${f.cidade} - ${f.uf}` : null}</C></Linha>

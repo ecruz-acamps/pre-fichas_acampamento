@@ -1,3 +1,4 @@
+import { cabecalhosFoto } from '../foto.js'
 import { STATUS } from '../../shared/opcoes.js'
 import { transacao } from '../db.js'
 import { nucleosDoUsuario, podeVerFicha } from '../escopo.js'
@@ -53,7 +54,8 @@ export const SQL_FICHAS = (where) => `
                where ps.pre_ficha_id = p.id), '[]') as preferencias,
     (select c.nome_completo from pre_fichas c where c.id = p.conjuge_id) as conjuge_vinculado_nome,
     (p.participante_id is not null) as tem_conta, pc.email as conta_email, pc.ultimo_login as conta_ultimo_login,
-    (pc.id is not null and pc.senha_hash is null) as conta_sem_senha
+    (pc.id is not null and pc.senha_hash is null) as conta_sem_senha,
+    (select extract(epoch from pf.atualizado_em) * 1000 from participantes_fotos pf where pf.participante_id = p.participante_id) as foto_versao
     from pre_fichas p left join usuarios u on u.id = p.atualizado_por
     left join participantes pc on pc.id = p.participante_id
    where ${where}
@@ -149,6 +151,18 @@ export default async function rotasFila(app) {
     }
     const { rows: [ficha] } = await pool.query(SQL_FICHAS('p.id = $1'), [id])
     return limparFicha(ficha)
+  })
+
+  // Foto da conta ligada à ficha (só quem pode ver a ficha). Não é cacheada por proxies e não é indexada.
+  app.get('/api/admin/pre-fichas/:id/foto', autenticado(), async (req, reply) => {
+    const id = Number(req.params.id)
+    if (!Number.isInteger(id) || !(await podeVerFicha(pool, req.usuario, id, { leitura: true }))) {
+      return reply.code(404).send({ mensagem: 'Foto não encontrada.' })
+    }
+    const { rows: [f] } = await pool.query(
+      'select pf.dados, pf.atualizado_em from pre_fichas p join participantes_fotos pf on pf.participante_id = p.participante_id where p.id = $1', [id])
+    if (!f) return reply.code(404).send({ mensagem: 'Sem foto.' })
+    return cabecalhosFoto(reply, f.atualizado_em).send(f.dados)
   })
 
   app.get('/api/admin/pre-fichas/:id/historico', autenticado(), async (req, reply) => {

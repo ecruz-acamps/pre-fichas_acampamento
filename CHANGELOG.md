@@ -1,5 +1,32 @@
 # Histórico de versões
 
+## 2.5.0 — foto (opcional) na conta do participante
+
+- **Foto na criação da conta**, opcional: o participante tira ou escolhe uma foto ao se cadastrar (no celular abre a câmera ou a galeria) e pode
+  **trocar ou remover** quando quiser, na área dele. A foto vale para todas as inscrições da conta.
+- **Aparece para a equipe** no detalhe da ficha (seção "Conta do participante") e na **ficha impressa** (canto superior direito, formato 3x4).
+  Quem pode ver a ficha pode ver a foto: o escopo por núcleo vale também para a foto.
+- **Preparada no aparelho:** recorte retrato (3:4), redução (máx. 640 px) e conversão para JPG, saindo com poucas dezenas de KB.
+- **Segurança e privacidade:** o servidor não confia no navegador. Só aceita JPEG de até 300 KB (32–2000 px), confere a estrutura do arquivo
+  (recusa truncado, formatos disfarçados e bytes escondidos depois do fim da imagem) e **remove EXIF/GPS, miniaturas e comentários**. A foto fica numa
+  tabela própria (não pesa nas listas e não vai nas exportações), é servida sem cache compartilhado e com `nosniff`, e some junto com a conta.
+- Migração `012` (tabela `participantes_fotos`).
+
+## 2.4.0 — um túnel único da Cloudflare para a VM inteira
+
+- **Um só túnel e um só `cloudflared` para todos os acampamentos.** Antes, cada acampamento publicado pela Cloudflare criava o próprio túnel e
+  o próprio container. Agora o primeiro cria o túnel único da VM (container `prefichas-tunel`) e cada acampamento novo é apenas um endereço a mais
+  dentro dele (`endereço → 127.0.0.1:porta`) mais o registro DNS. Novo `scripts/tunel-compartilhado.sh`
+  (`verificar`, `adicionar`, `remover`, `listar`, `unificar`).
+- **Falha cedo:** antes de instalar um acampamento pela Cloudflare, o sistema confere token, zona e permissões e diz exatamente o que falta
+  (Conta › Cloudflare Tunnel › Editar, Zona › DNS › Editar, Zona › Zona › Ler).
+- **Unificar túneis** (painel central → Configurações → "Túnel único da Cloudflare", ou `sudo ./scripts/tunel-compartilhado.sh unificar`):
+  move os acampamentos que ainda têm túnel próprio. Para cada um, publica no túnel único, **confere que o site responde** e só então desliga e apaga
+  o túnel antigo; se não responder, o DNS volta ao túnel antigo e nada muda para o público.
+- Ligar/desligar a publicação pela Cloudflare no painel do acampamento passa a usar o túnel único (desligar tira só aquele endereço).
+- O painel central mostra o estado do túnel único (no ar, endereços) e quantos acampamentos ainda têm túnel próprio.
+- `scripts/cloudflare-tunel.sh` foi substituído por `scripts/tunel-compartilhado.sh`.
+
 ## 2.3.0 — "Esqueci minha senha" e servidor de e-mail pelo painel central
 
 - **Esqueci minha senha no painel do acampamento** (administradores e equipe): o login tem o link; o e-mail leva um link que vale
