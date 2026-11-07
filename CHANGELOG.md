@@ -1,5 +1,20 @@
 # Histórico de versões
 
+## 2.4.0 — um túnel único da Cloudflare para a VM inteira
+
+- **Um só túnel e um só `cloudflared` para todos os acampamentos.** Antes, cada acampamento publicado pela Cloudflare criava o próprio túnel e
+  o próprio container. Agora o primeiro cria o túnel único da VM (container `prefichas-tunel`) e cada acampamento novo é apenas um endereço a mais
+  dentro dele (`endereço → 127.0.0.1:porta`) mais o registro DNS. Novo `scripts/tunel-compartilhado.sh`
+  (`verificar`, `adicionar`, `remover`, `listar`, `unificar`).
+- **Falha cedo:** antes de instalar um acampamento pela Cloudflare, o sistema confere token, zona e permissões e diz exatamente o que falta
+  (Conta › Cloudflare Tunnel › Editar, Zona › DNS › Editar, Zona › Zona › Ler).
+- **Unificar túneis** (painel central → Configurações → "Túnel único da Cloudflare", ou `sudo ./scripts/tunel-compartilhado.sh unificar`):
+  move os acampamentos que ainda têm túnel próprio. Para cada um, publica no túnel único, **confere que o site responde** e só então desliga e apaga
+  o túnel antigo; se não responder, o DNS volta ao túnel antigo e nada muda para o público.
+- Ligar/desligar a publicação pela Cloudflare no painel do acampamento passa a usar o túnel único (desligar tira só aquele endereço).
+- O painel central mostra o estado do túnel único (no ar, endereços) e quantos acampamentos ainda têm túnel próprio.
+- `scripts/cloudflare-tunel.sh` foi substituído por `scripts/tunel-compartilhado.sh`.
+
 ## 2.3.0 — "Esqueci minha senha" e servidor de e-mail pelo painel central
 
 - **Esqueci minha senha no painel do acampamento** (administradores e equipe): o login tem o link; o e-mail leva um link que vale

@@ -80,7 +80,7 @@ Esse caminho também serve para um servidor com **um acampamento só**, sem pain
 
 | Publicação | Endereço | O que precisa |
 |---|---|---|
-| **Cloudflare** | `NOME.movimentocampista.com.br` | Token da API da Cloudflare (*Conta › Cloudflare Tunnel › Editar* e *Zona › DNS › Editar*). O DNS e o HTTPS são criados sozinhos, **sem abrir portas**. |
+| **Cloudflare** | `NOME.movimentocampista.com.br` | Token da API da Cloudflare (*Conta › Cloudflare Tunnel › Editar*, *Zona › DNS › Editar* e *Zona › Zona › Ler*). O DNS e o HTTPS são criados sozinhos, **sem abrir portas**, e **todos os acampamentos usam um único túnel** da VM. |
 | **Direta** | Domínio próprio | Um **registro A** do domínio apontando para o IP público da VM. Todos os diretos usam **um proxy HTTPS compartilhado** (Caddy) e o certificado do **Let's Encrypt** é emitido e renovado sozinho. |
 | **Só rede local** | `http://IP:8180` (porta livre) | Nada. Fica sem HTTPS, por isso não é indicado para a internet. |
 

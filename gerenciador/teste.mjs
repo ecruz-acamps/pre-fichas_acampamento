@@ -166,7 +166,7 @@ test('servidor de e-mail pela aba Configurações: valida, não vaza a senha e "
   // senha em branco = manter a guardada; remetente assume o usuário quando ele é um e-mail
   const manter = await post({ ...base, senha: '', remetente: '' })
   assert.equal(manter.status, 201)
-  for (const acao of ['email-teste', 'email-aplicar', 'email-remover']) assert.equal((await post({ acao })).status, 201, acao)
+  for (const acao of ['email-teste', 'email-aplicar', 'email-remover', 'tunel-unificar']) assert.equal((await post({ acao })).status, 201, acao)
   // a senha não aparece na auditoria nem na lista de pendentes
   const aud = readFileSync(join(base_, 'dados', 'auditoria.jsonl'), 'utf8')
   assert.doesNotMatch(aud, /abcdefghijklmnop|abcd efgh/)
