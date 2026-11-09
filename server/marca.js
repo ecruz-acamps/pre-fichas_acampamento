@@ -142,6 +142,12 @@ export function criarRenderizadorHtml(pastaSite) {
       // Só com o endereço configurado (URL_PUBLICA); nunca a partir do cabeçalho Host
       marca.logoUrl && urlBase ? `<meta property="og:image" content="${escapar(urlBase + marca.logoUrl)}" />` : '',
       `<link rel="icon" href="${escapar(icone)}" />`,
+      // PWA: instalável na tela inicial (manifesto próprio do painel e do formulário)
+      `<link rel="manifest" href="${pagina === 'admin' ? '/admin/manifest.webmanifest' : '/manifest.webmanifest'}" />`,
+      '<link rel="apple-touch-icon" href="/apple-touch-icon.png" />',
+      '<meta name="mobile-web-app-capable" content="yes" />',
+      '<meta name="apple-mobile-web-app-capable" content="yes" />',
+      `<meta name="apple-mobile-web-app-title" content="${escapar(pagina === 'admin' ? marca.nomeCurto : marca.nome).slice(0, 30)}" />`,
       // Cores da marca já na primeira pintura (sem "piscar" a cor padrão)
       `<link rel="stylesheet" href="/api/marca/tema.css?v=${escapar(marca.versao)}" />`,
     ].filter(Boolean).join('\n    ')
@@ -150,5 +156,26 @@ export function criarRenderizadorHtml(pastaSite) {
       .replace(/\s*<meta name="description"[^>]*>/, '')
       .replace(/\s*<link rel="icon"[^>]*>/, '')
       .replace('</head>', `    ${meta}\n  </head>`)
+  }
+}
+
+/** Manifesto do PWA com o nome e a cor do acampamento. `admin` = o painel (escopo /admin/). */
+export function manifesto(marca, admin = false) {
+  return {
+    name: admin ? `Fila de espera · ${marca.nomeCurto}` : `${marca.tituloFormulario} · ${marca.nome}`,
+    short_name: (admin ? 'Fila' : marca.nomeCurto).slice(0, 12),
+    description: semNegrito(marca.textoFormulario).slice(0, 200),
+    lang: 'pt-BR',
+    id: admin ? '/admin/' : '/',
+    start_url: admin ? '/admin/' : '/',
+    scope: admin ? '/admin/' : '/',
+    display: 'standalone',
+    background_color: '#faf7f2',
+    theme_color: marca.corPrimaria,
+    icons: [
+      { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
   }
 }

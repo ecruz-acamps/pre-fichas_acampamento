@@ -7,7 +7,7 @@ import helmet from '@fastify/helmet'
 import rateLimit from '@fastify/rate-limit'
 import estaticos from '@fastify/static'
 import { COOKIE, buscarSessao } from './sessao.js'
-import { carregarMarca, criarRenderizadorHtml } from './marca.js'
+import { carregarMarca, criarRenderizadorHtml, manifesto } from './marca.js'
 import { CHAVES_LICENCA, licencaAtivada } from './licenca.js'
 import rotasLicenca from './rotas/licenca.js'
 import rotasAtualizacao from './rotas/atualizacao.js'
@@ -147,6 +147,10 @@ export async function construirApp({ pool, config, logger = true, chavesLicenca 
       if (!html) return reply.code(404).send('Site não gerado. Rode "npm run build".')
       return reply.header('Cache-Control', 'no-cache').type('text/html; charset=utf-8').send(html)
     }
+    const servirManifesto = (admin) => async (req, reply) =>
+      reply.header('Cache-Control', 'no-cache').type('application/manifest+json; charset=utf-8').send(manifesto(await carregarMarca(pool), admin))
+    app.get('/manifest.webmanifest', servirManifesto(false))
+    app.get('/admin/manifest.webmanifest', servirManifesto(true))
     app.get('/', pagina('form'))
     app.get('/admin/', pagina('admin'))
     app.get('/admin', (req, reply) => reply.redirect('/admin/', 301))

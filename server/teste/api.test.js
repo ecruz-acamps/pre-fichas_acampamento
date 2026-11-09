@@ -1006,6 +1006,21 @@ describe('API', { skip: pular }, () => {
       const css = await app.inject({ method: 'GET', url: '/api/marca/tema.css' })
       assert.match(css.body, /--cor:#1f4f8b/)
 
+      // PWA: manifesto com a marca, páginas ligadas a ele e service worker que não guarda a API
+      const man = (await app.inject({ method: 'GET', url: '/manifest.webmanifest' }))
+      assert.match(man.headers['content-type'], /manifest\+json/)
+      const m = man.json()
+      assert.equal(m.scope, '/'); assert.equal(m.display, 'standalone'); assert.equal(m.theme_color, '#1f4f8b')
+      assert.ok(m.icons.some((i) => i.sizes === '512x512' && i.purpose === 'maskable'))
+      const mAdmin = (await app.inject({ method: 'GET', url: '/admin/manifest.webmanifest' })).json()
+      assert.equal(mAdmin.scope, '/admin/'); assert.equal(mAdmin.start_url, '/admin/')
+      assert.match(html.body, /rel="manifest" href="\/manifest.webmanifest"/)
+      assert.match(admin.body, /rel="manifest" href="\/admin\/manifest.webmanifest"/)
+      const sw = await app.inject({ method: 'GET', url: '/sw.js' })
+      assert.equal(sw.statusCode, 200); assert.equal(sw.headers['cache-control'], 'no-cache')
+      assert.match(sw.body, /startsWith\('\/api\/'\)/)
+      assert.equal((await app.inject({ method: 'GET', url: '/offline.html' })).statusCode, 200)
+
       // agora o formulário exige só 2 declarações e grava os textos novos
       assert.equal((await enviar({ nome_completo: 'Nova Pessoa', aceites: [true] })).statusCode, 400)
       assert.equal((await enviar({ nome_completo: 'Nova Pessoa', aceites: [true, true] })).statusCode, 201)

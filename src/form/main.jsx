@@ -10,6 +10,9 @@ import '@fontsource/roboto/400.css'
 import '@fontsource/roboto/500.css'
 import '@fontsource/roboto/700.css'
 import '../styles.css'
+import { registrarPwa } from '../pwa.js'
+
+registrarPwa()
 
 /* ---------- peças da tela de entrada ---------- */
 
