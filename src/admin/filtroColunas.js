@@ -6,7 +6,9 @@ import { MODALIDADES, STATUS, rotuloDe } from '../../shared/opcoes.js'
 import { calcularIdade, chaveLocal, melhorGrafia, somenteDigitos } from '../../shared/util.js'
 
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
-const pt = (a, b) => String(a ?? '').localeCompare(String(b ?? ''), 'pt-BR', { sensitivity: 'base' })
+// Um único comparador reutilizado: localeCompare(…, 'pt-BR') recria o comparador a cada chamada e trava com milhares de nomes
+export const colador = new Intl.Collator('pt-BR', { sensitivity: 'base' })
+const pt = (a, b) => colador.compare(String(a ?? ''), String(b ?? ''))
 const num = (a, b) => (a ?? Infinity) - (b ?? Infinity)
 const mesDe = (l) => { const d = new Date(l.entrada_fila_em ?? l.created_at); return Number.isNaN(d.getTime()) ? '' : `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` }
 const ordemDe = (lista, v) => { const i = lista.findIndex((x) => x.valor === v); return i < 0 ? 999 : i }
