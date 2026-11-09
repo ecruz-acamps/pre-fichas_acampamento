@@ -382,3 +382,11 @@ e-mail não está configurado (aviso em Configurações).
 
 **Imprimi uma ficha por engano.** Tudo bem: a impressão só fica registrada no histórico. Descarte o
 papel com cuidado.
+
+## Instalar como aplicativo (PWA)
+
+O formulário público e o painel podem ser instalados na tela inicial do celular ou do computador:
+- **Android / Chrome:** menu ⋮ → "Instalar app".
+- **iPhone / Safari:** Compartilhar → "Adicionar à Tela de Início".
+
+O aplicativo usa o nome e a cor do acampamento. Por segurança, **nenhum dado pessoal é guardado no aparelho**: o app precisa de internet para funcionar (sem conexão, aparece uma tela "Sem conexão"). Para atualizar, basta recarregar; a versão nova é baixada sozinha.

@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 2.11.0 — PWA (instalável no celular)
+
+- O formulário e o painel podem ser instalados na tela inicial (Android/Chrome: "Instalar app"; iPhone/Safari: Compartilhar → "Adicionar à Tela de Início").
+- Manifesto por acampamento (`/manifest.webmanifest` e `/admin/manifest.webmanifest`) com nome e cor da marca; ícones 192/512/maskable e ícone da Apple.
+- Service worker seguro: só guarda arquivos públicos (`/assets/*`). **Nada de `/api` nem de páginas é guardado**: nenhum dado pessoal fica no aparelho. Sem internet, abre uma página "Sem conexão".
+- Exige HTTPS (já é o caso em produção).
+
 ## [2.10.1]
 
 - Fila: o filtro da coluna "Nome" travava ao abrir com o banco cheio. Ordenação passou a usar um único comparador (60× mais rápido) e a busca no filtro não recalcula mais a cada tecla.
