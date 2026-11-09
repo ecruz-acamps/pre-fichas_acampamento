@@ -266,6 +266,11 @@ hora, sem reiniciar.
 
 ---
 
+### Filtros por coluna (como no Excel)
+Na **Fila**, cada cabeçalho tem um botão de funil. Clique para **classificar** a coluna e **filtrar por valores**: pesquise, marque ou desmarque o que quer ver e clique em **OK**. A coluna filtrada fica destacada e uma linha
+acima da tabela mostra "N de M fichas" com **limpar filtros das colunas**. As listas mostram só o que sobrou dos filtros das outras colunas. **Na fila desde** filtra por ano e mês; **Pos.** por faixa (de/até); **Telefone** por "contém".
+Os filtros valem junto com os do topo, e **Exportar CSV** leva apenas o que está filtrado.
+
 ### Fichas importadas de outra planilha
 Fichas vindas de uma importação mantêm a **data original da pré-ficha** e trazem, nas **observações internas**, o que veio da planilha (campistas conhecidos, casamento, se foi servo) e os avisos de conferência. As marcadas com
 **"REVISAR MODALIDADE"** esperam uma modalidade diferente da que a idade/estado civil indica neste sistema; a posição na fila é a original. Podem faltar e-mail, CEP e motivo (o sistema antigo não exigia): peça ao participante para atualizar

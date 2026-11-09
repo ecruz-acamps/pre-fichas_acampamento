@@ -1,5 +1,16 @@
 # Histórico de versões
 
+## 2.9.0 — filtros por coluna na fila (estilo Excel)
+
+- **Cada coluna da fila tem um botão de filtro** (funil) no cabeçalho, como o filtro automático do Excel: **classificar** (A→Z / Z→A, menor→maior, mais antigo→mais novo), **pesquisar** e **marcar/desmarcar valores**
+  (com a contagem de cada um), **OK**, **Cancelar** e **Limpar**.
+  - **Nome, Idade, Modalidade, Cidade, Status:** lista de valores. Cidade agrupa as grafias ("Florianopolis" e "Florianópolis").
+  - **Na fila desde:** árvore por **ano e mês** (marcar o ano marca os meses).
+  - **Pos.:** faixa **de/até**. **Telefone:** **contém** (ignora a máscara).
+- **Como no Excel**, a lista de uma coluna mostra só o que sobrou dos filtros das **outras** colunas, e pesquisar marca só os resultados.
+- A coluna filtrada fica destacada, há um aviso "N de M fichas" com **limpar filtros das colunas**, e **Exportar CSV** leva só as linhas filtradas e na ordem escolhida.
+- Funciona junto com os filtros do topo (modalidade, status, busca, núcleo, cidade, bairro). Acessível: teclado, `Esc` fecha, `aria-sort` nos cabeçalhos.
+
 ## 2.8.0 — importar pela tela (CSV ou Excel) e reconhecer quem é quem
 
 - **Configurações → "Importar pré-fichas de uma planilha"** (só administrador): envia o arquivo **CSV ou Excel (.xlsx)**, mostra a **simulação** (nada é gravado), permite baixar as listas de
