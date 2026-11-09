@@ -21,7 +21,8 @@ export function calcularPosicoes(linhas) {
 /** Marca fichas com o mesmo e-mail ou telefone (possível cadastro repetido). */
 function calcularDuplicados(linhas) {
   const porChave = new Map()
-  const chaves = (l) => [`e:${l.email}`, `t:${somenteDigitos(l.telefone)}`]
+  // só entra na comparação o que existe: fichas importadas sem e-mail não são "repetidas" entre si
+  const chaves = (l) => [l.email && `e:${l.email}`, somenteDigitos(l.telefone) && `t:${somenteDigitos(l.telefone)}`].filter(Boolean)
   for (const l of linhas) for (const c of chaves(l)) porChave.set(c, (porChave.get(c) || 0) + 1)
   return new Set(linhas.filter((l) => chaves(l).some((c) => porChave.get(c) > 1)).map((l) => l.id))
 }

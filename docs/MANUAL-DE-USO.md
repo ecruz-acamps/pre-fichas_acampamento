@@ -266,6 +266,11 @@ hora, sem reiniciar.
 
 ---
 
+### Fichas importadas de outra planilha
+Fichas vindas de uma importação mantêm a **data original da pré-ficha** e trazem, nas **observações internas**, o que veio da planilha (campistas conhecidos, casamento, se foi servo) e os avisos de conferência. As marcadas com
+**"REVISAR MODALIDADE"** esperam uma modalidade diferente da que a idade/estado civil indica neste sistema; a posição na fila é a original. Podem faltar e-mail, CEP e motivo (o sistema antigo não exigia): peça ao participante para atualizar
+pela conta dele. A importação em si é feita por quem administra o servidor (ver *Instalação*).
+
 ### Cadastro de coordenadores e equipe
 - **A pessoa** abre o painel (`/admin/`), clica em **"Quero me cadastrar"** e informa nome, e-mail e senha. Depois abre o link de confirmação que chega por e-mail. Ela **não tem acesso a nada**
   até o administrador liberar.

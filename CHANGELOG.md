@@ -1,5 +1,21 @@
 # Histórico de versões
 
+## 2.7.0 — importar pré-fichas de uma planilha (CSV)
+
+- **Comando de importação** (`./scripts/importar-fichas.sh planilha.csv`): primeiro uma **simulação** com relatório (não grava nada); com `--aplicar`, grava tudo numa
+  **única transação** (ou entra tudo, ou nada). Cada importação é um **lote** e pode ser **desfeita** (`desfazer LOTE`; se a equipe já mexeu nas fichas, exige `--forcar`).
+- **A "Data da Pré-Ficha" da planilha é mantida** como data de inscrição e de entrada na fila (a ordem da fila não muda; no mesmo dia vale a ordem da planilha). O gatilho
+  do banco que fixa a data em "agora" só abre exceção dentro de uma importação autorizada e com o lote preenchido; a data de uma ficha continua imutável depois.
+- **Nada é inventado:** e-mail, CEP, "por que participar" e "como conheceu" podem ficar vazios só nas fichas importadas (o banco continua exigindo tudo de quem se
+  inscreve agora). A modalidade esperada é mantida e, se não bate com a regra do sistema, a ficha recebe "REVISAR MODALIDADE" nas observações. "FAC II" vira FAC, "Separado"
+  vira Divorciado(a) e "Padre" vira Solteiro (com nota). CPF inválido: a ficha entra sem CPF, com aviso.
+- **Quarentena** (não importadas, com o motivo em `quarentena.csv`): data de nascimento impossível/improvável (provável erro de digitação), modalidade/sexo/estado civil
+  desconhecidos, telefone inválido, CPF repetido na planilha. Quem já tem ficha ativa com o mesmo CPF no sistema é ignorado (sem duplicar).
+- **Histórico vira participação:** "16º Sênior - São Padre Pio (Vermelha)" cria a edição (se faltar) e registra a participação com a tribo (tribos que a marca não tem são
+  acrescentadas); por isso a regra do **Casais** passa a reconhecer esses campistas. "Foi servo", campistas conhecidos e dados de casamento vão para as observações internas.
+- Lê CSV em UTF-8 ou "ANSI" do Excel, com `;` ou `,`, e recupera CPF que perdeu o zero à esquerda.
+- O painel passa a abrir fichas sem e-mail/CEP (e não as marca como "repetidas" entre si na fila). Migração `014`.
+
 ## 2.6.0 — coordenadores e equipe se cadastram sozinhos; o administrador só libera
 
 - **Cadastro pela própria pessoa:** na tela de login do painel há **"Quero me cadastrar"** (nome, e-mail e senha). O usuário nasce **sem nenhum acesso**

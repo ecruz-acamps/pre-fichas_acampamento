@@ -646,6 +646,17 @@ acampamentos já publicados.
 - Depois de salvo ele **nunca mais aparece** em tela, auditoria, lista de tarefas nem log. A tela só mostra "token configurado".
 - Ao criar o token na Cloudflare, use: *Conta › Cloudflare Tunnel › Editar* e *Zona › DNS › Editar*, com a sua conta e a zona do domínio.
 
+**Importar pré-fichas de uma planilha (a partir da 2.7):**
+1. Salve a planilha como **CSV** (Excel: *Arquivo → Salvar como → CSV UTF-8*). Colunas esperadas (a ordem não importa): Nome, CPF, Data de Nascimento, Sexo, Estado Civil,
+   Data da Pré-Ficha, Aguardando Acampamento, Telefone, Cidade, Estado (obrigatórias) e as demais (Email, CEP, Rua, Bairro, Religião, Batizado, Onde Fui Campista...).
+2. Na pasta do acampamento: `./scripts/importar-fichas.sh planilha.csv` (**simulação**: não grava nada). Leia `importar/relatorio-*/resumo.txt` e a `quarentena.csv`.
+3. Estando de acordo: `./scripts/importar-fichas.sh planilha.csv --aplicar`. Para desfazer: `./scripts/importar-fichas.sh desfazer LOTE` (`./scripts/importar-fichas.sh lotes` mostra os nomes).
+4. Apague a pasta `importar/` no fim (tem dados pessoais).
+- A **data da pré-ficha da planilha vira a data de inscrição e a de entrada na fila**; nada é recalculado. No mesmo dia, vale a ordem da planilha.
+- O que não dá para importar com segurança (ex.: data de nascimento impossível) vai para `quarentena.csv`: corrija na planilha e importe de novo; quem já foi importado não duplica (o CPF é a chave).
+- Fichas com **"REVISAR MODALIDADE"** nas observações esperam uma modalidade que a regra de idade/estado civil deste sistema não prevê: a equipe confere caso a caso (a posição na fila é mantida).
+- O histórico ("Onde Fui Campista") vira participação nos acampamentos, o que faz a regra do **Casais** reconhecer o cônjuge como campista.
+
 **Túnel único da Cloudflare (a partir da 2.4):**
 - A VM tem **um** túnel e **um** `cloudflared` (container `prefichas-tunel`, rede do host). O primeiro acampamento publicado pela Cloudflare cria o túnel; os
   seguintes só acrescentam o endereço (`endereço → 127.0.0.1:porta`) e o registro DNS. Quem administra: `sudo ./scripts/tunel-compartilhado.sh listar|adicionar|remover|verificar`.

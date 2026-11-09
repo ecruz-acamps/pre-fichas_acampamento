@@ -285,7 +285,7 @@ export default function Detalhe({ ficha: resumo, marca, usuario, todas = [], pos
 
           <h3>Contato</h3>
           <dl className="grade">
-            <Item rotulo="E-mail"><a href={`mailto:${f.email}`}>{f.email}</a></Item>
+            <Item rotulo="E-mail">{f.email && <a href={`mailto:${f.email}`}>{f.email}</a>}</Item>
             <Item rotulo="Instagram">{f.instagram}</Item>
             <Item rotulo="Facebook">{f.facebook}</Item>
           </dl>
