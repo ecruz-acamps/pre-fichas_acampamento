@@ -6,7 +6,7 @@ import { aplicarFiltros, criarColunas, filtroAtivo, ordenarPorColuna, passaFiltr
 const ficha = (id, nome, extra = {}) => ({ id, nome_completo: nome, data_nascimento: '1990-01-01', modalidade: 'senior', status: 'aguardando', cidade: 'Palhoça', uf: 'SC', telefone: '(48) 99999-0000',
   created_at: '2025-03-15T15:00:00Z', entrada_fila_em: '2025-03-15T15:00:00Z', ...extra })
 const linhas = [
-  ficha(1, 'Ana Souza', { data_nascimento: '2010-05-05', modalidade: 'fac', cidade: 'Florianopolis', telefone: '(48) 91111-2222', entrada_fila_em: '2024-01-10T15:00:00Z' }),
+  ficha(1, 'Ana Souza', { data_nascimento: '2010-05-05', modalidade: 'fac', cidade: 'Florianópolis', telefone: '(48) 91111-2222', entrada_fila_em: '2024-01-10T15:00:00Z' }),
   ficha(2, 'bruno Lima', { data_nascimento: '1980-05-05', cidade: 'florianopolis', status: 'em_contato', entrada_fila_em: '2025-06-20T15:00:00Z' }),
   ficha(3, 'Carla Dias', { data_nascimento: '1995-05-05', modalidade: 'juvenil', cidade: 'São José', entrada_fila_em: '2025-03-01T15:00:00Z' }),
   ficha(4, 'Daniel Pinto', { status: 'participou', cidade: 'Palhoça', telefone: '(48) 98888-7777' }),
