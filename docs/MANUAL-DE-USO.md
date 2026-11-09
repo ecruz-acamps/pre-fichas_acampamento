@@ -400,3 +400,15 @@ Cada pessoa importada que tem CPF ganha uma conta: **usuário = CPF e senha = CP
 - **Detalhe da ficha → Modalidade:** administradores e coordenadores de núcleo podem trocar a modalidade (só as que cabem pela idade e estado civil). A data de inscrição e a posição na fila não mudam; a troca fica no histórico.
 - **Menu "Revisar modalidade":** mostra as fichas com "revisar" nas observações internas. Escolha "Alterar" ou "Manter"; a marca "revisar" é retirada e o registro da revisão fica na observação.
 - **Filtro por sexo:** a Fila tem a coluna "Sexo" com filtro (Masculino/Feminino).
+
+## Login com a Microsoft (conta corporativa)
+
+Em **Configurações → Login com a Microsoft** (só administrador). Passo a passo, no portal do Microsoft Entra (portal.azure.com → Microsoft Entra ID):
+1. **Registros de aplicativo → Novo registro**, tipo "Contas somente neste diretório organizacional".
+2. **URI de redirecionamento** (plataforma Web): copie o endereço mostrado na tela de Configurações (termina em `/api/auth/microsoft/callback`).
+3. **Certificados e segredos → Novo segredo de cliente**: copie o **Valor** (ele só aparece uma vez) para `MICROSOFT_CLIENT_SECRET` no `.env` do servidor e reinicie (`docker compose up -d`).
+4. Copie o **ID do diretório (locatário)** e o **ID do aplicativo (cliente)** do registro para a tela de Configurações, marque **Ativar** e salve.
+
+Como funciona: a pessoa clica em "Entrar com a Microsoft", faz o login (e o MFA) na Microsoft e volta ao painel. Se já tem acesso, entra; se não, aparece em **Usuários → Cadastros aguardando liberação** (se a opção estiver marcada). Depois da primeira entrada, a conta fica ligada à pessoa na Microsoft: outra conta Microsoft com o mesmo e-mail não entra. A senha local continua valendo; para exigir só a Microsoft, o administrador pode trocar a senha dos usuários por uma desconhecida (ou desativá-los de senha em uma versão futura).
+
+SAML: este sistema usa OpenID Connect (o padrão atual da Microsoft), que dispensa certificados XML e é mais simples de manter. O resultado para o usuário é o mesmo.

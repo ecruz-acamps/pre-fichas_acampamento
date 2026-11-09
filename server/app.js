@@ -14,6 +14,7 @@ import rotasAtualizacao from './rotas/atualizacao.js'
 import { criarVerificador, lerVersaoInstalada } from './versao.js'
 import rotasPublicas from './rotas/publico.js'
 import rotasAuth from './rotas/auth.js'
+import rotasSso from './rotas/sso.js'
 import rotasFila from './rotas/fila.js'
 import rotasUsuarios from './rotas/usuarios.js'
 import rotasNucleos from './rotas/nucleos.js'
@@ -24,7 +25,7 @@ import rotasPreferencias from './rotas/preferencias.js'
 import rotasConta from './rotas/conta.js'
 import { criarEmail } from './email.js'
 
-export async function construirApp({ pool, config, logger = true, chavesLicenca = CHAVES_LICENCA, versaoInstalada = lerVersaoInstalada(), email = undefined }) {
+export async function construirApp({ pool, config, logger = true, chavesLicenca = CHAVES_LICENCA, versaoInstalada = lerVersaoInstalada(), email = undefined, fetchSso = undefined }) {
   const app = Fastify({
     logger: logger && {
       level: config.logNivel,
@@ -114,7 +115,9 @@ export async function construirApp({ pool, config, logger = true, chavesLicenca 
   })
 
   await app.register(rotasPublicas)
+  if (fetchSso) app.decorate('fetchSso', fetchSso)
   await app.register(rotasAuth)
+  await app.register(rotasSso)
   await app.register(rotasFila)
   await app.register(rotasUsuarios)
   await app.register(rotasNucleos)

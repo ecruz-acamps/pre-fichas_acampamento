@@ -1,5 +1,14 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { api } from '../lib/api.js'
+
+const MENSAGENS_SSO = {
+  pendente: 'Recebemos o seu cadastro. Aguarde um administrador liberar o seu acesso.',
+  negado: 'Esta conta Microsoft não tem acesso ao painel. Fale com um administrador.',
+  expirado: 'A tentativa de entrada expirou. Tente novamente.',
+  recusado: 'A Microsoft não confirmou o seu acesso. Tente novamente.',
+  sem_email: 'A sua conta Microsoft não informou um e-mail. Fale com um administrador.',
+  indisponivel: 'O login com a Microsoft não está disponível.',
+}
 
 export default function Login({ marca, onEntrar, onEsqueci, onCadastro }) {
   const [email, setEmail] = useState('')
@@ -8,6 +17,15 @@ export default function Login({ marca, onEntrar, onEsqueci, onCadastro }) {
   const [pedeCodigo, setPedeCodigo] = useState(false)
   const [erro, setErro] = useState('')
   const [carregando, setCarregando] = useState(false)
+  const [microsoft, setMicrosoft] = useState(false)
+  useEffect(() => {
+    api.get('/api/auth/microsoft/status').then((r) => setMicrosoft(Boolean(r.ativo))).catch(() => {})
+    const codigo = new URLSearchParams(window.location.search).get('sso_erro')
+    if (codigo) {
+      setErro(MENSAGENS_SSO[codigo] || 'Não foi possível entrar com a Microsoft.')
+      window.history.replaceState(null, '', window.location.pathname)
+    }
+  }, [])
 
   async function entrar(e) {
     e.preventDefault()
@@ -55,6 +73,9 @@ export default function Login({ marca, onEntrar, onEsqueci, onCadastro }) {
         <div className="acoes">
           <button className="botao-principal" disabled={carregando}>{carregando ? 'Entrando…' : 'Entrar'}</button>
         </div>
+        {microsoft && (
+          <div className="acoes"><a className="botao-secundario" href="/api/auth/microsoft/entrar">Entrar com a Microsoft</a></div>
+        )}
         <p className="centro"><button type="button" className="link" onClick={onEsqueci}>Esqueci minha senha</button>
           {marca?.cadastroEquipe !== false && <> · <button type="button" className="link" onClick={onCadastro}>Quero me cadastrar</button></>}</p>
         <p className="dica centro">Perdeu o celular do autenticador? Peça a um administrador para redefinir o seu acesso.</p>

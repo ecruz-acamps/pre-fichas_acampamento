@@ -1,5 +1,14 @@
 # Histórico de versões
 
+## 2.14.0 — login com a conta Microsoft corporativa
+
+- Botão **"Entrar com a Microsoft"** no login do painel (Microsoft Entra ID / Microsoft 365) por **OpenID Connect** (authorization code + PKCE), restrito a **um diretório (tenant)**. A senha continua funcionando.
+- O token é conferido no próprio sistema, sem biblioteca de terceiros: assinatura (chaves públicas da Microsoft), emissor, diretório, destinatário, validade e nonce; `state` e PKCE de uso único.
+- A conta é ligada ao **identificador da pessoa na Microsoft (oid)**, não só ao e-mail: outro usuário Microsoft com o mesmo e-mail é negado.
+- Quem entra pela 1ª vez sem acesso vira **cadastro aguardando liberação** (opção em Configurações); o administrador libera em Usuários.
+- Configuração em **Configurações → Login com a Microsoft** (IDs do diretório e do aplicativo). O **segredo** fica só na variável `MICROSOFT_CLIENT_SECRET` do servidor, nunca no banco.
+- Migração `018`. Quem entra pela Microsoft usa o autenticador/MFA da própria Microsoft (não pede o código de duas etapas do sistema).
+
 ## 2.13.0 — revisar modalidade e filtro de sexo
 
 - **Alterar a modalidade da ficha** (administrador e coordenador de núcleo, dentro do seu núcleo), no detalhe da ficha. Só aceita modalidades compatíveis com a idade e o estado civil; Casais continua só pela conta (exige conferir o cônjuge). A data de inscrição e a posição na fila **não mudam**. Fica registrado no histórico (quem, de qual para qual).

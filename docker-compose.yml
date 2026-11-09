@@ -81,6 +81,7 @@ services:
       SMTP_REMETENTE: ${SMTP_REMETENTE:-}
       # Endereço público (prévia de links no WhatsApp e link de redefinição de senha)
       URL_PUBLICA: ${URL_PUBLICA:-}
+      MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
       # Aviso de atualização (GitHub)
       ATUALIZACAO_VERIFICAR: ${ATUALIZACAO_VERIFICAR:-true}
       ATUALIZACAO_REPO: ${ATUALIZACAO_REPO:-ecruz-acamps/pre-fichas_acampamento}

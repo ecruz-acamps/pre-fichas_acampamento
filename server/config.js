@@ -39,6 +39,7 @@ export function lerConfig(env = process.env) {
     pastaSite: env.PASTA_SITE || new URL('../dist', import.meta.url).pathname,
     // Endereço público do site (ex.: https://prefichas.seuacampamento.com.br), usado na
     // prévia de links (WhatsApp). Nunca é deduzido do cabeçalho da requisição.
+    microsoftClientSecret: env.MICROSOFT_CLIENT_SECRET || null,   // segredo do aplicativo no Microsoft Entra (login Microsoft)
     urlPublica: (env.URL_PUBLICA || '').replace(/\/+$/, '') || null,
     // Primeira inicialização: nome do acampamento escolhido na instalação (e, opcional,
     // um arquivo de marca completo). Depois disso, tudo é ajustado pelo painel.
