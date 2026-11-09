@@ -188,6 +188,7 @@ function MinhaArea({ marca, info, recarregar, onSair }) {
         <button className="link" onClick={onSair}>Sair</button>
       </div>
       <p className="dica">CPF {mascaraCpf(conta.cpf)} · {conta.email}</p>
+      {conta.senhaInicial && <div className="alerta-aviso">Sua senha ainda é o seu CPF. Recomendamos trocá-la em "Alterar senha" para proteger seus dados.</div>}
       {aviso && <div className="alerta-ok">{aviso}</div>}
       <MinhaFoto conta={conta} recarregar={recarregar} onAviso={setAviso} />
 

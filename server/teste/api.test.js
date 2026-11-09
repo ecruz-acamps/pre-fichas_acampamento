@@ -1966,6 +1966,31 @@ describe('API', { skip: pular }, () => {
       assert.equal((await pool.query(`select count(*)::int n from pre_fichas where cpf = $1`, [cpfDe('200000001')])).rows[0].n, 1)
     })
 
+    test('cada ficha importada com CPF ganha conta: usuário = CPF e senha inicial = CPF (e Desfazer apaga as não usadas)', async () => {
+      const c1 = cpfDe('200000009'), c2 = cpfDe('200000010')
+      const { registros } = lerCsv(csv([
+        linha({ Nome: 'Conta Um', CPF: c1, Email: 'conta.um@exemplo.teste', 'Data da Pré-Ficha': '03/01/2026' }),
+        linha({ Nome: 'Conta Dois', CPF: c2, Email: 'conta.um@exemplo.teste', 'Data da Pré-Ficha': '04/01/2026' })]))   // e-mail repetido: a 2ª conta fica sem e-mail
+      const plano = await planejar(pool, registros, { hoje: HOJE })
+      const r = await aplicar(pool, plano, { lote: 'teste-contas' })
+      assert.equal(r.contasCriadas, 2)
+      const { rows } = await pool.query(`select cpf, email, senha_hash, senha_inicial from participantes where importada_lote = 'teste-contas' order by cpf`)
+      assert.equal(rows.length, 2); assert.ok(rows.every((x) => x.senha_inicial && x.senha_hash === null))
+      assert.equal(rows.filter((x) => x.email).length, 1)
+      assert.equal((await pool.query(`select count(*)::int n from pre_fichas f join participantes p on p.id = f.participante_id where f.importada_lote = 'teste-contas'`)).rows[0].n, 2)
+      const login = (l, senha) => app.inject({ method: 'POST', url: '/api/conta/login', headers: { 'x-requested-with': 'fetch' }, payload: { login: l, senha } })
+      assert.equal((await login(c1, 'outra-senha-qualquer')).statusCode, 401)
+      const ok = await login(c1, c1)
+      assert.equal(ok.statusCode, 200, ok.body)
+      assert.equal((await login(c1, c1)).statusCode, 200, 'continua entrando com o CPF depois do 1º acesso')
+      const eu = await app.inject({ method: 'GET', url: '/api/conta/eu', headers: { cookie: [ok.headers['set-cookie']].flat().map((x) => x.split(';')[0]).join('; ') } })
+      assert.equal(eu.json().conta.senhaInicial, true); assert.ok(eu.json().ficha, 'a ficha aparece na área da conta')
+      // quem já usou a conta: desfazer pede confirmação; a conta não usada some sozinha
+      await assert.rejects(desfazer(pool, 'teste-contas'), /já foram alteradas/)
+      await desfazer(pool, 'teste-contas', { forcar: true })
+      assert.equal((await pool.query(`select count(*)::int n from participantes where importada_lote = 'teste-contas'`)).rows[0].n, 0)
+    })
+
     test('o painel abre fichas importadas sem e-mail nem CEP (detalhe, lista e exportação)', async () => {
       const { rows: [sem] } = await pool.query(`select id from pre_fichas where nome_completo = 'Ana Primeira'`)
       const det = await req('admin', 'GET', `/api/admin/pre-fichas/${sem.id}`)

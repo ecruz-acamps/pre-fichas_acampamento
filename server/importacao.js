@@ -66,6 +66,7 @@ const limpar = (s) => String(s ?? '').replace(/\s+/g, ' ').trim()
 const pegar = (v, nome) => v[nome] ?? ''
 const comecaCom = (v, prefixo) => { const k = Object.keys(v).find((x) => x.startsWith(prefixo)); return k ? v[k] : '' }
 
+const EMAIL_OK = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 export const COLUNAS_OBRIGATORIAS = ['nome', 'cpf', 'data de nascimento', 'sexo', 'estado civil', 'telefone', 'cidade', 'estado']
 // precisa de pelo menos uma destas para distinguir quem está na fila de quem já participou
 export const COLUNAS_DE_TIPO = ['data da pre-ficha', 'aguardando acampamento', 'onde fui campista']
@@ -357,7 +358,7 @@ export async function planejar(pool, registros, { hoje = new Date() } = {}) {
 const COLUNAS = ['created_at', 'nome_completo', 'data_nascimento', 'estado_civil', 'sexo', 'profissao', 'telefone', 'religiao', 'batizado',
   'primeira_eucaristia', 'crismado', 'paroquia', 'participa_pastoral', 'pastoral_qual', 'email', 'instagram', 'facebook', 'cep', 'logradouro',
   'numero', 'complemento', 'bairro', 'cidade', 'uf', 'como_conheceu', 'motivo', 'modalidade', 'possui_vicio', 'vicio_qual', 'restricoes_medicas',
-  'retiros_anteriores', 'termos_aceitos', 'status', 'observacoes_internas', 'cpf', 'conjuge_nome', 'conjuge_cpf', 'importada_lote', 'importada_em']
+  'retiros_anteriores', 'termos_aceitos', 'status', 'observacoes_internas', 'cpf', 'conjuge_nome', 'conjuge_cpf', 'importada_lote', 'importada_em', 'participante_id']
 
 export const loteNovo = (agora = new Date()) => `importacao-${agora.toISOString().slice(0, 19).replace(/[-:T]/g, '')}`
 
@@ -383,14 +384,31 @@ export async function aplicar(pool, plano, { lote, arquivo = null, por = null } 
 
     const termos = JSON.stringify([`Ficha importada do sistema anterior (lote ${lote}). O aceite dos termos foi dado no formulário original.`])
     const dataImportacao = new Date().toLocaleDateString('pt-BR')
-    let fichas = 0, participacoes = 0
+    let fichas = 0, participacoes = 0, contasCriadas = 0
+    const contasPorCpf = new Map(), emailsUsados = new Set()
+    for (const c of (await db.query('select id, cpf, email from participantes')).rows) { contasPorCpf.set(c.cpf, c.id); if (c.email) emailsUsados.add(c.email) }
     for (const x of ordenadas) {
       const f = x.ficha
       const obs = cortar([`Importada do sistema anterior em ${dataImportacao} (lote ${lote}).${f.data_pre_ficha ? ` Data da pré-ficha original: ${f.data_pre_ficha.split('-').reverse().join('/')}.` : ''}`, ...x.notas].join('\n'), 4000)
+      let contaId = null
+      if (f.cpf) {
+        // conta: usuário = CPF, senha inicial = CPF (hash gravado no primeiro acesso). CPF que já tem conta só é vinculado.
+        let conta = contasPorCpf.get(f.cpf)
+        if (!conta) {
+          const mail = String(f.email ?? '').trim().toLowerCase()
+          const email = mail && mail.length <= 200 && EMAIL_OK.test(mail) && !emailsUsados.has(mail) ? mail : null
+          if (email) emailsUsados.add(email)
+          const { rows: [c] } = await db.query(
+            `insert into participantes (cpf, email, nome, data_nascimento, importado, senha_inicial, importada_lote)
+             values ($1, $2, $3, $4, true, true, $5) returning id`, [f.cpf, email, f.nome_completo, f.data_nascimento, lote])
+          conta = c.id; contasPorCpf.set(f.cpf, conta); contasCriadas++
+        }
+        contaId = conta
+      }
       const valores = [f.criado_em ?? agora, f.nome_completo, f.data_nascimento, f.estado_civil, f.sexo, f.profissao, f.telefone, f.religiao, f.batizado,
         f.primeira_eucaristia, f.crismado, f.paroquia, f.participa_pastoral, f.pastoral_qual, f.email, f.instagram, f.facebook, f.cep, f.logradouro,
         f.numero, f.complemento, f.bairro, f.cidade, f.uf, f.como_conheceu, f.motivo, f.modalidade, f.possui_vicio, f.vicio_qual, f.restricoes_medicas,
-        f.retiros_anteriores, termos, f.status, obs, f.cpf, f.conjuge_nome, f.conjuge_cpf, lote, new Date()]
+        f.retiros_anteriores, termos, f.status, obs, f.cpf, f.conjuge_nome, f.conjuge_cpf, lote, new Date(), contaId]
       const { rows: [nova] } = await db.query(
         `insert into pre_fichas (${COLUNAS.join(', ')}) values (${COLUNAS.map((_, i) => `$${i + 1}`).join(', ')}) returning id`, valores)
       fichas++
@@ -402,7 +420,7 @@ export async function aplicar(pool, plano, { lote, arquivo = null, por = null } 
         participacoes += r.rowCount
       }
     }
-    const resumo = { ...plano.resumo, gravadas: fichas, participacoesGravadas: participacoes, edicoesCriadas: criadas.length }
+    const resumo = { ...plano.resumo, gravadas: fichas, participacoesGravadas: participacoes, contasCriadas, edicoesCriadas: criadas.length }
     await db.query('update importacoes set resumo = $2, acampamentos_criados = $3 where lote = $1', [lote, JSON.stringify(resumo), criadas])
     return resumo
   }).then(async (resumo) => {
@@ -422,13 +440,15 @@ export async function desfazer(pool, lote, { forcar = false } = {}) {
     if (!imp) throw new Error(`Lote "${lote}" não encontrado.`)
     const { rows: [m] } = await db.query(
       // "mexida" = a equipe agiu (atualização, vínculo de conta/cônjuge ou qualquer registro no histórico além da inscrição)
-      `select count(*)::int total, count(*) filter (where p.atualizado_em is not null or p.conjuge_id is not null or p.participante_id is not null
+      `select count(*)::int total, count(*) filter (where p.atualizado_em is not null or p.conjuge_id is not null or (p.participante_id is not null and not exists (select 1 from participantes c where c.id = p.participante_id and c.importada_lote = $1 and c.ultimo_login is null))
                   or exists (select 1 from pre_fichas_historico h where h.pre_ficha_id = p.id and h.tipo <> 'inscricao'))::int mexidas
          from pre_fichas p where p.importada_lote = $1`, [lote])
     if (m.mexidas > 0 && !forcar) {
       throw new Error(`${m.mexidas} ficha(s) deste lote já foram alteradas pela equipe (status, vínculos ou conta). Para apagar mesmo assim, use --forcar.`)
     }
     await db.query('delete from pre_fichas where importada_lote = $1', [lote])
+    // contas criadas por esta importação (as que a pessoa nunca usou, ou todas com `forcar`)
+    await db.query(`delete from participantes where importada_lote = $1 and ($2 or ultimo_login is null)`, [lote, forcar])
     // as edições criadas pela importação só somem se ficaram sem nenhuma participação
     const { rowCount } = await db.query(
       `delete from acampamentos a where a.id = any($1) and not exists (select 1 from participacoes p where p.acampamento_id = a.id)`, [imp.acampamentos_criados])

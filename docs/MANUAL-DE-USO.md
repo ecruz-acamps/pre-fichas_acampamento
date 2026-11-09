@@ -390,3 +390,7 @@ O formulário público e o painel podem ser instalados na tela inicial do celula
 - **iPhone / Safari:** Compartilhar → "Adicionar à Tela de Início".
 
 O aplicativo usa o nome e a cor do acampamento. Por segurança, **nenhum dado pessoal é guardado no aparelho**: o app precisa de internet para funcionar (sem conexão, aparece uma tela "Sem conexão"). Para atualizar, basta recarregar; a versão nova é baixada sozinha.
+
+## Contas das pessoas importadas
+
+Cada pessoa importada que tem CPF ganha uma conta: **usuário = CPF e senha = CPF** (só números ou com pontos, tanto faz). Ela entra em "Já tenho conta", vê a pré-ficha e pode trocar a senha em "Alterar senha". Quem não tinha e-mail na planilha não consegue usar "Esqueci minha senha": a coordenação precisa ajudar. Lembre que o CPF não é segredo; avise as pessoas para trocarem a senha.

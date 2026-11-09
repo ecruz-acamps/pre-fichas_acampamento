@@ -139,7 +139,7 @@ export default function ImportarFichas() {
 
       {resultado && (
         <div className="alerta-ok" role="status">
-          <strong>Importação concluída:</strong> {n(resultado.resumo.gravadas)} ficha(s), {n(resultado.resumo.participacoesGravadas)} participação(ões), {n(resultado.resumo.edicoesCriadas)} edição(ões) criada(s).
+          <strong>Importação concluída:</strong> {n(resultado.resumo.gravadas)} ficha(s), {n(resultado.resumo.participacoesGravadas)} participação(ões), {n(resultado.resumo.contasCriadas ?? 0)} conta(s) criada(s) (usuário e senha = CPF), {n(resultado.resumo.edicoesCriadas)} edição(ões) criada(s).
           Lote <code>{resultado.lote}</code>. Se algo não ficou como esperado, use "Desfazer" na lista abaixo.
         </div>
       )}

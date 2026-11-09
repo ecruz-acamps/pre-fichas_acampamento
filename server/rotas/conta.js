@@ -61,7 +61,7 @@ export default async function rotasConta(app) {
     if (!req.participante) return { conta: null, recuperacao, contaObrigatoria: config.contaObrigatoria }
     const id = req.participante.id
     const marca = await carregarMarca(pool)
-    const { rows: [p] } = await pool.query('select cpf, email, nome, dados from participantes where id = $1', [id])
+    const { rows: [p] } = await pool.query('select cpf, email, nome, dados, senha_inicial from participantes where id = $1', [id])
     const { rows: [ultima] } = await pool.query(
       `select id, status, created_at, modalidade from pre_fichas where participante_id = $1 order by id desc limit 1`, [id])
     let ficha = null
@@ -77,7 +77,7 @@ export default async function rotasConta(app) {
       }
     }
     const { rows: [pf] } = await pool.query('select atualizado_em from participantes_fotos where participante_id = $1', [id])
-    return { conta: { cpf: p.cpf, email: p.email, nome: p.nome, temFoto: !!pf, fotoVersao: pf ? new Date(pf.atualizado_em).getTime() : null }, dados: p.dados, ficha, modalidadesFeitas: await modalidadesFeitas(id, p.cpf), fezSenior: await fezSenior(pool, id, p.cpf), mostrarPosicao: marca.mostrarPosicaoFila, recuperacao, contaObrigatoria: config.contaObrigatoria }
+    return { conta: { cpf: p.cpf, email: p.email, senhaInicial: p.senha_inicial, nome: p.nome, temFoto: !!pf, fotoVersao: pf ? new Date(pf.atualizado_em).getTime() : null }, dados: p.dados, ficha, modalidadesFeitas: await modalidadesFeitas(id, p.cpf), fezSenior: await fezSenior(pool, id, p.cpf), mostrarPosicao: marca.mostrarPosicaoFila, recuperacao, contaObrigatoria: config.contaObrigatoria }
   })
 
   // ------------------------------------------------------------ foto da conta (opcional)
@@ -186,7 +186,14 @@ export default async function rotasConta(app) {
 
     const p = await buscarPorLogin(pool, login)
     let ok
-    try { ok = await conferir(senha, p?.senha_hash) } catch (e) { if (e.code === 'OCUPADO') return ocupado(reply); throw e }
+    try {
+      if (p && !p.senha_hash && p.senha_inicial) {
+        // conta criada pela importação: a senha inicial é o CPF; o hash só é gravado no primeiro acesso
+        ok = somenteDigitos(senha) === p.cpf
+        if (ok) await pool.query('update participantes set senha_hash = $1 where id = $2 and senha_hash is null', [await hashLimitado(p.cpf), p.id])
+        else await conferir(senha, null)   // gasta o mesmo tempo de uma conferência normal
+      } else ok = await conferir(senha, p?.senha_hash)
+    } catch (e) { if (e.code === 'OCUPADO') return ocupado(reply); throw e }
     if (!ok) {
       protecao.falhou(chave)
       return reply.code(401).send({ mensagem: 'CPF/e-mail ou senha incorretos.' })
@@ -210,6 +217,7 @@ export default async function rotasConta(app) {
     const resposta = { ok: true, mensagem: 'Se houver uma conta com esses dados, enviamos um link para o e-mail cadastrado. Confira também a caixa de spam.' }
     const p = await buscarPorLogin(pool, req.body?.login)
     if (!p) return resposta
+    if (!p.email) return resposta   // conta sem e-mail: só a coordenação resolve
     const token = await criarRedefinicao(pool, p.id)
     if (!token) return resposta
     const marca = await carregarMarca(pool)
@@ -233,7 +241,7 @@ export default async function rotasConta(app) {
     if (fraca) return reply.code(400).send({ mensagem: fraca })
     const id = await usarRedefinicao(pool, req.body?.token)
     if (!id) return reply.code(400).send({ mensagem: 'Link inválido ou vencido. Peça um novo em "Esqueci minha senha".' })
-    await pool.query('update participantes set senha_hash = $1 where id = $2', [await hashLimitado(senha), id])
+    await pool.query('update participantes set senha_hash = $1, senha_inicial = false where id = $2', [await hashLimitado(senha), id])
     await encerrarSessoesConta(pool, id)
     await entrar(reply, id)
     return { ok: true }
@@ -247,7 +255,7 @@ export default async function rotasConta(app) {
     let ok
     try { ok = await conferir(String(req.body?.senhaAtual ?? ''), p.senha_hash) } catch (e) { if (e.code === 'OCUPADO') return ocupado(reply); throw e }
     if (!ok) return reply.code(400).send({ mensagem: 'A senha atual está incorreta.' })
-    await pool.query('update participantes set senha_hash = $1 where id = $2', [await hashLimitado(nova), req.participante.id])
+    await pool.query('update participantes set senha_hash = $1, senha_inicial = false where id = $2', [await hashLimitado(nova), req.participante.id])
     return { ok: true }
   })
 

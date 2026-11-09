@@ -1,5 +1,13 @@
 # Histórico de versões
 
+## 2.12.0 — importação cria a conta de cada pessoa com CPF
+
+- Cada ficha importada **com CPF** ganha uma conta: **usuário = CPF e senha inicial = CPF** (a pessoa pode trocar depois; a área da conta mostra um aviso recomendando a troca). CPF que já tem conta só é vinculado à ficha.
+- A ficha aparece na área da conta da pessoa. E-mail passa a ser opcional na conta (repetido ou ausente na planilha: a conta fica sem e-mail e "Esqueci minha senha" não se aplica).
+- O hash da senha é gravado no primeiro acesso (a importação continua rápida).
+- **Desfazer** apaga também as contas do lote que ninguém usou; se alguma já foi usada, pede confirmação extra.
+- Migração `016`. Atenção: senha = CPF só protege contra quem não sabe o CPF; o bloqueio por tentativas errada continua valendo.
+
 ## 2.11.0 — PWA (instalável no celular)
 
 - O formulário e o painel podem ser instalados na tela inicial (Android/Chrome: "Instalar app"; iPhone/Safari: Compartilhar → "Adicionar à Tela de Início").
