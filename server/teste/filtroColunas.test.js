@@ -61,3 +61,10 @@ test('classificar por coluna: crescente e decrescente, estável, e o que não te
   assert.deepEqual(ids(col('status'), 1), [1, 3, 5, 2, 4], 'na ordem dos status (aguardando, em contato, participou)')
   assert.deepEqual(ids(col('modalidade'), 1), [1, 3, 2, 4, 5])
 })
+
+test('filtro de sexo: masculino/feminino, com contagem, e quem não informou fica em "(vazio)"', () => {
+  const l = [{ ...linhas[0], sexo: 'masculino' }, { ...linhas[1], sexo: 'feminino' }, { ...linhas[2], sexo: 'feminino' }, { ...linhas[3], sexo: null }]
+  assert.deepEqual(valoresDaColuna(l, col('sexo')).map((v) => [v.rotulo, v.total]), [['Masculino', 1], ['Feminino', 2], ['(vazio)', 1]])
+  const so = { sexo: { tipo: 'lista', permitidos: new Set(['feminino']) } }
+  assert.deepEqual(aplicarFiltros(l, colunas, so).map((x) => x.id), [l[1].id, l[2].id])
+})

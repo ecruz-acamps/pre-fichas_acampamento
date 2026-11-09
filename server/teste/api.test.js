@@ -307,6 +307,34 @@ describe('API', { skip: pular }, () => {
       assert.equal(comp[0].ip_origem, undefined)
     })
 
+    test('revisar modalidade: só administrador e coordenador (no escopo); lista as fichas com "revisar"; altera ou mantém e registra', async () => {
+      const dentro = await idPorNome('Maria Silva'), fora = await idPorNome('Terceiro Juvenil')
+      await pool.query(`update pre_fichas set data_nascimento = '2000-01-01', estado_civil = 'solteiro', modalidade = 'senior',
+        observacoes_internas = 'REVISAR MODALIDADE: aguarda Sênior, mas cabe Juvenil.' where id = $1`, [dentro])
+      await pool.query(`update pre_fichas set observacoes_internas = 'revisar tambem esta' where id = $1`, [fora])
+      assert.equal((await req('equipe', 'GET', '/api/admin/pre-fichas/revisar')).statusCode, 403)
+      assert.equal((await req('equipe', 'POST', `/api/admin/pre-fichas/${dentro}/modalidade`, { modalidade: 'juvenil' })).statusCode, 403)
+      const l = (await req('coord', 'GET', '/api/admin/pre-fichas/revisar')).json()
+      assert.deepEqual(l.map((f) => f.id), [dentro]); assert.deepEqual(l[0].compativeis, ['juvenil'])
+      assert.deepEqual((await req('admin', 'GET', '/api/admin/pre-fichas/revisar')).json().map((f) => f.id).sort(), [dentro, fora].sort())
+      assert.equal((await req('coord', 'POST', `/api/admin/pre-fichas/${fora}/modalidade`, { modalidade: 'juvenil' })).statusCode, 404, 'fora do escopo')
+      const url = `/api/admin/pre-fichas/${dentro}/modalidade`
+      assert.equal((await req('coord', 'POST', url, { modalidade: 'mirim' })).statusCode, 400, 'incompatível com a idade')
+      assert.equal((await req('coord', 'POST', url, { modalidade: 'casais' })).statusCode, 400, 'casais só pela conta')
+      assert.equal((await req('coord', 'POST', url, { modalidade: 'xx' })).statusCode, 400)
+      const { rows: [antes] } = await pool.query('select entrada_fila_em, created_at from pre_fichas where id = $1', [dentro])
+      const ok = await req('coord', 'POST', url, { modalidade: 'juvenil' })
+      assert.equal(ok.statusCode, 200, ok.body); assert.equal(ok.json().modalidade, 'juvenil')
+      const { rows: [dep] } = await pool.query('select modalidade, observacoes_internas o, entrada_fila_em, created_at from pre_fichas where id = $1', [dentro])
+      assert.doesNotMatch(dep.o, /revisar/i); assert.match(dep.o, /de Sênior para Juvenil/)
+      assert.deepEqual([+dep.entrada_fila_em, +dep.created_at], [+antes.entrada_fila_em, +antes.created_at], 'a posição na fila não muda')
+      assert.equal((await pool.query(`select count(*)::int n from pre_fichas_historico where pre_ficha_id = $1 and tipo = 'modalidade'`, [dentro])).rows[0].n, 1)
+      assert.deepEqual((await req('coord', 'GET', '/api/admin/pre-fichas/revisar')).json(), [])
+      // manter a modalidade atual também encerra a revisão (e a admin pode, mesmo fora da regra)
+      assert.equal((await req('admin', 'POST', `/api/admin/pre-fichas/${fora}/modalidade`, { modalidade: (await pool.query('select modalidade from pre_fichas where id = $1', [fora])).rows[0].modalidade })).statusCode, 200)
+      assert.deepEqual((await req('admin', 'GET', '/api/admin/pre-fichas/revisar')).json(), [])
+    })
+
     test('coordenadora não altera nem vê histórico de ficha fora da área', async () => {
       const fora = await idPorNome('Terceiro Juvenil')
       assert.equal((await req('coord', 'PATCH', `/api/admin/pre-fichas/${fora}`, { status: 'em_contato' })).statusCode, 404)

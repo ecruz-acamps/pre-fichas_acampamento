@@ -590,3 +590,7 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
 .pi-centro small { font-size: 0.65rem; letter-spacing: .1em; color: #555; font-weight: 700; }
 .pi-centro strong { font-size: 0.95rem; }
 .pi-dir { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 0.85rem; }
+
+.modalidade-ficha { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+.modalidade-ficha select { min-height: 36px; }
+.modalidade-ficha .erro { flex-basis: 100%; margin: 0; }

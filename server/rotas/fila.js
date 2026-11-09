@@ -1,5 +1,6 @@
 import { cabecalhosFoto } from '../foto.js'
-import { STATUS } from '../../shared/opcoes.js'
+import { MODALIDADES, STATUS, rotuloDe } from '../../shared/opcoes.js'
+import { calcularIdade, modalidadesCompativeis } from '../../shared/util.js'
 import { transacao } from '../db.js'
 import { nucleosDoUsuario, podeVerFicha } from '../escopo.js'
 import { carregarMarca } from '../marca.js'
@@ -129,6 +130,57 @@ export default async function rotasFila(app) {
     const completo = req.query?.completo === '1'
     const { rows } = await pool.query(SQL_LISTA(escopoLista(1), { completo }), [escopo])
     return rows.map(limparFicha)
+  })
+
+  // ---- Revisão de modalidade: só administrador e coordenador de núcleo (dentro do seu escopo) ----
+  const revisor = () => ({ onRequest: [app.exigirLogin, async (req, reply) => {
+    if (!['admin', 'coordenador'].includes(req.usuario.papel)) return reply.code(403).send({ mensagem: 'Apenas administradores e coordenadores de núcleo.' })
+  }] })
+
+  // Fichas com a palavra "revisar" nas observações internas (as importadas com modalidade fora da regra vêm assim)
+  app.get('/api/admin/pre-fichas/revisar', revisor(), async (req) => {
+    const escopo = await nucleosDoUsuario(pool, req.usuario)
+    const { rows } = await pool.query(SQL_LISTA(`${escopoLista(1)} and p.observacoes_internas ~* 'revisar'`, { completo: true }), [escopo])
+    return rows.map((f) => ({
+      id: f.id, nome_completo: f.nome_completo, data_nascimento: f.data_nascimento, estado_civil: f.estado_civil, modalidade: f.modalidade,
+      status: f.status, cidade: f.cidade, uf: f.uf, entrada_fila_em: f.entrada_fila_em, observacoes_internas: f.observacoes_internas,
+      compativeis: modalidadesCompativeis(calcularIdade(f.data_nascimento), f.estado_civil).filter((m) => m !== 'casais'),
+    }))
+  })
+
+  // Altera a modalidade (ou confirma a atual = "revisada"). A posição na fila não muda (entrada_fila_em e inscrição ficam).
+  app.post('/api/admin/pre-fichas/:id/modalidade', { ...revisor(), config: { rateLimit: { max: 120, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const id = Number(req.params.id)
+    const nova = String(req.body?.modalidade ?? '')
+    if (!Number.isInteger(id) || !MODALIDADES.some((m) => m.valor === nova)) return reply.code(400).send({ mensagem: 'Modalidade inválida.' })
+    if (!(await podeVerFicha(pool, req.usuario, id))) return reply.code(404).send({ mensagem: 'Pré-ficha não encontrada.' })
+    const r = await transacao(pool, async (db) => {
+      const { rows: [f] } = await db.query('select status, modalidade, data_nascimento, estado_civil, observacoes_internas from pre_fichas where id = $1 for update', [id])
+      if (!f) return { codigo: 404, mensagem: 'Pré-ficha não encontrada.' }
+      const mudou = nova !== f.modalidade
+      if (mudou) {
+        if (nova === 'casais') return { codigo: 400, mensagem: 'Para Casais é preciso conferir o cônjuge: a pessoa se inscreve pela área da conta.' }
+        if (!modalidadesCompativeis(calcularIdade(f.data_nascimento), f.estado_civil).includes(nova)) {
+          return { codigo: 400, mensagem: 'Esta modalidade não é compatível com a idade e o estado civil da pessoa.' }
+        }
+      }
+      const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
+      const nota = mudou
+        ? `Modalidade revisada em ${hoje} por ${req.usuario.nome}: de ${rotuloDe(MODALIDADES, f.modalidade)} para ${rotuloDe(MODALIDADES, nova)}.`
+        : `Modalidade revisada em ${hoje} por ${req.usuario.nome}: mantida (${rotuloDe(MODALIDADES, f.modalidade)}).`
+      // tira a marca "revisar" e deixa o registro na própria observação
+      const obs = [String(f.observacoes_internas ?? '').replace(/revisar modalidade/gi, 'modalidade (revisada)').replace(/\brevisar\b/gi, 'revisado'), nota].filter(Boolean).join('\n').slice(0, 4000)
+      await db.query(
+        `update pre_fichas set modalidade = $1, observacoes_internas = $2, atualizado_em = now(), atualizado_por = $3 where id = $4`,
+        [nova, obs, req.usuario.id, id])
+      await db.query(
+        `insert into pre_fichas_historico (pre_ficha_id, usuario_id, tipo, observacao, detalhes) values ($1, $2, 'modalidade', $3, $4)`,
+        [id, req.usuario.id, nota, JSON.stringify({ de: f.modalidade, para: nova })])
+      return { ok: true }
+    })
+    if (!r.ok) return reply.code(r.codigo).send({ mensagem: r.mensagem })
+    const { rows: [ficha] } = await pool.query(SQL_FICHAS('p.id = $1'), [id])
+    return limparFicha(ficha)
   })
 
   // Impressão da ficha: quem pode ver a ficha completa pode imprimir; fica registrado na trilha
