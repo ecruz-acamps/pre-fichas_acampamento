@@ -8,12 +8,12 @@ export class ErroApi extends Error {
   }
 }
 
-async function requisitar(metodo, url, corpo, arquivo) {
+async function requisitar(metodo, url, corpo, arquivo, extra = {}) {
   const opcoes = {
     method: metodo,
     credentials: 'same-origin',
     // Cabeçalho exigido pelo servidor nas rotas protegidas (defesa contra CSRF).
-    headers: { 'X-Requested-With': 'fetch' },
+    headers: { 'X-Requested-With': 'fetch', ...extra },
   }
   if (arquivo) {
     opcoes.headers['Content-Type'] = arquivo.type
@@ -45,5 +45,5 @@ export const api = {
   put: (url, corpo = {}) => requisitar('PUT', url, corpo),
   delete: (url) => requisitar('DELETE', url),
   /** Envia um arquivo como corpo da requisição (ex.: logo). */
-  enviarArquivo: (url, arquivo) => requisitar('PUT', url, undefined, arquivo),
+  enviarArquivo: (url, arquivo, { metodo = 'PUT', cabecalhos = {} } = {}) => requisitar(metodo, url, undefined, arquivo, cabecalhos),
 }

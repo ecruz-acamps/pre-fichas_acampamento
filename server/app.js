@@ -19,6 +19,7 @@ import rotasUsuarios from './rotas/usuarios.js'
 import rotasNucleos from './rotas/nucleos.js'
 import rotasAcampamentos from './rotas/acampamentos.js'
 import rotasMarca from './rotas/marca.js'
+import rotasImportacao from './rotas/importacao.js'
 import rotasPreferencias from './rotas/preferencias.js'
 import rotasConta from './rotas/conta.js'
 import { criarEmail } from './email.js'
@@ -119,6 +120,7 @@ export async function construirApp({ pool, config, logger = true, chavesLicenca 
   await app.register(rotasNucleos)
   await app.register(rotasAcampamentos)
   await app.register(rotasMarca)
+  await app.register(rotasImportacao)
   await app.register(rotasPreferencias)
   await app.register(rotasLicenca)
   await app.register(rotasAtualizacao)

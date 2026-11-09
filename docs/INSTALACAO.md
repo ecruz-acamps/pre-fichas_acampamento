@@ -646,7 +646,10 @@ acampamentos já publicados.
 - Depois de salvo ele **nunca mais aparece** em tela, auditoria, lista de tarefas nem log. A tela só mostra "token configurado".
 - Ao criar o token na Cloudflare, use: *Conta › Cloudflare Tunnel › Editar* e *Zona › DNS › Editar*, com a sua conta e a zona do domínio.
 
-**Importar pré-fichas de uma planilha (a partir da 2.7):**
+**Importar pré-fichas pela tela (a partir da 2.8):** no painel do acampamento, administrador → **Configurações → "Importar pré-fichas de uma planilha"**: escolha o arquivo (**CSV ou Excel**), confira a **simulação**,
+baixe as listas de quarentena/conferência se quiser e confirme. Abaixo ficam as importações feitas, com **Desfazer**. O comando de terminal abaixo faz o mesmo.
+
+**Importar pré-fichas de uma planilha pelo terminal (a partir da 2.7):**
 1. Salve a planilha como **CSV** (Excel: *Arquivo → Salvar como → CSV UTF-8*). Colunas esperadas (a ordem não importa): Nome, CPF, Data de Nascimento, Sexo, Estado Civil,
    Data da Pré-Ficha, Aguardando Acampamento, Telefone, Cidade, Estado (obrigatórias) e as demais (Email, CEP, Rua, Bairro, Religião, Batizado, Onde Fui Campista...).
 2. Na pasta do acampamento: `./scripts/importar-fichas.sh planilha.csv` (**simulação**: não grava nada). Leia `importar/relatorio-*/resumo.txt` e a `quarentena.csv`.

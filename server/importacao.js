@@ -13,6 +13,7 @@ import { calcularIdade, cpfValido, modalidadesCompativeis, somenteDigitos } from
 import { MODALIDADES, rotuloDe, ESTADOS_CIVIS } from '../shared/opcoes.js'
 import { carregarMarca, salvarMarca } from './marca.js'
 import { transacao } from './db.js'
+import { ehXlsx, lerXlsx } from './xlsx.js'
 
 // ------------------------------------------------------------------ CSV
 /** Texto do arquivo: UTF-8; se não for (CSV "ANSI" do Excel), lê como Windows-1252 para não quebrar os acentos. */
@@ -41,13 +42,23 @@ export function lerCsv(texto) {
   }
   linha.push(campo)
   if (linha.some((x) => x !== '')) linhas.push(linha)
+  return montarRegistros(linhas)
+}
+
+/** Linhas (a primeira é o cabeçalho) → { cabecalho, registros }. Serve para CSV e Excel. */
+export function montarRegistros(linhas) {
   if (!linhas.length) return { cabecalho: [], registros: [] }
   const cabecalho = linhas[0].map((h) => semAcento(h))
-  const registros = linhas.slice(1).map((l, i) => ({
-    numero: i + 2,   // número da linha na planilha (1 = cabeçalho)
-    valores: Object.fromEntries(cabecalho.map((h, j) => [h, (l[j] ?? '').trim()])),
-  }))
+  const registros = linhas.slice(1)
+    .map((l, i) => ({ numero: i + 2, l }))                       // número da linha na planilha (1 = cabeçalho)
+    .filter(({ l }) => l.some((x) => String(x ?? '').trim() !== ''))
+    .map(({ numero, l }) => ({ numero, valores: Object.fromEntries(cabecalho.map((h, j) => [h, String(l[j] ?? '').trim()])) }))
   return { cabecalho, registros }
+}
+
+/** Lê o arquivo enviado: Excel (.xlsx) ou CSV (UTF-8 ou ANSI), reconhecido pelo conteúdo. */
+export function lerPlanilha(buffer) {
+  return ehXlsx(buffer) ? montarRegistros(lerXlsx(buffer)) : lerCsv(decodificar(buffer))
 }
 
 const semAcento = (s) => String(s ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/\s+/g, ' ').trim()
@@ -55,8 +66,9 @@ const limpar = (s) => String(s ?? '').replace(/\s+/g, ' ').trim()
 const pegar = (v, nome) => v[nome] ?? ''
 const comecaCom = (v, prefixo) => { const k = Object.keys(v).find((x) => x.startsWith(prefixo)); return k ? v[k] : '' }
 
-export const COLUNAS_OBRIGATORIAS = ['nome', 'cpf', 'data de nascimento', 'sexo', 'estado civil', 'data da pre-ficha',
-  'aguardando acampamento', 'telefone', 'cidade', 'estado']
+export const COLUNAS_OBRIGATORIAS = ['nome', 'cpf', 'data de nascimento', 'sexo', 'estado civil', 'telefone', 'cidade', 'estado']
+// precisa de pelo menos uma destas para distinguir quem está na fila de quem já participou
+export const COLUNAS_DE_TIPO = ['data da pre-ficha', 'aguardando acampamento', 'onde fui campista']
 
 // ------------------------------------------------------------------ conversões
 function dataBR(s) {
@@ -129,9 +141,26 @@ export function mapearLinha(registro, { hoje = new Date(), tribos = [] } = {}) {
   if (nome.split(' ').length < 2) aviso('Nome com uma palavra só: conferir o sobrenome.')
   if (nome.length > 150) return q('Nome com mais de 150 caracteres.')
 
+  // Quem é quem: com "Data da Pré-Ficha" + "Aguardando Acampamento" está na FILA; sem eles, mas com "Onde Fui Campista",
+  // é um campista que já participou (ficha "Já participou", fora da fila); sem nenhum dos dois não há como saber.
+  const temPre = !!(pegar(v, 'data da pre-ficha') && pegar(v, 'aguardando acampamento'))
+  const campistaTxt = pegar(v, 'onde fui campista')
+  const campistaLinhas = campistaTxt ? campistaTxt.split(/\n+/).map(limpar).filter(Boolean) : []
+  const edicoesLidas = campistaLinhas.map((t) => lerEdicao(t)).filter(Boolean)
+  let tipo = 'fila'
+  if (!temPre) {
+    if (!campistaLinhas.length) {
+      return q(pegar(v, 'onde fui servo')
+        ? 'Sem pré-ficha e sem acampamento feito (só consta como servo): não há o que importar.'
+        : 'Sem pré-ficha, sem acampamento feito e sem servo: não dá para saber se é campista, pré-ficha cancelada ou outro caso. Decida e inclua na planilha.')
+    }
+    if (!edicoesLidas.length) return q(`Sem pré-ficha e o acampamento feito está fora do padrão "Nº Modalidade - Local (Tribo)": "${campistaLinhas[0]}".`)
+    tipo = 'campista'
+  }
   const nasc = dataBR(pegar(v, 'data de nascimento'))
-  const pre = dataBR(pegar(v, 'data da pre-ficha'))
-  const modRaw = semAcento(pegar(v, 'aguardando acampamento'))
+  const pre = tipo === 'fila' ? dataBR(pegar(v, 'data da pre-ficha')) : null
+  // modalidade: a que a pessoa espera (fila) ou a do acampamento que fez (campista; se fez vários, o último da lista)
+  const modRaw = tipo === 'fila' ? semAcento(pegar(v, 'aguardando acampamento')) : edicoesLidas.at(-1).modalidade
   const mod = MODALIDADE[modRaw]
   if (!mod) return q(`Modalidade desconhecida: "${pegar(v, 'aguardando acampamento')}".`)
   if (!nasc) return q(`Data de nascimento ilegível: "${pegar(v, 'data de nascimento')}".`)
@@ -139,11 +168,15 @@ export function mapearLinha(registro, { hoje = new Date(), tribos = [] } = {}) {
   const idade = calcularIdade(nasc.iso, hoje)
   if (idade < 0) return q(`Data de nascimento no futuro: ${pegar(v, 'data de nascimento')}.`)
   if (idade > 110) return q(`Data de nascimento impossível (${idade} anos): ${pegar(v, 'data de nascimento')}.`)
-  if (idade < 3 || (idade < 7 && mod[0] !== 'mirim')) return q(`Data de nascimento improvável (${idade} anos para ${rotuloDe(MODALIDADES, mod[0])}): ${pegar(v, 'data de nascimento')}. Provável erro de digitação.`)
-  if (idade < 7) aviso(`Idade de ${idade} anos na modalidade Mirim (mínimo do sistema: 7): conferir a data de nascimento.`)
-  if (!pre) return q(`Data da pré-ficha ilegível: "${pegar(v, 'data da pre-ficha')}".`)
-  if (pre.a < 2000) return q(`Data da pré-ficha improvável: ${pegar(v, 'data da pre-ficha')}.`)
-  if (new Date(`${pre.iso}T12:00:00Z`) > hoje) return q(`Data da pré-ficha no futuro: ${pegar(v, 'data da pre-ficha')}.`)
+  if (idade < 3 || (idade < 7 && mod[0] !== 'mirim')) return q(`Data de nascimento improvável (${idade} ${idade === 1 ? 'ano' : 'anos'} para ${rotuloDe(MODALIDADES, mod[0])}): ${pegar(v, 'data de nascimento')}. Provável erro de digitação.`)
+  if (idade < 7) aviso(`Idade de ${idade} ${idade === 1 ? 'ano' : 'anos'} na modalidade Mirim (mínimo do sistema: 7): conferir a data de nascimento.`)
+  if (tipo === 'fila') {
+    if (!pre) return q(`Data da pré-ficha ilegível: "${pegar(v, 'data da pre-ficha')}".`)
+    if (pre.a < 2000) return q(`Data da pré-ficha improvável: ${pegar(v, 'data da pre-ficha')}.`)
+    if (new Date(`${pre.iso}T12:00:00Z`) > hoje) return q(`Data da pré-ficha no futuro: ${pegar(v, 'data da pre-ficha')}.`)
+  } else {
+    info('Sem pré-ficha na planilha: ficha criada só para registrar que a pessoa já participou (fora da fila). A data de inscrição é a da importação.')
+  }
 
   const sexo = SEXO[semAcento(pegar(v, 'sexo'))]
   if (!sexo) return q(`Sexo não reconhecido: "${pegar(v, 'sexo')}".`)
@@ -200,12 +233,9 @@ export function mapearLinha(registro, { hoje = new Date(), tribos = [] } = {}) {
 
   // histórico (vira participação no acampamento)
   const campista = []
-  const campistaTxt = pegar(v, 'onde fui campista')
-  if (campistaTxt) {
-    for (const parte of campistaTxt.split(/\n+/).map(limpar).filter(Boolean)) {
-      const e = lerEdicao(parte)
-      if (e) campista.push(e); else aviso(`Foi campista (texto fora do padrão, não registrado como participação): ${parte}`)
-    }
+  for (const parte of campistaLinhas) {
+    const e = lerEdicao(parte)
+    if (e) campista.push(e); else aviso(`Foi campista (texto fora do padrão, não registrado como participação): ${parte}`)
   }
   for (const e of campista) {
     e.triboSistema = e.tribo ? (casarTribo(e.tribo, tribos) ?? nomeDeTribo(e.tribo)) : null   // tribo que não existe ainda é acrescentada à marca
@@ -216,15 +246,16 @@ export function mapearLinha(registro, { hoje = new Date(), tribos = [] } = {}) {
 
   // a modalidade que a pessoa esperava é mantida (a ordem da fila não muda); se não bate com a regra do sistema, vira aviso
   const compat = modalidadesCompativeis(idade, ec[0])
-  if (!compat.includes(mod[0])) {
+  if (tipo === 'fila' && !compat.includes(mod[0])) {
     const t = `REVISAR MODALIDADE: aguarda ${rotuloDe(MODALIDADES, mod[0])}, mas pela regra do sistema (${idade} anos, ${rotuloDe(ESTADOS_CIVIS, ec[0])}) cabem: ${compat.map((x) => rotuloDe(MODALIDADES, x)).join(', ') || 'nenhuma'}.`
     notas.unshift(t); alertas.unshift(t)
   }
 
   const ficha = {
     // data original da pré-ficha, ao meio-dia (Brasília): o dia exibido é sempre o da planilha
-    criado_em: `${pre.iso} 12:00:00-03`,
-    data_pre_ficha: pre.iso,
+    criado_em: pre ? `${pre.iso} 12:00:00-03` : null,        // sem data na planilha (campista): a data da importação
+    data_pre_ficha: pre ? pre.iso : null,
+    status: tipo === 'fila' ? 'aguardando' : 'participou',
     nome_completo: nome, data_nascimento: nasc.iso, estado_civil: ec[0], sexo,
     profissao: cortar(limpar(pegar(v, 'profissao')), 120) || null,
     telefone,
@@ -243,7 +274,7 @@ export function mapearLinha(registro, { hoje = new Date(), tribos = [] } = {}) {
     retiros_anteriores: retiros || null,
     cpf, conjuge_nome: conjugeNome ? cortar(conjugeNome, 150) : null, conjuge_cpf: conjugeCpf,
   }
-  return { ficha, notas, alertas, campista, idade }
+  return { ficha, notas, alertas, campista, idade, tipo }
 }
 
 // ------------------------------------------------------------------ plano (simulação)
@@ -306,16 +337,18 @@ export async function planejar(pool, registros, { hoje = new Date() } = {}) {
     .sort((a, b) => a.modalidade.localeCompare(b.modalidade) || a.numero - b.numero)
 
   const porModalidade = {}
-  for (const x of aImportar) porModalidade[x.ficha.modalidade] = (porModalidade[x.ficha.modalidade] ?? 0) + 1
+  for (const x of aImportar.filter((y) => y.tipo === 'fila')) porModalidade[x.ficha.modalidade] = (porModalidade[x.ficha.modalidade] ?? 0) + 1
   const resumo = {
-    linhas: registros.length, importar: aImportar.length, quarentena: quarentena.length, ignoradas: ignoradas.length,
+    linhas: registros.length, importar: aImportar.length, naFila: aImportar.filter((x) => x.tipo === 'fila').length,
+    campistasSemFila: aImportar.filter((x) => x.tipo === 'campista').length,
+    semClassificacao: quarentena.filter((x) => /^Sem pré-ficha/.test(x.motivo)).length, quarentena: quarentena.length, ignoradas: ignoradas.length,
     porModalidade, revisarModalidade: aImportar.filter((x) => x.notas.some((n) => n.startsWith('REVISAR MODALIDADE'))).length,
     comAlerta: aImportar.filter((x) => x.alertas.length).length, tribosNovas: [...tribosNovas.keys()], semEmail: aImportar.filter((x) => !x.ficha.email).length, semCep: aImportar.filter((x) => !x.ficha.cep).length,
     semMotivo: aImportar.filter((x) => !x.ficha.motivo).length, semCpf: aImportar.filter((x) => !x.ficha.cpf).length,
     participacoes: aImportar.reduce((s, x) => s + x.campista.length, 0), edicoesNovas: edicoesNovas.length,
     edicoesExistentes: necessarias.size - edicoesNovas.length,
-    primeiraData: aImportar.map((x) => x.ficha.data_pre_ficha).sort()[0] ?? null,
-    ultimaData: aImportar.map((x) => x.ficha.data_pre_ficha).sort().at(-1) ?? null,
+    primeiraData: aImportar.map((x) => x.ficha.data_pre_ficha).filter(Boolean).sort()[0] ?? null,
+    ultimaData: aImportar.map((x) => x.ficha.data_pre_ficha).filter(Boolean).sort().at(-1) ?? null,
   }
   return { importar: aImportar, quarentena, ignoradas, edicoesNovas, tribosNovas: [...tribosNovas.values()], jaMapa, resumo }
 }
@@ -326,12 +359,13 @@ const COLUNAS = ['created_at', 'nome_completo', 'data_nascimento', 'estado_civil
   'numero', 'complemento', 'bairro', 'cidade', 'uf', 'como_conheceu', 'motivo', 'modalidade', 'possui_vicio', 'vicio_qual', 'restricoes_medicas',
   'retiros_anteriores', 'termos_aceitos', 'status', 'observacoes_internas', 'cpf', 'conjuge_nome', 'conjuge_cpf', 'importada_lote', 'importada_em']
 
-export const loteNovo = (agora = new Date()) => `importacao-${agora.toISOString().slice(0, 16).replace(/[-:T]/g, '')}`
+export const loteNovo = (agora = new Date()) => `importacao-${agora.toISOString().slice(0, 19).replace(/[-:T]/g, '')}`
 
 /** Grava o plano numa transação única: ou entra tudo, ou nada. A data da pré-ficha da planilha é mantida. */
-export async function aplicar(pool, plano, { lote, arquivo = null } = {}) {
+export async function aplicar(pool, plano, { lote, arquivo = null, por = null } = {}) {
   if (!/^[A-Za-z0-9._-]{3,60}$/.test(lote ?? '')) throw new Error('Nome de lote inválido (3 a 60 letras, números, ponto, hífen ou sublinhado).')
-  const ordenadas = [...plano.importar].sort((a, b) => a.ficha.data_pre_ficha.localeCompare(b.ficha.data_pre_ficha) || a.linha - b.linha)
+  const agora = new Date().toISOString()
+  const ordenadas = [...plano.importar].sort((a, b) => (a.ficha.data_pre_ficha ?? '9999').localeCompare(b.ficha.data_pre_ficha ?? '9999') || a.linha - b.linha)
   return transacao(pool, async (db) => {
     const { rowCount } = await db.query('select 1 from importacoes where lote = $1', [lote])
     if (rowCount) throw new Error(`O lote "${lote}" já existe. Use outro nome (ou desfaça o anterior).`)
@@ -345,18 +379,18 @@ export async function aplicar(pool, plano, { lote, arquivo = null } = {}) {
         [e.numero, e.modalidade, `Criado na importação ${lote} (sem datas: complete se quiser).`])
       ids.set(`${e.modalidade}:${e.numero}`, a.id); criadas.push(a.id)
     }
-    await db.query('insert into importacoes (lote, arquivo) values ($1, $2)', [lote, arquivo])
+    await db.query('insert into importacoes (lote, arquivo, por) values ($1, $2, $3)', [lote, arquivo, por])
 
     const termos = JSON.stringify([`Ficha importada do sistema anterior (lote ${lote}). O aceite dos termos foi dado no formulário original.`])
     const dataImportacao = new Date().toLocaleDateString('pt-BR')
     let fichas = 0, participacoes = 0
     for (const x of ordenadas) {
       const f = x.ficha
-      const obs = cortar([`Importada do sistema anterior em ${dataImportacao} (lote ${lote}). Data da pré-ficha original: ${f.data_pre_ficha.split('-').reverse().join('/')}.`, ...x.notas].join('\n'), 4000)
-      const valores = [f.criado_em, f.nome_completo, f.data_nascimento, f.estado_civil, f.sexo, f.profissao, f.telefone, f.religiao, f.batizado,
+      const obs = cortar([`Importada do sistema anterior em ${dataImportacao} (lote ${lote}).${f.data_pre_ficha ? ` Data da pré-ficha original: ${f.data_pre_ficha.split('-').reverse().join('/')}.` : ''}`, ...x.notas].join('\n'), 4000)
+      const valores = [f.criado_em ?? agora, f.nome_completo, f.data_nascimento, f.estado_civil, f.sexo, f.profissao, f.telefone, f.religiao, f.batizado,
         f.primeira_eucaristia, f.crismado, f.paroquia, f.participa_pastoral, f.pastoral_qual, f.email, f.instagram, f.facebook, f.cep, f.logradouro,
         f.numero, f.complemento, f.bairro, f.cidade, f.uf, f.como_conheceu, f.motivo, f.modalidade, f.possui_vicio, f.vicio_qual, f.restricoes_medicas,
-        f.retiros_anteriores, termos, 'aguardando', obs, f.cpf, f.conjuge_nome, f.conjuge_cpf, lote, new Date()]
+        f.retiros_anteriores, termos, f.status, obs, f.cpf, f.conjuge_nome, f.conjuge_cpf, lote, new Date()]
       const { rows: [nova] } = await db.query(
         `insert into pre_fichas (${COLUNAS.join(', ')}) values (${COLUNAS.map((_, i) => `$${i + 1}`).join(', ')}) returning id`, valores)
       fichas++
@@ -387,8 +421,10 @@ export async function desfazer(pool, lote, { forcar = false } = {}) {
     const { rows: [imp] } = await db.query('select acampamentos_criados from importacoes where lote = $1', [lote])
     if (!imp) throw new Error(`Lote "${lote}" não encontrado.`)
     const { rows: [m] } = await db.query(
-      `select count(*)::int total, count(*) filter (where status <> 'aguardando' or atualizado_em is not null or conjuge_id is not null or participante_id is not null)::int mexidas
-         from pre_fichas where importada_lote = $1`, [lote])
+      // "mexida" = a equipe agiu (atualização, vínculo de conta/cônjuge ou qualquer registro no histórico além da inscrição)
+      `select count(*)::int total, count(*) filter (where p.atualizado_em is not null or p.conjuge_id is not null or p.participante_id is not null
+                  or exists (select 1 from pre_fichas_historico h where h.pre_ficha_id = p.id and h.tipo <> 'inscricao'))::int mexidas
+         from pre_fichas p where p.importada_lote = $1`, [lote])
     if (m.mexidas > 0 && !forcar) {
       throw new Error(`${m.mexidas} ficha(s) deste lote já foram alteradas pela equipe (status, vínculos ou conta). Para apagar mesmo assim, use --forcar.`)
     }
@@ -412,15 +448,17 @@ export function relatorios(plano) {
 =======================
 Linhas lidas ........................ ${r.linhas}
 Serão importadas .................... ${r.importar}
-  por modalidade:
-${por}
+  na fila de espera (pré-fichas) .... ${r.naFila}
+    por modalidade:
+${por.replace(/^/gm, '  ')}
+  campistas que já participaram ..... ${r.campistasSemFila}  (sem pré-ficha: entram como "Já participou", fora da fila)
   datas de pré-ficha mantidas ....... de ${r.primeiraData?.split('-').reverse().join('/')} a ${r.ultimaData?.split('-').reverse().join('/')}
   pedem conferência da equipe ....... ${r.comAlerta}  (modalidade a revisar: ${r.revisarModalidade})  → revisar.csv
   tribos acrescentadas ao sistema ... ${r.tribosNovas.join(', ') || 'nenhuma'}
   sem e-mail / sem CEP / sem motivo . ${r.semEmail} / ${r.semCep} / ${r.semMotivo}
   sem CPF (inválido na planilha) .... ${r.semCpf}
   participações em acampamentos ..... ${r.participacoes}  (edições novas: ${r.edicoesNovas}; já existentes: ${r.edicoesExistentes})
-Quarentena (NÃO importadas) ......... ${r.quarentena}  → quarentena.csv
+Quarentena (NÃO importadas) ......... ${r.quarentena}  → quarentena.csv  (sem como classificar: ${r.semClassificacao})
 Já existiam no sistema (ignoradas) .. ${r.ignoradas}  → ignoradas.csv
 
 Observações:

@@ -1,5 +1,17 @@
 # Histórico de versões
 
+## 2.8.0 — importar pela tela (CSV ou Excel) e reconhecer quem é quem
+
+- **Configurações → "Importar pré-fichas de uma planilha"** (só administrador): envia o arquivo **CSV ou Excel (.xlsx)**, mostra a **simulação** (nada é gravado), permite baixar as listas de
+  quarentena, de conferência e das ignoradas, e só importa depois da confirmação. Abaixo, a lista das importações feitas, com **Desfazer** (se a equipe já mexeu nas fichas, pede uma confirmação extra).
+- **Leitor de Excel próprio**, sem biblioteca de terceiros, com limites contra arquivo malformado ou "bomba de zip"; lê textos, números que perderam o zero à esquerda e datas guardadas como número.
+  Na planilha real, o resultado com Excel é idêntico ao do CSV.
+- **Reconhece quem é quem pelo conteúdo:** com "Data da Pré-Ficha" + "Aguardando Acampamento" → **na fila**; sem elas, mas com "Onde Fui Campista" → **campista que já participou** (ficha "Já participou",
+  fora da fila, com a participação registrada; a modalidade é a do acampamento que fez; a data de inscrição é a da importação, porque a planilha não tem data); sem nenhum dos dois → **quarentena**, sem adivinhar.
+  Lista de "todos" com as duas coisas misturadas funciona, e cada CPF vira uma pessoa só.
+- Correção: o "desfazer" passou a considerar "mexida pela equipe" a atualização, os vínculos e o histórico (antes olhava o status, o que travaria o desfazer de campistas importados).
+- Migração `015` (quem fez a importação).
+
 ## 2.7.0 — importar pré-fichas de uma planilha (CSV)
 
 - **Comando de importação** (`./scripts/importar-fichas.sh planilha.csv`): primeiro uma **simulação** com relatório (não grava nada); com `--aplicar`, grava tudo numa

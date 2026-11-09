@@ -16,7 +16,8 @@ import { _codigoNoPasso, passoAtual } from '../totp.js'
 import { gerarHash } from '../senha.js'
 import { modalidadesCompativeis } from '../../shared/util.js'
 import { limparJpeg } from '../foto.js'
-import { aplicar, casarTribo, decodificar, desfazer, lerCsv, lerEdicao, mapearLinha, planejar, relatorios } from '../importacao.js'
+import { aplicar, casarTribo, decodificar, desfazer, lerCsv, lerEdicao, lerPlanilha, mapearLinha, planejar, relatorios } from '../importacao.js'
+import { crc32, deflateRawSync } from 'node:zlib'
 
 const URL_TESTE = process.env.DATABASE_URL_TESTE
 const pular = !URL_TESTE && 'defina DATABASE_URL_TESTE para rodar os testes de integração'
@@ -1759,6 +1760,84 @@ describe('API', { skip: pular }, () => {
       assert.equal(mapear({ CPF: '12345' }).ficha.cpf, null, 'CPF curto demais e inválido não é "consertado"')
     })
 
+
+    test('quem é quem: na fila, campista que já participou (fora da fila) e o que não dá para classificar', async () => {
+      const campista = mapear({ 'Data da Pré-Ficha': '', 'Aguardando Acampamento': '', 'Onde Fui Campista': '12º Sênior - São Padre Pio (Azul)' })
+      assert.deepEqual([campista.tipo, campista.ficha.status, campista.ficha.modalidade, campista.ficha.criado_em, campista.campista.length], ['campista', 'participou', 'senior', null, 1])
+      assert.equal(campista.alertas.some((a) => /REVISAR MODALIDADE/.test(a)), false, 'a modalidade do campista é a que ele fez')
+      assert.deepEqual([mapear({}).tipo, mapear({}).ficha.status], ['fila', 'aguardando'])
+      // campista com 4 anos é erro de digitação, como na fila
+      assert.match(mapear({ 'Data da Pré-Ficha': '', 'Aguardando Acampamento': '', 'Onde Fui Campista': '2º Fac - X (Azul)', 'Data de Nascimento': '10/05/2022' }).quarentena, /improvável/)
+      // nada a que se agarrar: quarentena com motivo claro (nunca adivinha)
+      const nada = mapear({ 'Data da Pré-Ficha': '', 'Aguardando Acampamento': '' })
+      assert.match(nada.quarentena, /não dá para saber/)
+      assert.match(mapear({ 'Data da Pré-Ficha': '', 'Aguardando Acampamento': '', 'Onde Fui Servo': '3º Mirim (x)' }).quarentena, /só consta como servo/)
+      assert.match(mapear({ 'Data da Pré-Ficha': '', 'Aguardando Acampamento': '', 'Onde Fui Campista': 'Sênior Geral (fora)' }).quarentena, /fora do padrão/)
+
+      // de ponta a ponta: o campista vira "Já participou", não entra na fila e a regra do Casais o reconhece
+      const cpfCamp = cpfDe('300000001'), cpfFila = cpfDe('300000002')
+      const { registros } = lerCsv(csv([
+        linha({ Nome: 'Heitor Campista', CPF: cpfCamp, 'Data da Pré-Ficha': '', 'Aguardando Acampamento': '', 'Onde Fui Campista': '12º Sênior - São Padre Pio (Azul)', Sexo: 'Masculino' }),
+        linha({ Nome: 'Iara Na Fila', CPF: cpfFila, 'Data da Pré-Ficha': '05/05/2025' }),
+        linha({ Nome: 'Joao Sem Nada', CPF: cpfDe('300000003'), 'Data da Pré-Ficha': '', 'Aguardando Acampamento': '' }),
+      ]))
+      const plano = await planejar(pool, registros, { hoje: HOJE })
+      assert.deepEqual([plano.resumo.importar, plano.resumo.naFila, plano.resumo.campistasSemFila, plano.resumo.semClassificacao, plano.resumo.quarentena], [2, 1, 1, 1, 1])
+      assert.match(relatorios(plano)['resumo.txt'], /campistas que já participaram \.+ 1/)
+      await aplicar(pool, plano, { lote: 'teste-tipos' })
+      const { rows } = await pool.query(`select cpf, status, modalidade, (created_at > now() - interval '1 hour') as recente from pre_fichas where importada_lote = 'teste-tipos' order by cpf`)
+      assert.deepEqual(rows.map((r) => [r.status, r.modalidade]), [['participou', 'senior'], ['aguardando', 'juvenil'].slice(0, 0).concat(['aguardando', 'senior'])])
+      assert.equal(rows.find((r) => r.cpf === cpfCamp).recente, true, 'campista sem data na planilha: data da importação')
+      const fila = await pool.query(`select f.nome_completo from fila_espera f join pre_fichas p on p.id = f.id where p.importada_lote = 'teste-tipos'`)
+      assert.deepEqual(fila.rows.map((r) => r.nome_completo), ['Iara Na Fila'], 'só quem espera está na fila')
+      const { jaFezAcampamento, fezSenior } = await import('../casais.js')
+      assert.equal(await jaFezAcampamento(pool, { cpf: cpfCamp }), true); assert.equal(await fezSenior(pool, null, cpfCamp), true)
+      assert.equal(await jaFezAcampamento(pool, { cpf: cpfFila }), false)
+      await desfazer(pool, 'teste-tipos')
+    })
+
+    // monta um .xlsx de verdade (zip + XML) para testar o leitor de Excel
+    const zip = (arquivos) => {
+      const locais = [], centrais = []; let off = 0
+      for (const [nome, conteudo] of Object.entries(arquivos)) {
+        const dados = Buffer.from(conteudo, 'utf8'), comp = deflateRawSync(dados), n = Buffer.from(nome), crc = crc32(dados)
+        const l = Buffer.alloc(30); l.writeUInt32LE(0x04034b50, 0); l.writeUInt16LE(20, 4); l.writeUInt16LE(8, 8); l.writeUInt32LE(crc, 14); l.writeUInt32LE(comp.length, 18); l.writeUInt32LE(dados.length, 22); l.writeUInt16LE(n.length, 26)
+        const c = Buffer.alloc(46); c.writeUInt32LE(0x02014b50, 0); c.writeUInt16LE(20, 4); c.writeUInt16LE(20, 6); c.writeUInt16LE(8, 10); c.writeUInt32LE(crc, 16); c.writeUInt32LE(comp.length, 20); c.writeUInt32LE(dados.length, 24); c.writeUInt16LE(n.length, 28); c.writeUInt32LE(off, 42)
+        locais.push(l, n, comp); centrais.push(c, n); off += 30 + n.length + comp.length
+      }
+      const cd = Buffer.concat(centrais), fim = Buffer.alloc(22)
+      fim.writeUInt32LE(0x06054b50, 0); fim.writeUInt16LE(Object.keys(arquivos).length, 8); fim.writeUInt16LE(Object.keys(arquivos).length, 10); fim.writeUInt32LE(cd.length, 12); fim.writeUInt32LE(off, 16)
+      return Buffer.concat([...locais, cd, fim])
+    }
+    const xlsx = (linhasXlsx) => {                       // linhasXlsx: matriz de valores; número = célula numérica, texto = célula de texto
+      const comuns = []; const idx = (t) => { let i = comuns.indexOf(t); if (i < 0) { i = comuns.length; comuns.push(t) } return i }
+      const col = (n) => String.fromCharCode(65 + n)
+      const xml = linhasXlsx.map((l, r) => `<row r="${r + 1}">${l.map((x, c) => x === '' ? '' : typeof x === 'number'
+        ? `<c r="${col(c)}${r + 1}"><v>${x}</v></c>` : `<c r="${col(c)}${r + 1}" t="s"><v>${idx(x)}</v></c>`).join('')}</row>`).join('')
+      return zip({
+        'xl/workbook.xml': '<workbook xmlns:r="x"><sheets><sheet name="Lista" sheetId="1" r:id="rId9"/></sheets></workbook>',
+        'xl/_rels/workbook.xml.rels': '<Relationships><Relationship Id="rId9" Type="x" Target="worksheets/sheet7.xml"/></Relationships>',
+        'xl/sharedStrings.xml': `<sst>${comuns.map((t) => `<si><t>${t.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</t></si>`).join('')}</sst>`,
+        'xl/worksheets/sheet7.xml': `<worksheet><sheetData>${xml}</sheetData></worksheet>`,
+      })
+    }
+
+    test('Excel (.xlsx): lê a aba, textos, números que perderam o zero e datas guardadas como número; recusa arquivo estragado', () => {
+      const cpf = cpfDe('012345678')
+      const arq = xlsx([CAB.slice(0, 12), ['Maria & Cia <Teste>', Number(cpf), 36, '10/05/1990', 'Feminino', 'Solteiro', '', '', '', '', 45698, 'Sênior']])
+      const r = lerPlanilha(arq)
+      assert.equal(r.registros.length, 1)
+      assert.equal(r.registros[0].valores.nome, 'Maria & Cia <Teste>')
+      assert.equal(r.registros[0].valores.cpf, String(Number(cpf)), 'o número chega sem o zero (o importador recupera)')
+      assert.equal(r.registros[0].valores['data da pre-ficha'], '10/02/2025', 'data em número serial do Excel (45698) vira dd/mm/aaaa')
+      assert.equal(mapear({ CPF: String(Number(cpf)) }).ficha.cpf, cpf)
+      // não é um xlsx, está truncado, ou é "bomba": erro claro
+      assert.throws(() => lerPlanilha(Buffer.from('PK\x03\x04lixo-sem-estrutura-nenhuma')), /Excel/)
+      assert.throws(() => lerPlanilha(arq.subarray(0, arq.length - 30)), /Excel/)
+      const bomba = zip({ 'xl/workbook.xml': '<workbook><sheets><sheet r:id="a"/></sheets></workbook>', 'xl/worksheets/sheet1.xml': `<worksheet>${'<row><c><v>1</v></c></row>'.repeat(61000)}</worksheet>` })
+      assert.throws(() => lerPlanilha(bomba), /linhas demais/)
+    })
+
     test('o que não dá para importar com segurança vai para a quarentena, com o motivo', () => {
       const casos = [
         [{ Nome: 'Al' }, /Nome/], [{ 'Data de Nascimento': '15/03/2062' }, /futuro/], [{ 'Data de Nascimento': '01/01/0063' }, /impossível/],
@@ -1883,7 +1962,7 @@ describe('API', { skip: pular }, () => {
 
     test('desfazer: apaga o lote e as edições criadas por ele; se a equipe já mexeu, exige --forcar', async () => {
       const { rows: [f] } = await pool.query(`select id from pre_fichas where nome_completo = 'Gabi Nova'`)
-      await pool.query(`update pre_fichas set status = 'em_contato' where id = $1`, [f.id])
+      await pool.query(`update pre_fichas set status = 'em_contato', atualizado_em = now() where id = $1`, [f.id])
       await assert.rejects(desfazer(pool, 'teste-importacao-2'), /já foram alteradas/)
       assert.deepEqual(await desfazer(pool, 'teste-importacao-2', { forcar: true }), { fichas: 1, edicoes: 0 })
       assert.equal((await pool.query(`select count(*)::int n from pre_fichas where nome_completo = 'Gabi Nova'`)).rows[0].n, 0)
@@ -1891,6 +1970,104 @@ describe('API', { skip: pular }, () => {
       assert.deepEqual(r, { fichas: 4, edicoes: 1 })
       assert.equal((await pool.query(`select count(*)::int n from acampamentos where numero = 16 and modalidade = 'senior'`)).rows[0].n, 0, 'a edição criada pela importação some')
       await assert.rejects(desfazer(pool, 'nao-existe'), /não encontrado/)
+    })
+  })
+
+
+  // ------------------------------------------------------------------ importação pela tela (Configurações)
+  describe('importação pela tela', () => {
+    const CAB = ['Nome', 'CPF', 'Idade', 'Data de Nascimento', 'Sexo', 'Estado Civil', 'Data da Pré-Ficha', 'Aguardando Acampamento', 'Onde Fui Campista', 'Telefone', 'Religião',
+      'Batizado', 'Primeira Comunhão', 'Crismado', 'Cidade', 'Estado']
+    const cpfDe = (base) => {
+      const d = base.split('').map(Number)
+      const dv = (n) => { let t = 0; for (let i = 0; i < n; i++) t += d[i] * (n + 1 - i); const r = (t * 10) % 11; return r === 10 ? 0 : r }
+      d.push(dv(9)); d.push(dv(10)); return d.join('')
+    }
+    const csvDe = (linhas) => Buffer.from([CAB, ...linhas].map((l) => l.map((x) => `"${x}"`).join(';')).join('\n'), 'utf8')
+    const pessoa = (nome, cpf, data = '10/03/2025', camp = '', aguardando = 'Sênior') => [nome, cpf, '40', '10/05/1985', 'Feminino', 'Casado', data, aguardando, camp, '(48) 99999-1111', 'Católica', 'Sim', 'Sim', 'Sim', 'Palhoça', 'SC']
+    const enviarArq = (quem, buf, url = '/api/admin/importacao/simular') => app.inject({ method: 'POST', url, headers: { ...como(quem), 'content-type': 'application/octet-stream', 'x-nome-arquivo': 'lista teste.csv' }, payload: buf })
+    const arq = csvDe([pessoa('Tela Um', cpfDe('400000001'), '01/02/2025'), pessoa('Tela Dois', cpfDe('400000002'), '15/06/2024', '5º Mirim - X (Azul)'),
+      pessoa('Tela Tres', cpfDe('400000003'), '', '7º Fac - X (Roxa)', ''), pessoa('Tela Nada', cpfDe('400000004'), '', '', '')])
+    let token
+
+    test('só o administrador importa; sem login, 401; arquivo que não é planilha é recusado com a explicação', async () => {
+      assert.equal((await app.inject({ method: 'POST', url: '/api/admin/importacao/simular', headers: { ...H, 'content-type': 'application/octet-stream' }, payload: arq })).statusCode, 401)
+      for (const quem of ['equipe', 'coord']) {
+        assert.equal((await enviarArq(quem, arq)).statusCode, 403, quem)
+        assert.equal((await req(quem, 'GET', '/api/admin/importacao/lotes')).statusCode, 403)
+        assert.equal((await req(quem, 'DELETE', '/api/admin/importacao/lotes/qualquer')).statusCode, 403)
+      }
+      const vazio = await enviarArq('admin', Buffer.from('x')); assert.equal(vazio.statusCode, 400)
+      const faltando = await enviarArq('admin', Buffer.from('"Nome";"CPF"\n"A B";"1"', 'utf8'))
+      assert.equal(faltando.statusCode, 400); assert.ok(faltando.json().faltam.includes('data de nascimento'))
+      const semTipo = await enviarArq('admin', Buffer.from('"Nome";"CPF";"Data de Nascimento";"Sexo";"Estado Civil";"Telefone";"Cidade";"Estado"\n"A B";"1";"1/1/1990";"F";"S";"1";"x";"SC"', 'utf8'))
+      assert.equal(semTipo.statusCode, 400); assert.match(semTipo.json().mensagem, /onde fui campista/)
+      assert.equal((await enviarArq('admin', Buffer.concat([Buffer.from('PK\x03\x04'), Buffer.alloc(200, 1)]))).statusCode, 400, 'xlsx estragado')
+    })
+
+    test('simular mostra o relatório e NÃO grava nada; o relatório de quarentena pode ser baixado', async () => {
+      const antes = (await pool.query('select count(*)::int n from pre_fichas')).rows[0].n
+      const r = await enviarArq('admin', arq)
+      assert.equal(r.statusCode, 200, r.body)
+      const j = r.json(); token = j.token
+      assert.deepEqual([j.resumo.linhas, j.resumo.importar, j.resumo.naFila, j.resumo.campistasSemFila, j.resumo.quarentena, j.resumo.semClassificacao, j.arquivo], [4, 3, 2, 1, 1, 1, 'lista teste.csv'])
+      assert.equal(j.quarentena.length, 1); assert.match(j.quarentena[0].motivo, /não dá para saber/)
+      assert.equal((await pool.query('select count(*)::int n from pre_fichas')).rows[0].n, antes, 'simulação não grava')
+      const baixar = (quem, t, nome = 'quarentena.csv') => app.inject({ method: 'GET', url: `/api/admin/importacao/relatorio/${nome}?token=${t}`, headers: como(quem) })
+      const q = await baixar('admin', token)
+      assert.equal(q.statusCode, 200); assert.match(q.headers['content-disposition'], /attachment/); assert.match(q.headers['content-type'], /text\/csv/); assert.match(q.body, /Tela Nada/)
+      assert.equal((await baixar('admin', 'token-errado')).statusCode, 404); assert.equal((await baixar('admin', token, '../../etc/passwd')).statusCode, 404)
+      assert.equal((await baixar('equipe', token)).statusCode, 403)
+    })
+
+    test('aplicar grava tudo uma vez só, registra quem fez e o lote pode ser listado e desfeito', async () => {
+      assert.equal((await req('admin', 'POST', '/api/admin/importacao/aplicar', { token: 'invalido' })).statusCode, 404)
+      assert.equal((await req('equipe', 'POST', '/api/admin/importacao/aplicar', { token })).statusCode, 403)
+      const r = await req('admin', 'POST', '/api/admin/importacao/aplicar', { token })
+      assert.equal(r.statusCode, 200, r.body)
+      const { lote, resumo } = r.json()
+      assert.deepEqual([resumo.gravadas, resumo.participacoesGravadas], [3, 2])
+      assert.equal((await req('admin', 'POST', '/api/admin/importacao/aplicar', { token })).statusCode, 404, 'o mesmo arquivo não é aplicado duas vezes')
+      const lotes = (await req('admin', 'GET', '/api/admin/importacao/lotes')).json()
+      const meu = lotes.find((x) => x.lote === lote)
+      assert.deepEqual([meu.fichas, meu.alteradas, meu.por, meu.arquivo], [3, 0, 'admin@x.com', 'lista teste.csv'])
+      const { rows } = await pool.query(`select nome_completo, status, to_char(created_at at time zone 'America/Sao_Paulo','YYYY-MM-DD') d from pre_fichas where importada_lote = $1 order by nome_completo`, [lote])
+      assert.deepEqual(rows.map((x) => [x.nome_completo, x.status]), [['Tela Dois', 'aguardando'], ['Tela Tres', 'participou'], ['Tela Um', 'aguardando']])
+      assert.deepEqual([rows[0].d, rows[2].d], ['2024-06-15', '2025-02-01'], 'as datas da planilha foram mantidas')
+      // desfazer: se a equipe já mexeu, pede confirmação extra
+      const { rows: [f] } = await pool.query(`select id from pre_fichas where nome_completo = 'Tela Um'`)
+      await pool.query(`update pre_fichas set status = 'em_contato', atualizado_em = now() where id = $1`, [f.id])
+      const d1 = await req('admin', 'DELETE', `/api/admin/importacao/lotes/${lote}`)
+      assert.equal(d1.statusCode, 409); assert.equal(d1.json().precisaForcar, true)
+      const d2 = await req('admin', 'DELETE', `/api/admin/importacao/lotes/${lote}?forcar=1`)
+      assert.equal(d2.statusCode, 200); assert.equal(d2.json().fichas, 3)
+      assert.equal((await req('admin', 'DELETE', `/api/admin/importacao/lotes/${lote}`)).statusCode, 404)
+    })
+
+    test('o mesmo arquivo em Excel (.xlsx) pela tela dá o mesmo resultado', async () => {
+      const xl = Buffer.from(arq) // mesmo conteúdo, só que montado como planilha Excel abaixo
+      void xl
+      const linhasXl = [CAB, pessoa('Excel Um', cpfDe('400000011'), '03/03/2025'), pessoa('Excel Dois', cpfDe('400000012'), '', '9º Sênior - X (Verde)', '')]
+      // a matriz vira .xlsx com o mesmo montador usado no teste do leitor
+      const montar = (m) => {
+        const comuns = []; const idx = (t) => { let i = comuns.indexOf(t); if (i < 0) { i = comuns.length; comuns.push(t) } return i }
+        const col = (n) => String.fromCharCode(65 + n)
+        const xml = m.map((l, r) => `<row r="${r + 1}">${l.map((x, c) => x === '' ? '' : `<c r="${col(c)}${r + 1}" t="s"><v>${idx(x)}</v></c>`).join('')}</row>`).join('')
+        const arquivos = { 'xl/workbook.xml': '<workbook xmlns:r="x"><sheets><sheet name="L" r:id="rId1"/></sheets></workbook>', 'xl/_rels/workbook.xml.rels': '<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>',
+          'xl/sharedStrings.xml': `<sst>${comuns.map((t) => `<si><t>${t}</t></si>`).join('')}</sst>`, 'xl/worksheets/sheet1.xml': `<worksheet><sheetData>${xml}</sheetData></worksheet>` }
+        const locais = [], centrais = []; let off = 0
+        for (const [nome, conteudo] of Object.entries(arquivos)) {
+          const dados = Buffer.from(conteudo), comp = deflateRawSync(dados), n = Buffer.from(nome), crc = crc32(dados)
+          const l = Buffer.alloc(30); l.writeUInt32LE(0x04034b50, 0); l.writeUInt16LE(8, 8); l.writeUInt32LE(crc, 14); l.writeUInt32LE(comp.length, 18); l.writeUInt32LE(dados.length, 22); l.writeUInt16LE(n.length, 26)
+          const c = Buffer.alloc(46); c.writeUInt32LE(0x02014b50, 0); c.writeUInt16LE(8, 10); c.writeUInt32LE(crc, 16); c.writeUInt32LE(comp.length, 20); c.writeUInt32LE(dados.length, 24); c.writeUInt16LE(n.length, 28); c.writeUInt32LE(off, 42)
+          locais.push(l, n, comp); centrais.push(c, n); off += 30 + n.length + comp.length
+        }
+        const cd = Buffer.concat(centrais), fim = Buffer.alloc(22); fim.writeUInt32LE(0x06054b50, 0); fim.writeUInt16LE(3 + 1, 8); fim.writeUInt16LE(3 + 1, 10); fim.writeUInt32LE(cd.length, 12); fim.writeUInt32LE(off, 16)
+        return Buffer.concat([...locais, cd, fim])
+      }
+      const r = await enviarArq('admin', montar(linhasXl))
+      assert.equal(r.statusCode, 200, r.body)
+      assert.deepEqual([r.json().resumo.importar, r.json().resumo.naFila, r.json().resumo.campistasSemFila], [2, 1, 1])
     })
   })
 

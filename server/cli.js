@@ -16,7 +16,7 @@ import { gerarHash, gerarSenhaTemporaria } from './senha.js'
 import { carregarMarca, conferirImagem, salvarLogo, salvarMarca } from './marca.js'
 import { ativarLicenca, gerarHashChave, situacaoLicenca } from './licenca.js'
 import { importarParticipantes } from './participantes.js'
-import { aplicar, COLUNAS_OBRIGATORIAS, decodificar, desfazer, lerCsv, loteNovo, planejar, relatorios } from './importacao.js'
+import { aplicar, COLUNAS_DE_TIPO, COLUNAS_OBRIGATORIAS, desfazer, lerPlanilha, loteNovo, planejar, relatorios } from './importacao.js'
 import { mkdir } from 'node:fs/promises'
 
 const TIPO_POR_EXTENSAO = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' }
@@ -51,7 +51,7 @@ const AJUDA = `Uso:
   node server/cli.js marca logo <imagem>             troca só a logo (PNG, JPG, WEBP ou SVG)
 
   node server/cli.js fichas importar <arquivo.csv> [--aplicar] [--lote NOME] [--saida PASTA]
-                                                     importa pré-fichas de outra planilha (CSV UTF-8). Sem --aplicar é só
+                                                     importa pré-fichas de outra planilha (CSV ou Excel .xlsx). Sem --aplicar é só
                                                      uma SIMULAÇÃO com relatório (não grava nada)
   node server/cli.js fichas lotes                    lista as importações feitas
   node server/cli.js fichas desfazer <LOTE> [--forcar]  apaga as fichas de um lote importado
@@ -142,8 +142,8 @@ try {
       const valor = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined }
       if (acao === 'importar') {
         if (!alvo || alvo.startsWith('--')) throw new Error('Uso: node server/cli.js fichas importar arquivo.csv [--aplicar] [--lote NOME] [--saida PASTA]')
-        const { cabecalho, registros } = lerCsv(decodificar(await readFile(alvo)))
-        const faltam = COLUNAS_OBRIGATORIAS.filter((c) => !cabecalho.includes(c))
+        const { cabecalho, registros } = lerPlanilha(await readFile(alvo))
+        const faltam = [...COLUNAS_OBRIGATORIAS.filter((c) => !cabecalho.includes(c)), ...(COLUNAS_DE_TIPO.some((c) => cabecalho.includes(c)) ? [] : ['data da pré-ficha / aguardando acampamento / onde fui campista'])]
         if (faltam.length) throw new Error(`Colunas que faltam no arquivo: ${faltam.join(', ')}.\nColunas encontradas: ${cabecalho.join(' | ')}`)
         const plano = await planejar(pool, registros)
         const lote = valor('--lote') ?? loteNovo()

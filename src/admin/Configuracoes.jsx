@@ -1,3 +1,4 @@
+import ImportarFichas from './ImportarFichas.jsx'
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api.js'
 import { carregarMarca, TextoMarca } from '../lib/marca.jsx'
@@ -486,6 +487,7 @@ export default function Configuracoes({ marca, onSalvar }) {
         <aside className="config-previa"><Previa m={m} logoUrl={logoUrl} /></aside>
       </div>
       <div className="cartao config-publicacao"><Publicacao nomeCurto={m.nomeCurto || m.nome} /></div>
+      <ImportarFichas />
     </>
   )
 }
