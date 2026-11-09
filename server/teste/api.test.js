@@ -16,6 +16,7 @@ import { _codigoNoPasso, passoAtual } from '../totp.js'
 import { gerarHash } from '../senha.js'
 import { modalidadesCompativeis } from '../../shared/util.js'
 import { limparJpeg } from '../foto.js'
+import { aplicar, casarTribo, decodificar, desfazer, lerCsv, lerEdicao, mapearLinha, planejar, relatorios } from '../importacao.js'
 
 const URL_TESTE = process.env.DATABASE_URL_TESTE
 const pular = !URL_TESTE && 'defina DATABASE_URL_TESTE para rodar os testes de integração'
@@ -1711,6 +1712,185 @@ describe('API', { skip: pular }, () => {
       const { id: idAdmin } = await linha('admin@x.com'); const { id: idCarlos } = await linha('carlos@coord.teste')
       for (const alvo of [idAdmin, idCarlos, 999999]) assert.equal((await req('admin', 'DELETE', `/api/admin/usuarios/${alvo}/pendente`)).statusCode, 404)
       assert.ok(await linha('admin@x.com') && await linha('carlos@coord.teste'))
+    })
+  })
+
+
+  // ------------------------------------------------------------------ importação de pré-fichas de outra planilha (dados FICTÍCIOS)
+  describe('importação de fichas', () => {
+    const HOJE = new Date('2026-11-09T12:00:00Z')
+    const CAB = ['Nome', 'CPF', 'Idade', 'Data de Nascimento', 'Sexo', 'Estado Civil', 'Nome do Cônjuge', 'CPF do Cônjuge', 'Data de Casamento', 'Casado no Religioso',
+      'Data da Pré-Ficha', 'Aguardando Acampamento', 'Onde Fui Campista', 'Onde Fui Servo', 'Paróquia', 'Pastoral', 'Telefone', 'Profissão', 'Religião', 'Batizado',
+      'Primeira Comunhão', 'Crismado', 'Vícios', 'Restrições Médicas', 'Retiros Frequentados', 'Como você conheceu o acampamento?',
+      'Por que você quer participar do acampamento?', 'Campistas conhecidos', 'Email', 'Instagram', 'Facebook', 'Rua', 'Número', 'Complemento', 'Bairro', 'Cidade', 'Estado', 'CEP']
+    const cpfDe = (base) => {
+      const d = base.split('').map(Number)
+      const dv = (n) => { let t = 0; for (let i = 0; i < n; i++) t += d[i] * (n + 1 - i); const r = (t * 10) % 11; return r === 10 ? 0 : r }
+      d.push(dv(9)); d.push(dv(10)); return d.join('')
+    }
+    const linha = (c = {}) => ({
+      Nome: 'Fulana de Tal', CPF: cpfDe('111222333'), 'Data de Nascimento': '10/05/1990', Sexo: 'Feminino', 'Estado Civil': 'Solteiro', 'Data da Pré-Ficha': '15/03/2025',
+      'Aguardando Acampamento': 'Sênior', Telefone: '(48) 99999-0001', Religião: 'Católica', Batizado: 'Sim', 'Primeira Comunhão': 'Sim', Crismado: 'Não',
+      'Como você conheceu o acampamento?': 'Amigos', 'Por que você quer participar do acampamento?': 'Quero viver Deus', Email: 'fulana@exemplo.com',
+      Rua: 'Rua A', Número: '10', Bairro: 'Centro', Cidade: 'Florianópolis', Estado: 'SC', CEP: '88015200', ...c })
+    const csv = (linhas, sep = ';') => `﻿${[CAB, ...linhas.map((l) => CAB.map((h) => l[h] ?? ''))].map((r) => r.map((x) => `"${String(x).replace(/"/g, '""')}"`).join(sep)).join('\r\n')}`
+    const mapear = (c) => mapearLinha(lerCsv(csv([linha(c)])).registros[0], { hoje: HOJE, tribos: ['Azul', 'Preto', 'Vermelho', 'Roxo'] })
+    const brasilia = (col, id) => pool.query(`select to_char(${col} at time zone 'America/Sao_Paulo', 'YYYY-MM-DD') as d from pre_fichas where id = $1`, [id]).then((r) => r.rows[0].d)
+
+    test('o CSV é lido com ; ou , aspas, quebra de linha dentro da célula e BOM', () => {
+      const a = lerCsv(csv([linha({ Nome: 'Com "Aspas" e; ponto', 'Campistas conhecidos': 'Ana — Irmã\nBia — Prima' })]))
+      assert.equal(a.registros.length, 1); assert.equal(a.registros[0].valores.nome, 'Com "Aspas" e; ponto')
+      assert.equal(a.registros[0].valores['campistas conhecidos'], 'Ana — Irmã\nBia — Prima')
+      assert.ok(a.cabecalho.includes('data da pre-ficha') && a.cabecalho.includes('como voce conheceu o acampamento?'), 'cabeçalhos sem acento e minúsculos')
+      const b = lerCsv(csv([linha()], ','))
+      assert.equal(b.registros[0].valores.nome, 'Fulana de Tal'); assert.equal(b.registros[0].numero, 2)
+    })
+
+    test('CSV do Excel: arquivo em ANSI não quebra os acentos e CPF sem o zero à esquerda é recuperado', () => {
+      const utf8 = Buffer.from(csv([linha({ Nome: 'João Conceição', Cidade: 'São José' })]), 'utf8')
+      assert.equal(lerCsv(decodificar(utf8)).registros[0].valores.nome, 'João Conceição')
+      // "ANSI" (Windows-1252): cada acento é 1 byte; lido como UTF-8 seria inválido
+      const ansi = Buffer.from(csv([linha({ Nome: 'João Conceição', Cidade: 'São José' })]).replace(/^\uFEFF/, ''), 'latin1')
+      const r = lerCsv(decodificar(ansi)).registros[0].valores
+      assert.deepEqual([r.nome, r.cidade, r['aguardando acampamento']], ['João Conceição', 'São José', 'Sênior'])
+      // CPF que começa com zero e o Excel transformou em número (perdeu o zero)
+      const cpf = cpfDe('012345678'); assert.ok(cpf.startsWith('0'))
+      assert.equal(mapear({ CPF: cpf.slice(1) }).ficha.cpf, cpf)
+      assert.equal(mapear({ CPF: '12345' }).ficha.cpf, null, 'CPF curto demais e inválido não é "consertado"')
+    })
+
+    test('o que não dá para importar com segurança vai para a quarentena, com o motivo', () => {
+      const casos = [
+        [{ Nome: 'Al' }, /Nome/], [{ 'Data de Nascimento': '15/03/2062' }, /futuro/], [{ 'Data de Nascimento': '01/01/0063' }, /impossível/],
+        [{ 'Data de Nascimento': '15/03/2023' }, /improvável/], [{ 'Data de Nascimento': '31/02/1990' }, /ilegível/], [{ 'Aguardando Acampamento': 'Outra' }, /Modalidade desconhecida/],
+        [{ Sexo: 'X' }, /Sexo/], [{ 'Estado Civil': 'Complicado' }, /Estado civil/], [{ Telefone: '123' }, /Telefone/], [{ 'Data da Pré-Ficha': '15/03/2031' }, /futuro/],
+        [{ Estado: 'Santa Catarina' }, /UF/], [{ Cidade: '' }, /Cidade/],
+      ]
+      for (const [c, re] of casos) { const m = mapear(c); assert.match(m.quarentena ?? '', re, JSON.stringify(c)) }
+      assert.equal(mapear({}).quarentena, undefined)
+      // criança de 5 anos só passa no Mirim (e com aviso); 2 anos nunca
+      assert.equal(mapear({ 'Data de Nascimento': '10/05/2021', 'Aguardando Acampamento': 'Mirim' }).notas.some((n) => /mínimo do sistema/.test(n)), true)
+      assert.match(mapear({ 'Data de Nascimento': '10/05/2025', 'Aguardando Acampamento': 'Mirim' }).quarentena, /improvável/)
+    })
+
+    test('ajustes sem inventar dados: FAC II, separado, CPF/e-mail inválidos, textos longos, "não", modalidade a revisar, histórico e tribo', () => {
+      const m = mapear({
+        'Aguardando Acampamento': 'FAC II', 'Data de Nascimento': '10/05/2011', 'Estado Civil': 'Separado', CPF: '00000000000', Email: 'isso-nao-e-email',
+        Vícios: 'Não', 'Restrições Médicas': 'nenhuma', Pastoral: 'Catequese', Religião: 'Sem Religião', CEP: '', Complemento: 'c'.repeat(130),
+        'Como você conheceu o acampamento?': 'x'.repeat(250), 'Onde Fui Campista': '16º Sênior - São Padre Pio (Vermelha)\n1º Acampamento de Casais - São Padre Pio (Roxa)\nSênior Geral (fora do sítio) (Azul)',
+        'Onde Fui Servo': '3º Mirim Sitio (Evangelização)', 'Data de Casamento': '01/01/2010', 'Campistas conhecidos': 'Ana — Tia\nBia — Prima', 'CPF do Cônjuge': '123',
+      })
+      const f = m.ficha
+      assert.deepEqual([f.modalidade, f.estado_civil, f.cpf, f.email, f.cep, f.possui_vicio, f.restricoes_medicas, f.participa_pastoral, f.pastoral_qual, f.religiao],
+        ['fac', 'divorciado', null, null, null, false, null, true, 'Catequese', 'Sem religião'])
+      assert.equal(f.complemento.length, 100); assert.equal(f.como_conheceu.length, 200)
+      const n = m.notas.join('\n')
+      for (const re of [/FAC II/, /Separado/, /CPF da planilha inválido/, /E-mail da planilha inválido/, /Complemento \(texto completo/, /Como conheceu \(texto completo/, /Foi servo: 3º Mirim/,
+        /Data de casamento: 01\/01\/2010/, /Campistas conhecidos: Ana — Tia; Bia — Prima/, /CPF do cônjuge inválido/, /fora do padrão/]) assert.match(n, re)
+      assert.deepEqual(m.campista.map((e) => [e.numero, e.modalidade, e.triboSistema]), [[16, 'senior', 'Vermelho'], [1, 'casais', 'Roxo']])
+      assert.equal(mapearLinha(lerCsv(csv([linha({ 'Onde Fui Campista': '5º Mirim - X (Rosa)' })])).registros[0], { hoje: HOJE, tribos: ['Azul'] }).campista[0].triboSistema, 'Rosa', 'tribo que a marca não tem: o nome vem pronto para ser acrescentado')
+      // 15 anos esperando FAC: nenhum aviso de modalidade; 40 anos esperando FAC: avisa e mantém
+      assert.equal(mapear({ 'Aguardando Acampamento': 'FAC', 'Data de Nascimento': '10/05/2011' }).alertas.some((x) => /REVISAR/.test(x)), false)
+      const rev = mapear({ 'Aguardando Acampamento': 'FAC', 'Data de Nascimento': '10/05/1986' })
+      assert.equal(rev.ficha.modalidade, 'fac', 'a modalidade da planilha é mantida'); assert.match(rev.alertas[0], /REVISAR MODALIDADE.*Sênior/)
+      // informação (campistas conhecidos, casamento, servo) vai para a ficha, mas NÃO entra na lista de conferência
+      assert.equal(m.alertas.some((x) => /Campistas conhecidos|Data de casamento|Foi servo/.test(x)), false)
+      assert.equal(m.alertas.some((x) => /CPF da planilha inválido/.test(x)), true)
+      assert.equal(casarTribo('Amarela', ['Azul', 'Amarelo']), 'Amarelo'); assert.equal(casarTribo('Cinza', ['Azul']), null)
+      assert.deepEqual([lerEdicao('11 Sênior - São Padre Pio (Verde)').numero, lerEdicao('Sênior Geral (x)')], [11, null])
+    })
+
+    test('a simulação não grava nada; a importação mantém a DATA DA PRÉ-FICHA da planilha e, com ela, a ordem da fila', async () => {
+      const linhas = [
+        linha({ Nome: 'Bruna Segunda', CPF: cpfDe('200000001'), 'Data da Pré-Ficha': '20/06/2025', 'Onde Fui Campista': '16º Sênior - São Padre Pio (Vermelha)' }),
+        linha({ Nome: 'Ana Primeira', CPF: cpfDe('200000002'), 'Data da Pré-Ficha': '01/02/2024', Email: '', CEP: '', 'Por que você quer participar do acampamento?': '', 'Como você conheceu o acampamento?': '' }),
+        linha({ Nome: 'Caio Terceiro', CPF: cpfDe('200000003'), 'Data da Pré-Ficha': '31/12/2025', Sexo: 'Masculino', 'Onde Fui Campista': '16º Sênior - São Padre Pio (Azul)' }),
+        linha({ Nome: 'Dani Quarta', CPF: cpfDe('200000004'), 'Data da Pré-Ficha': '20/06/2025' }),                                    // mesmo dia da Bruna: vale a ordem da planilha
+        linha({ Nome: 'Eva Errada', CPF: cpfDe('200000005'), 'Data de Nascimento': '15/03/2062' }),                                   // quarentena
+        linha({ Nome: 'Fabio Repetido', CPF: cpfDe('200000001') }),                                                                  // CPF repetido na planilha
+      ]
+      const { registros } = lerCsv(csv(linhas))
+      const antes = (await pool.query('select count(*)::int n from pre_fichas')).rows[0].n
+      const plano = await planejar(pool, registros, { hoje: HOJE })
+      assert.deepEqual([plano.resumo.importar, plano.resumo.quarentena, plano.resumo.semEmail, plano.resumo.semCep, plano.resumo.semMotivo, plano.resumo.participacoes, plano.resumo.edicoesNovas],
+        [4, 2, 1, 1, 1, 2, 1])
+      assert.equal((await pool.query('select count(*)::int n from pre_fichas')).rows[0].n, antes, 'a simulação não grava nada')
+      assert.deepEqual(Object.keys(relatorios(plano)), ['resumo.txt', 'quarentena.csv', 'ignoradas.csv', 'revisar.csv'])
+      assert.match(relatorios(plano)['quarentena.csv'], /Data de nascimento no futuro/)
+
+      const r = await aplicar(pool, plano, { lote: 'teste-importacao-1', arquivo: 'fake.csv' })
+      assert.deepEqual([r.gravadas, r.participacoesGravadas, r.edicoesCriadas], [4, 2, 1])
+      const { rows } = await pool.query(
+        `select id, nome_completo, to_char(created_at at time zone 'America/Sao_Paulo', 'YYYY-MM-DD') as inscricao, entrada_fila_em = created_at as fila_igual,
+                status, importada_lote, termos_aceitos, observacoes_internas from pre_fichas where importada_lote = 'teste-importacao-1' order by entrada_fila_em, id`)
+      assert.deepEqual(rows.map((x) => [x.nome_completo, x.inscricao]), [['Ana Primeira', '2024-02-01'], ['Bruna Segunda', '2025-06-20'], ['Dani Quarta', '2025-06-20'], ['Caio Terceiro', '2025-12-31']],
+        'a data de inscrição é a da planilha e a fila segue essa ordem (no mesmo dia, a ordem da planilha)')
+      assert.ok(rows.every((x) => x.fila_igual && x.status === 'aguardando'), 'a entrada na fila é a data original, sem mudança')
+      assert.match(rows[0].observacoes_internas, /Data da pré-ficha original: 01\/02\/2024/); assert.match(rows[0].termos_aceitos[0], /importada do sistema anterior/i)
+      // a trilha de auditoria registra a inscrição na data ORIGINAL
+      const h = await pool.query(`select to_char(criado_em at time zone 'America/Sao_Paulo', 'YYYY-MM-DD') d from pre_fichas_historico where pre_ficha_id = $1 and tipo = 'inscricao'`, [rows[0].id])
+      assert.equal(h.rows[0].d, '2024-02-01')
+      // a posição na fila (visão do painel) acompanha a data
+      const fila = await pool.query(`select f.nome_completo, f.posicao from fila_espera f join pre_fichas p on p.id = f.id where p.importada_lote = 'teste-importacao-1' order by f.posicao`)
+      assert.deepEqual(fila.rows.map((x) => x.nome_completo), ['Ana Primeira', 'Bruna Segunda', 'Dani Quarta', 'Caio Terceiro'])
+      // o histórico vira participação: a edição foi criada e as duas pessoas estão nela, com a tribo do sistema
+      const part = await pool.query(`select a.numero, a.modalidade, p.tribo, f.cpf from participacoes p join acampamentos a on a.id = p.acampamento_id join pre_fichas f on f.id = p.pre_ficha_id where f.importada_lote = 'teste-importacao-1' order by f.cpf`)
+      assert.equal(part.rowCount, 2); assert.ok(part.rows.every((x) => x.numero === 16 && x.modalidade === 'senior'))
+    })
+
+    test('o banco só aceita a data original (e os campos vazios) em importação autorizada; quem se inscreve agora continua com tudo obrigatório', async () => {
+      const base = `insert into pre_fichas (created_at, nome_completo, data_nascimento, estado_civil, sexo, telefone, religiao, batizado, primeira_eucaristia, crismado,
+        participa_pastoral, email, cep, cidade, uf, como_conheceu, motivo, modalidade, possui_vicio, termos_aceitos, importada_lote)
+        values ($1, 'Teste Gatilho', '1990-01-01', 'solteiro', 'feminino', '(48) 99999-0000', 'Católica', true, true, true, false, $2, $3, 'Palhoça', 'SC', 'x', 'y', 'senior', false, '[]', $4) returning id, created_at`
+      const antigo = '2019-05-05 12:00:00-03'
+      // sem a autorização da importação, a data é sempre "agora" — mesmo informando outra e mesmo com lote
+      const a = await pool.query(base, [antigo, 'a@x.com', '88015200', 'lote-qualquer']); assert.ok(new Date(a.rows[0].created_at) > new Date('2026-01-01'))
+      // campos vazios só valem para fichas importadas (com lote)
+      await assert.rejects(pool.query(base, [antigo, null, '88015200', null]), /pre_fichas_obrigatorios_check/)
+      await assert.rejects(pool.query(base, [antigo, 'a@x.com', null, null]), /pre_fichas_obrigatorios_check/)
+      // com a autorização, mas SEM lote, também é "agora"
+      const c = await pool.connect()
+      try {
+        await c.query('begin'); await c.query(`select set_config('app.importacao', 'sim', true)`)
+        const semLote = await c.query(base, [antigo, 'a@x.com', '88015200', null]); assert.ok(new Date(semLote.rows[0].created_at) > new Date('2026-01-01'))
+        const comLote = await c.query(base, [antigo, null, null, 'lote-autorizado']); assert.equal(new Date(comLote.rows[0].created_at).toISOString(), '2019-05-05T15:00:00.000Z')
+        await c.query('rollback')
+      } finally { c.release() }
+      // a data da ficha continua protegida contra alteração
+      const { rows: [x] } = await pool.query(`select id from pre_fichas where importada_lote = 'teste-importacao-1' limit 1`)
+      await assert.rejects(pool.query(`update pre_fichas set created_at = now() where id = $1`, [x.id]), /não pode ser alterada/)
+      await pool.query(`delete from pre_fichas where nome_completo = 'Teste Gatilho'`)
+    })
+
+    test('importar o mesmo arquivo de novo não duplica ninguém e um lote não se repete', async () => {
+      const { registros } = lerCsv(csv([linha({ Nome: 'Bruna Segunda', CPF: cpfDe('200000001') }), linha({ Nome: 'Gabi Nova', CPF: cpfDe('200000007'), 'Data da Pré-Ficha': '02/01/2026' })]))
+      const plano = await planejar(pool, registros, { hoje: HOJE })
+      assert.deepEqual([plano.resumo.importar, plano.resumo.ignoradas], [1, 1]); assert.match(plano.ignoradas[0].motivo, /Já existe ficha ativa/)
+      await assert.rejects(aplicar(pool, plano, { lote: 'teste-importacao-1' }), /já existe/)
+      await assert.rejects(aplicar(pool, plano, { lote: 'x y' }), /Nome de lote inválido/)
+      await aplicar(pool, plano, { lote: 'teste-importacao-2' })
+      assert.equal((await pool.query(`select count(*)::int n from pre_fichas where cpf = $1`, [cpfDe('200000001')])).rows[0].n, 1)
+    })
+
+    test('o painel abre fichas importadas sem e-mail nem CEP (detalhe, lista e exportação)', async () => {
+      const { rows: [sem] } = await pool.query(`select id from pre_fichas where nome_completo = 'Ana Primeira'`)
+      const det = await req('admin', 'GET', `/api/admin/pre-fichas/${sem.id}`)
+      assert.equal(det.statusCode, 200, det.body); assert.deepEqual([det.json().email, det.json().cep, det.json().motivo], [null, null, null])
+      assert.equal((await req('admin', 'GET', '/api/admin/pre-fichas')).statusCode, 200)
+      assert.equal((await req('admin', 'GET', '/api/admin/pre-fichas?completo=1')).statusCode, 200)
+      assert.equal((await req('admin', 'GET', '/api/admin/pre-fichas/exportar')).statusCode < 500, true)
+    })
+
+    test('desfazer: apaga o lote e as edições criadas por ele; se a equipe já mexeu, exige --forcar', async () => {
+      const { rows: [f] } = await pool.query(`select id from pre_fichas where nome_completo = 'Gabi Nova'`)
+      await pool.query(`update pre_fichas set status = 'em_contato' where id = $1`, [f.id])
+      await assert.rejects(desfazer(pool, 'teste-importacao-2'), /já foram alteradas/)
+      assert.deepEqual(await desfazer(pool, 'teste-importacao-2', { forcar: true }), { fichas: 1, edicoes: 0 })
+      assert.equal((await pool.query(`select count(*)::int n from pre_fichas where nome_completo = 'Gabi Nova'`)).rows[0].n, 0)
+      const r = await desfazer(pool, 'teste-importacao-1')
+      assert.deepEqual(r, { fichas: 4, edicoes: 1 })
+      assert.equal((await pool.query(`select count(*)::int n from acampamentos where numero = 16 and modalidade = 'senior'`)).rows[0].n, 0, 'a edição criada pela importação some')
+      await assert.rejects(desfazer(pool, 'nao-existe'), /não encontrado/)
     })
   })
 

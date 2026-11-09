@@ -16,6 +16,8 @@ import { gerarHash, gerarSenhaTemporaria } from './senha.js'
 import { carregarMarca, conferirImagem, salvarLogo, salvarMarca } from './marca.js'
 import { ativarLicenca, gerarHashChave, situacaoLicenca } from './licenca.js'
 import { importarParticipantes } from './participantes.js'
+import { aplicar, COLUNAS_OBRIGATORIAS, decodificar, desfazer, lerCsv, loteNovo, planejar, relatorios } from './importacao.js'
+import { mkdir } from 'node:fs/promises'
 
 const TIPO_POR_EXTENSAO = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.svg': 'image/svg+xml' }
 
@@ -47,6 +49,12 @@ const AJUDA = `Uso:
                                                      (e a logo, se o arquivo indicar "logo")
   node server/cli.js marca exportar [arquivo.json]   salva a marca atual em um arquivo
   node server/cli.js marca logo <imagem>             troca só a logo (PNG, JPG, WEBP ou SVG)
+
+  node server/cli.js fichas importar <arquivo.csv> [--aplicar] [--lote NOME] [--saida PASTA]
+                                                     importa pré-fichas de outra planilha (CSV UTF-8). Sem --aplicar é só
+                                                     uma SIMULAÇÃO com relatório (não grava nada)
+  node server/cli.js fichas lotes                    lista as importações feitas
+  node server/cli.js fichas desfazer <LOTE> [--forcar]  apaga as fichas de um lote importado
 
   node server/cli.js licenca ativar <CHAVE>          ativa o sistema com a chave de ativação
   node server/cli.js licenca status                  mostra se o sistema está ativado`
@@ -123,6 +131,42 @@ try {
       } else if (acao === 'logo') {
         if (!arquivo) throw new Error(AJUDA)
         await aplicarLogo(pool, arquivo)
+      } else {
+        throw new Error(AJUDA)
+      }
+      break
+    }
+    case 'fichas': {
+      const [acao, alvo] = args
+      const flag = (n) => args.includes(n)
+      const valor = (n) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : undefined }
+      if (acao === 'importar') {
+        if (!alvo || alvo.startsWith('--')) throw new Error('Uso: node server/cli.js fichas importar arquivo.csv [--aplicar] [--lote NOME] [--saida PASTA]')
+        const { cabecalho, registros } = lerCsv(decodificar(await readFile(alvo)))
+        const faltam = COLUNAS_OBRIGATORIAS.filter((c) => !cabecalho.includes(c))
+        if (faltam.length) throw new Error(`Colunas que faltam no arquivo: ${faltam.join(', ')}.\nColunas encontradas: ${cabecalho.join(' | ')}`)
+        const plano = await planejar(pool, registros)
+        const lote = valor('--lote') ?? loteNovo()
+        const saida = resolve(valor('--saida') ?? `importacao-${lote}`)
+        await mkdir(saida, { recursive: true })
+        const arquivos = relatorios(plano)
+        for (const [nomeArq, conteudo] of Object.entries(arquivos)) await writeFile(resolve(saida, nomeArq), conteudo)
+        console.log(arquivos['resumo.txt'])
+        console.log(`Relatórios gravados em: ${saida}`)
+        if (!flag('--aplicar')) {
+          console.log('\nSIMULAÇÃO: nada foi gravado. Confira os relatórios e, se estiver de acordo, rode de novo com --aplicar.')
+        } else {
+          const r = await aplicar(pool, plano, { lote, arquivo: alvo })
+          console.log(`\nIMPORTADO (lote ${lote}): ${r.gravadas} fichas, ${r.participacoesGravadas} participações, ${r.edicoesCriadas} edições criadas.`)
+          console.log(`Para desfazer: node server/cli.js fichas desfazer ${lote}`)
+        }
+      } else if (acao === 'lotes') {
+        const { rows } = await pool.query(`select i.lote, i.criado_em, (select count(*) from pre_fichas p where p.importada_lote = i.lote)::int as fichas, i.arquivo from importacoes i order by i.criado_em`)
+        console.table(rows)
+      } else if (acao === 'desfazer') {
+        if (!alvo) throw new Error('Uso: node server/cli.js fichas desfazer <LOTE> [--forcar]')
+        const r = await desfazer(pool, alvo, { forcar: flag('--forcar') })
+        console.log(`Lote ${alvo} desfeito: ${r.fichas} fichas apagadas, ${r.edicoes} edições criadas pela importação removidas.`)
       } else {
         throw new Error(AJUDA)
       }
