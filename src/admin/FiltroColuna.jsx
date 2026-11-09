@@ -38,18 +38,21 @@ export default function FiltroColuna({ coluna, valores, filtro, ordem, ancora, o
   }, [onFechar, ancora])
 
   const termo = sem(busca.trim())
-  const visiveis = useMemo(() => (termo ? valores.filter((v) => sem(v.rotulo).includes(termo)) : valores), [valores, termo])
+  const normalizados = useMemo(() => valores.map((v) => sem(v.rotulo)), [valores])   // 1 vez por abertura, não a cada tecla
+  const achados = useMemo(() => (termo ? valores.filter((_, i) => normalizados[i].includes(termo)) : valores), [valores, normalizados, termo])
+  const visiveis = achados
   // Como no Excel: ao pesquisar, ficam marcados só os resultados (o OK filtra por eles); apagando a pesquisa, volta a seleção de antes
   const selRef = useRef(sel); selRef.current = sel
   const antesDaBusca = useRef(null)
   useEffect(() => {
     if (termo) {
       antesDaBusca.current ??= selRef.current
-      setSel(new Set(valores.filter((v) => sem(v.rotulo).includes(termo)).map((v) => v.chave)))
+      setSel(new Set(achados.map((v) => v.chave)))
     } else if (antesDaBusca.current) { setSel(antesDaBusca.current); antesDaBusca.current = null }
-  }, [termo, valores])
+  }, [termo, achados])
   const mostrados = visiveis.slice(0, MAX_ITENS)
-  const todosVisiveisMarcados = visiveis.length > 0 && visiveis.every((v) => sel.has(v.chave))
+  const todosVisiveisMarcados = useMemo(() => visiveis.length > 0 && visiveis.every((v) => sel.has(v.chave)), [visiveis, sel])
+  const algumVisivelMarcado = useMemo(() => visiveis.some((v) => sel.has(v.chave)), [visiveis, sel])
   const alternar = (chave) => setSel((s) => { const n = new Set(s); if (n.has(chave)) n.delete(chave); else n.add(chave); return n })
   const alternarTodos = () => setSel((s) => {
     const n = new Set(s)
@@ -67,8 +70,8 @@ export default function FiltroColuna({ coluna, valores, filtro, ordem, ancora, o
   }, [coluna.tipo, mostrados])
   const alternarAno = (itens) => setSel((s) => { const n = new Set(s); const todos = itens.every((v) => n.has(v.chave)); for (const v of itens) { if (todos) n.delete(v.chave); else n.add(v.chave) } return n })
 
-  const Item = ({ v }) => (
-    <label className="filtro-item"><input type="checkbox" checked={sel.has(v.chave)} onChange={() => alternar(v.chave)} /><span className="filtro-rotulo">{v.rotulo}</span><span className="filtro-total">{v.total}</span></label>
+  const item = (v) => (
+    <label key={v.chave} className="filtro-item"><input type="checkbox" checked={sel.has(v.chave)} onChange={() => alternar(v.chave)} /><span className="filtro-rotulo">{v.rotulo}</span><span className="filtro-total">{v.total}</span></label>
   )
 
   return createPortal(
@@ -93,16 +96,16 @@ export default function FiltroColuna({ coluna, valores, filtro, ordem, ancora, o
           <input type="search" className="filtro-busca" placeholder="Pesquisar" value={busca} onChange={(e) => setBusca(e.target.value)} aria-label="Pesquisar nos valores" />
           <div className="filtro-lista" role="group" aria-label="Valores">
             <label className="filtro-item filtro-tudo">
-              <input type="checkbox" checked={todosVisiveisMarcados} ref={(el) => { if (el) el.indeterminate = !todosVisiveisMarcados && visiveis.some((v) => sel.has(v.chave)) }} onChange={alternarTodos} disabled={!visiveis.length} />
+              <input type="checkbox" checked={todosVisiveisMarcados} ref={(el) => { if (el) el.indeterminate = !todosVisiveisMarcados && algumVisivelMarcado }} onChange={alternarTodos} disabled={!visiveis.length} />
               <span className="filtro-rotulo">{termo ? '(Selecionar todos os resultados)' : '(Selecionar tudo)'}</span>
             </label>
             {porAno
               ? porAno.map(([ano, itens]) => (
                 <div key={ano} className="filtro-ano">
                   <label className="filtro-item"><input type="checkbox" checked={itens.every((v) => sel.has(v.chave))} onChange={() => alternarAno(itens)} /><strong className="filtro-rotulo">{ano}</strong></label>
-                  {itens.map((v) => <div key={v.chave} className="filtro-mes"><Item v={v} /></div>)}
+                  {itens.map((v) => <div key={v.chave} className="filtro-mes">{item(v)}</div>)}
                 </div>))
-              : mostrados.map((v) => <Item key={v.chave} v={v} />)}
+              : mostrados.map(item)}
             {!visiveis.length && <p className="dica filtro-vazio">Nenhum valor encontrado.</p>}
             {visiveis.length > MAX_ITENS && <p className="dica filtro-vazio">Mostrando {MAX_ITENS} de {visiveis.length}. Refine a pesquisa.</p>}
           </div>

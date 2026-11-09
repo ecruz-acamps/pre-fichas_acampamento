@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## [2.10.1]
+
+- Fila: o filtro da coluna "Nome" travava ao abrir com o banco cheio. Ordenação passou a usar um único comparador (60× mais rápido) e a busca no filtro não recalcula mais a cada tecla.
+
 ## 2.10.0 — cadastro e inscrição em uma etapa só
 
 - **Novo campista: um formulário só.** Ao clicar em **"Cadastre-se e faça a inscrição"**, abre direto o formulário completo: **Seu acesso** (CPF, senha e foto opcional), dados pessoais, religiosos, contato,

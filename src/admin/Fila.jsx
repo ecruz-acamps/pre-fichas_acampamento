@@ -6,7 +6,7 @@ import Detalhe from './Detalhe.jsx'
 import { SeloPreferencia, declarouSemValidar, preferenciaAtiva } from './Preferencia.jsx'
 import { exportarCsv } from './csv.js'
 import FiltroColuna, { Funil } from './FiltroColuna.jsx'
-import { aplicarFiltros, criarColunas, filtroAtivo, ordenarPorColuna, valoresDaColuna } from './filtroColunas.js'
+import { aplicarFiltros, colador, criarColunas, filtroAtivo, ordenarPorColuna, valoresDaColuna } from './filtroColunas.js'
 
 /** Posição na fila: por modalidade, ordem de chegada, contando só quem ainda está na fila. */
 export function calcularPosicoes(linhas) {
@@ -186,7 +186,7 @@ export default function Fila({ usuario, marca, nucleos }) {
   const ordenadas = useMemo(() => {
     if (ordemCol) return ordenarPorColuna(filtradasCol, colunas.find((c) => c.id === ordemCol.id), ordemCol.dir)
     return ordem === 'nome'
-      ? [...filtradasCol].sort((a, b) => a.nome_completo.localeCompare(b.nome_completo, 'pt-BR', { sensitivity: 'base' }))
+      ? [...filtradasCol].sort((a, b) => colador.compare(a.nome_completo, b.nome_completo))
       : filtradasCol
   }, [filtradasCol, ordem, ordemCol, colunas])
 
