@@ -1,5 +1,17 @@
 # Histórico de versões
 
+## 2.10.0 — cadastro e inscrição em uma etapa só
+
+- **Novo campista: um formulário só.** Ao clicar em **"Cadastre-se e faça a inscrição"**, abre direto o formulário completo: **Seu acesso** (CPF, senha e foto opcional), dados pessoais, religiosos, contato,
+  endereço, **escolha da modalidade** (já mostrando só as que a idade e o estado civil permitem) e informações adicionais. Antes eram duas etapas (criar a conta e depois se inscrever).
+- **Tudo ou nada:** a conta e a pré-ficha são criadas juntas, numa transação. Se a ficha for recusada (duplicada, limite por contato...), a conta também não é criada. A pessoa sai logada e a ficha já nasce ligada à conta.
+  O **e-mail** informado em "Contato" é o login.
+- **Não duplica:** quem já tem pré-ficha ativa com o **mesmo CPF** (por exemplo, importada de outra planilha) ou com o mesmo nome e data de nascimento não cria outra: a resposta pede para falar com a
+  coordenação, a conta não é criada e fica uma nota na ficha existente. Quem já fez a modalidade (pelo CPF) é avisado.
+- **Casais** continua pela área da conta (depois do cadastro), porque exige conferir o cônjuge.
+- Robô (campo invisível) e a verificação "não sou um robô" (se configurada) valem também no cadastro; o limite geral de envios por hora é compartilhado com o formulário público.
+- **Correção:** o limite de envios **por telefone** (mesmo telefone em 24 horas) nunca funcionou por um erro de escape no SQL (`'\D'` virava `D`); só o limite por e-mail valia. Corrigido.
+
 ## 2.9.0 — filtros por coluna na fila (estilo Excel)
 
 - **Cada coluna da fila tem um botão de filtro** (funil) no cabeçalho, como o filtro automático do Excel: **classificar** (A→Z / Z→A, menor→maior, mais antigo→mais novo), **pesquisar** e **marcar/desmarcar valores**

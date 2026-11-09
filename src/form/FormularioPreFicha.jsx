@@ -5,8 +5,9 @@ import {
   COMO_CONHECEU, ESTADOS_CIVIS, MODALIDADES, RELIGIOES, SEXOS, UFS,
 } from '../../shared/opcoes.js'
 import {
-  calcularIdade, mascaraCep, mascaraCpf, mascaraTelefone, modalidadesCompativeis, somenteDigitos,
+  calcularIdade, cpfValido, mascaraCep, mascaraCpf, mascaraTelefone, modalidadesCompativeis, somenteDigitos,
 } from '../../shared/util.js'
+import FotoPerfil from './FotoPerfil.jsx'
 import { INICIAL, temConjuge, validar } from '../../shared/validacao.js'
 
 import { TextoMarca } from '../lib/marca.jsx'
@@ -65,10 +66,14 @@ function SimNao({ id, rotulo, valor, onChange, erro }) {
 /* ---------- formulário ---------- */
 
 /**
- * modo: 'anonimo' (sem conta), 'nova' (inscrição pela conta) ou 'editar' (alterar os próprios dados).
+ * modo: 'anonimo' (sem conta), 'cadastro' (cria a conta e já faz a inscrição, numa etapa só), 'nova' (inscrição pela conta)
+ * ou 'editar' (alterar os próprios dados).
  */
 export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = null, jaFeitas = [], fezSenior = false, onConcluido, onCancelar }) {
   const editar = modo === 'editar'
+  const cadastro = modo === 'cadastro'
+  const [conta, setConta] = useState({ cpf: '', senha: '', confirmar: '' })   // acesso (só no modo cadastro)
+  const [foto, setFoto] = useState(null)
   const [f, setF] = useState(() => ({ ...INICIAL, ...(inicial ?? {}), aceites: [], website: '' }))
   const [erros, setErros] = useState({})
   const [enviando, setEnviando] = useState(false)
@@ -81,7 +86,7 @@ export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = 
   const widgetRef = useRef(null)
   const [captchaToken, setCaptchaToken] = useState('')
   useEffect(() => {
-    if (modo !== 'anonimo' || !marca.captcha?.siteKey || !captchaRef.current) return
+    if ((modo !== 'anonimo' && !cadastro) || !marca.captcha?.siteKey || !captchaRef.current) return
     const desenhar = () => {
       if (widgetRef.current !== null || !window.turnstile) return
       widgetRef.current = window.turnstile.render(captchaRef.current, {
@@ -145,6 +150,11 @@ export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = 
     ev.preventDefault()
     setErroEnvio('')
     const e = validar(f, editar ? 0 : marca.termos.length)
+    if (cadastro) {
+      if (!cpfValido(conta.cpf)) e.cpf = 'CPF inválido.'
+      if (conta.senha.length < 8) e.senha = 'A senha deve ter pelo menos 8 caracteres.'
+      if (conta.confirmar !== conta.senha) e.confirmar = 'As senhas não conferem.'
+    }
     setErros(e)
     const primeiro = Object.keys(e).find((k) => e[k])
     if (primeiro) {
@@ -157,7 +167,11 @@ export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = 
     setEnviando(true)
     try {
       if (editar) await api.put('/api/conta/dados', f)
-      else if (modo === 'nova') await api.post('/api/conta/pre-ficha', f)
+      else if (cadastro) {
+        // conta + inscrição de uma vez; o e-mail da ficha é o login. A foto (opcional) vai logo depois, já com a conta criada.
+        await api.post('/api/conta/cadastro', { cpf: conta.cpf, senha: conta.senha, ficha: f, ...(marca.captcha ? { captcha: captchaToken } : {}) })
+        if (foto) await api.enviarArquivo('/api/conta/foto', foto).catch(() => {})
+      } else if (modo === 'nova') await api.post('/api/conta/pre-ficha', f)
       else await api.post('/api/pre-fichas', marca.captcha ? { ...f, captcha: captchaToken } : f)
     } catch (err) {
       setEnviando(false)
@@ -166,6 +180,7 @@ export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = 
         setErroEnvio('Confirme a verificação "não sou um robô" e envie de novo.')
       } else if (err.dados?.erros) {
         setErros(err.dados.erros)
+        if (err.dados.erros.cpf || err.dados.erros.senha) formRef.current?.querySelector('#cpf')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
         setErroEnvio('Confira os campos destacados.')
       } else if (err.status === 409 || err.status === 401) {
         setErroEnvio(err.dados?.mensagem || 'Não foi possível enviar.')
@@ -188,8 +203,9 @@ export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = 
     return (
       <div className="cartao sucesso">
         <div className="icone-sucesso" aria-hidden="true">✓</div>
-        <h2>Pré-ficha enviada!</h2>
+        <h2>{cadastro ? 'Cadastro e inscrição enviados!' : 'Pré-ficha enviada!'}</h2>
         <p>Obrigado, <strong>{f.nome_completo.split(' ')[0]}</strong>!</p>
+        {cadastro && <p>Sua conta foi criada. Para acompanhar a sua situação, entre com o CPF ou o e-mail e a senha que você cadastrou.</p>}
         <p><TextoMarca texto={marca.mensagemSucesso} /></p>
         {onConcluido && <div className="acoes"><button className="botao-principal" onClick={() => onConcluido()}>Ir para minha área</button></div>}
         <p className="rodape-texto"><Contatos marca={marca} /></p>
@@ -203,6 +219,28 @@ export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = 
       <div className="honeypot" aria-hidden="true">
         <label>Website <input tabIndex={-1} autoComplete="off" value={f.website} onChange={set('website')} /></label>
       </div>
+
+      {cadastro && (
+        <section>
+          <h2>Seu acesso</h2>
+          <p className="dica">Com o CPF e a senha você acompanha a sua situação e atualiza seus dados depois. O e-mail de acesso é o que você informar em <strong>Contato</strong>.</p>
+          <Campo id="cpf" rotulo="CPF" obrigatorio erro={erros.cpf}>
+            <input id="cpf" inputMode="numeric" autoComplete="off" placeholder="000.000.000-00" value={conta.cpf} maxLength={14}
+              onChange={(e) => { setConta((c) => ({ ...c, cpf: mascaraCpf(e.target.value) })); if (erros.cpf) setErros((a) => ({ ...a, cpf: undefined })) }} />
+          </Campo>
+          <div className="linha">
+            <Campo id="senha" rotulo="Senha (mínimo 8 caracteres)" obrigatorio erro={erros.senha}>
+              <input id="senha" type="password" autoComplete="new-password" value={conta.senha}
+                onChange={(e) => { setConta((c) => ({ ...c, senha: e.target.value })); if (erros.senha) setErros((a) => ({ ...a, senha: undefined })) }} />
+            </Campo>
+            <Campo id="confirmar" rotulo="Repita a senha" obrigatorio erro={erros.confirmar}>
+              <input id="confirmar" type="password" autoComplete="new-password" value={conta.confirmar}
+                onChange={(e) => { setConta((c) => ({ ...c, confirmar: e.target.value })); if (erros.confirmar) setErros((a) => ({ ...a, confirmar: undefined })) }} />
+            </Campo>
+          </div>
+          <FotoPerfil onChange={setFoto} desabilitado={enviando} />
+        </section>
+      )}
 
       <section>
         <h2>Dados pessoais</h2>
@@ -395,7 +433,7 @@ export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = 
             {MODALIDADES.map((m) => {
               const jaFez = feitas.includes(m.valor)
               // Casais só pela conta (o servidor confere o CPF do cônjuge) e, se o acampamento exigir, só para quem fez o Sênior
-              const motivoCasais = m.valor !== 'casais' ? '' : modo !== 'nova' ? 'entre na sua conta'
+              const motivoCasais = m.valor !== 'casais' ? '' : cadastro ? 'depois do cadastro, pela sua área' : modo !== 'nova' ? 'entre na sua conta'
                 : marca.casaisExigeSenior !== false && !fezSenior ? 'só para quem já fez o Sênior' : ''
               const desabilitada = editar || jaFez || Boolean(motivoCasais) || (idade != null && !compativeis.includes(m.valor))
               return (
@@ -459,12 +497,12 @@ export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = 
         </section>
       )}
 
-      {modo === 'anonimo' && marca.captcha && <div className="captcha" ref={captchaRef} />}
+      {(modo === 'anonimo' || cadastro) && marca.captcha && <div className="captcha" ref={captchaRef} />}
       {erroEnvio && <div className="alerta-erro" role="alert">{erroEnvio}</div>}
 
       <div className="acoes">
         <button type="submit" className="botao-principal" disabled={enviando}>
-          {enviando ? 'Enviando…' : editar ? 'Salvar alterações' : 'Enviar ficha de inscrição'}
+          {enviando ? 'Enviando…' : editar ? 'Salvar alterações' : cadastro ? 'Cadastrar e enviar inscrição' : 'Enviar ficha de inscrição'}
         </button>
         {onCancelar && <button type="button" className="botao-secundario" onClick={onCancelar}>Voltar</button>}
       </div>

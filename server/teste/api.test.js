@@ -2071,6 +2071,107 @@ describe('API', { skip: pular }, () => {
     })
   })
 
+
+  // ------------------------------------------------------------------ cadastro e inscrição em UMA etapa
+  describe('cadastro em uma etapa', () => {
+    const cpfDe = (base) => {
+      const d = base.split('').map(Number)
+      const dv = (n) => { let t = 0; for (let i = 0; i < n; i++) t += d[i] * (n + 1 - i); const r = (t * 10) % 11; return r === 10 ? 0 : r }
+      d.push(dv(9)); d.push(dv(10)); return d.join('')
+    }
+    const cadastrar = (cpf, ficha, extra = {}, ip = '10.9.0.1') => app.inject({ method: 'POST', url: '/api/conta/cadastro', headers: H, remoteAddress: ip,
+      payload: { cpf, senha: 'senha-unica-123', ficha: { ...FICHA, ...ficha }, ...extra } })
+    const contas = async (cpf) => (await pool.query('select count(*)::int n from participantes where cpf = $1', [cpf])).rows[0].n
+    const fichasDe = async (cpf) => (await pool.query('select * from pre_fichas where cpf = $1', [cpf])).rows
+    const cookieDe = (r) => { const c = r.cookies.find((x) => x.name === 'prefichas_conta'); return c && `${c.name}=${c.value}` }
+
+    test('cria a conta E a inscrição de uma vez: a pessoa já sai logada, com a ficha na fila e o e-mail da ficha como login', async () => {
+      const cpf = cpfDe('510000001')
+      const r = await cadastrar(cpf, { nome_completo: 'Nova Pessoa Unica', email: 'Unica@Exemplo.com', telefone: '(48) 99999-5101', modalidade: 'juvenil' })
+      assert.equal(r.statusCode, 201, r.body); assert.equal(r.json().inscrito, true)
+      const cookie = cookieDe(r); assert.ok(cookie, 'sessão criada')
+      const [f] = await fichasDe(cpf)
+      assert.deepEqual([f.status, f.modalidade, f.email, f.nome_completo], ['aguardando', 'juvenil', 'unica@exemplo.com', 'Nova Pessoa Unica'])
+      assert.ok(f.participante_id, 'a ficha já nasce ligada à conta')
+      const eu = (await app.inject({ method: 'GET', url: '/api/conta/eu', headers: { ...H, cookie } })).json()
+      assert.deepEqual([eu.conta.cpf, eu.conta.email, eu.ficha.ativa, eu.ficha.modalidade], [cpf, 'unica@exemplo.com', true, 'juvenil'])
+      assert.equal(eu.dados.nome_completo, 'Nova Pessoa Unica', 'os dados ficam guardados na conta (para editar depois)')
+      // já inscrita: não envia outra
+      assert.equal((await app.inject({ method: 'POST', url: '/api/conta/pre-ficha', headers: { ...H, cookie }, payload: { ...FICHA, nome_completo: 'Outra Ficha', modalidade: 'juvenil' } })).statusCode, 409)
+      // entra de novo com CPF e senha
+      assert.equal((await app.inject({ method: 'POST', url: '/api/conta/login', headers: H, payload: { login: cpf, senha: 'senha-unica-123' } })).statusCode, 200)
+      // a equipe vê a ficha normalmente
+      assert.ok((await req('admin', 'GET', '/api/admin/pre-fichas')).json().some((x) => x.nome_completo === 'Nova Pessoa Unica'))
+    })
+
+    test('erros da conta e da ficha vêm juntos e NADA é criado', async () => {
+      const cpf = cpfDe('510000002')
+      const r = await app.inject({ method: 'POST', url: '/api/conta/cadastro', headers: H, payload: { cpf: '123', senha: 'curta', ficha: { ...FICHA, nome_completo: '', telefone: '' } } })
+      assert.equal(r.statusCode, 400)
+      assert.ok(r.json().erros.cpf && r.json().erros.senha && r.json().erros.nome_completo && r.json().erros.telefone)
+      const sem = await cadastrar(cpf, { nome_completo: 'Sem Aceite Teste', email: 'semaceite@exemplo.com', aceites: [true, false, true] })
+      assert.equal(sem.statusCode, 400)
+      assert.equal(await contas(cpf), 0); assert.equal((await fichasDe(cpf)).length, 0)
+    })
+
+    test('tudo ou nada: ficha duplicada (CPF ou nome+nascimento), conta já existente ou limite por contato não deixam conta pela metade', async () => {
+      // 1) já existe ficha ativa SEM conta com o mesmo CPF (ex.: importada): não duplica, não cria conta e anota na ficha existente
+      const cpfImp = cpfDe('510000003')
+      const { rows: [imp] } = await pool.query(`insert into pre_fichas (nome_completo, data_nascimento, estado_civil, sexo, telefone, religiao, batizado, primeira_eucaristia, crismado, participa_pastoral,
+        email, cep, cidade, uf, como_conheceu, motivo, modalidade, possui_vicio, termos_aceitos, cpf) values ('Fulano Importado Cpf', '1980-01-01', 'solteiro', 'masculino', '(48) 99999-5103', 'Católica', true, true, true, false,
+        'imp@exemplo.com', '88015200', 'Palhoça', 'SC', 'x', 'y', 'senior', false, '[]', $1) returning id`, [cpfImp])
+      const a = await cadastrar(cpfImp, { nome_completo: 'Outro Nome Qualquer', data_nascimento: '1999-09-09', email: 'novo.cpf@exemplo.com', telefone: '(48) 99999-5104' })
+      assert.equal(a.statusCode, 409); assert.match(a.json().mensagem, /vinculá-la/)
+      assert.equal(await contas(cpfImp), 0)
+      assert.equal((await pool.query(`select count(*)::int n from pre_fichas_historico where pre_ficha_id = $1 and observacao like '%descartada como duplicada%'`, [imp.id])).rows[0].n, 1)
+      // 2) mesmo nome + nascimento de uma ficha ativa (CPF diferente)
+      const cpfB = cpfDe('510000004')
+      const b = await cadastrar(cpfB, { nome_completo: 'Fulano Importado Cpf', data_nascimento: '1980-01-01', email: 'dup.nome@exemplo.com', telefone: '(48) 99999-5105', modalidade: 'senior' })
+      assert.equal(b.statusCode, 409); assert.equal(await contas(cpfB), 0)
+      // 3) conta já existente (CPF ou e-mail): nada de ficha
+      const cpfC = cpfDe('510000005')
+      assert.equal((await cadastrar(cpfC, { nome_completo: 'Conta Existente Teste', email: 'existente@exemplo.com', telefone: '(48) 99999-5106' })).statusCode, 201)
+      const c = await cadastrar(cpfDe('510000006'), { nome_completo: 'Mesmo Email Outra', email: 'existente@exemplo.com', telefone: '(48) 99999-5107' })
+      assert.equal(c.statusCode, 409); assert.match(c.json().mensagem, /Já existe uma conta/)
+      assert.equal((await pool.query(`select count(*)::int n from pre_fichas where nome_completo = 'Mesmo Email Outra'`)).rows[0].n, 0)
+      // 4) limite por contato (mesmo telefone em 24 h): a ficha é recusada e a conta TAMBÉM não é criada
+      const limitada = await construirApp({ pool, logger: false, chavesLicenca: chavesTeste, config: { ...app.config, limiteEnviosPorContatoDia: 1 } })
+      try {
+        const cpfD = cpfDe('510000007')
+        const um = await limitada.inject({ method: 'POST', url: '/api/conta/cadastro', headers: H, remoteAddress: '10.9.0.9', payload: { cpf: cpfD, senha: 'senha-unica-123', ficha: { ...FICHA, nome_completo: 'Primeira Do Contato', email: 'contato1@exemplo.com', telefone: '(48) 97654-3210' } } })
+        assert.equal(um.statusCode, 201, um.body)
+        const cpfE = cpfDe('510000008')
+        const dois = await limitada.inject({ method: 'POST', url: '/api/conta/cadastro', headers: H, remoteAddress: '10.9.0.9', payload: { cpf: cpfE, senha: 'senha-unica-123', ficha: { ...FICHA, nome_completo: 'Segunda Do Contato', email: 'contato2@exemplo.com', telefone: '(48) 97654-3210' } } })
+        assert.equal(dois.statusCode, 429, dois.body)
+        assert.equal(await contas(cpfE), 0, 'a conta não fica criada sem a inscrição')
+      } finally { await limitada.close() }
+    })
+
+    test('Casais não vale no cadastro (é pela área da conta); quem já fez a modalidade (pelo CPF) é avisado; robô não cria nada', async () => {
+      const cpf = cpfDe('510000009')
+      const casais = await cadastrar(cpf, { nome_completo: 'Casal Novo Teste', email: 'casal.novo@exemplo.com', telefone: '(48) 99999-5109', estado_civil: 'casado', modalidade: 'casais', conjuge_cpf: cpfDe('510000010') })
+      assert.equal(casais.statusCode, 400); assert.match(casais.json().erros.modalidade, /crie a conta primeiro/); assert.equal(await contas(cpf), 0)
+      // já foi campista Sênior (ficha "Já participou" com o mesmo CPF): não pode se inscrever de novo no Sênior
+      const cpfS = cpfDe('510000011')
+      await pool.query(`insert into pre_fichas (nome_completo, data_nascimento, estado_civil, sexo, telefone, religiao, batizado, primeira_eucaristia, crismado, participa_pastoral,
+        email, cep, cidade, uf, como_conheceu, motivo, modalidade, possui_vicio, termos_aceitos, cpf, status) values ('Ex Campista Senior', '1970-03-03', 'casado', 'masculino', '(48) 99999-5111', 'Católica', true, true, true, false,
+        'ex@exemplo.com', '88015200', 'Palhoça', 'SC', 'x', 'y', 'senior', false, '[]', $1, 'participou')`, [cpfS])
+      const rep = await cadastrar(cpfS, { nome_completo: 'Outro Nome Ex Campista', data_nascimento: '1971-04-04', email: 'ex2@exemplo.com', telefone: '(48) 99999-5112', modalidade: 'senior' })
+      assert.equal(rep.statusCode, 400); assert.match(rep.json().erros.modalidade, /já fez esta modalidade/)
+      // honeypot: finge sucesso, não cria nada
+      const cpfR = cpfDe('510000012')
+      const robo = await cadastrar(cpfR, { nome_completo: 'Robo Cadastrador', email: 'robo@exemplo.com', telefone: '(48) 99999-5113', website: 'http://spam.exemplo' })
+      assert.equal(robo.statusCode, 201); assert.equal(cookieDe(robo), undefined); assert.equal(await contas(cpfR), 0)
+    })
+
+    test('o cadastro só com a conta (sem ficha) continua funcionando', async () => {
+      const cpf = cpfDe('510000013')
+      const r = await app.inject({ method: 'POST', url: '/api/conta/cadastro', headers: H, payload: { cpf, email: 'so.conta@exemplo.com', senha: 'senha-unica-123' } })
+      assert.equal(r.statusCode, 201); assert.equal(r.json().inscrito, false)
+      assert.equal(await contas(cpf), 1); assert.equal((await fichasDe(cpf)).length, 0)
+    })
+  })
+
   test('site, cabeçalhos de segurança e logout', async () => {
     const r = await app.inject({ method: 'GET', url: '/api/saude' })
     assert.equal(r.statusCode, 200)

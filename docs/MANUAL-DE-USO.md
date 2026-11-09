@@ -266,6 +266,12 @@ hora, sem reiniciar.
 
 ---
 
+### Cadastro do campista (uma etapa só)
+Na tela inicial, o novo campista clica em **"Cadastre-se e faça a inscrição"** e preenche **tudo de uma vez**: **Seu acesso** (CPF, senha e foto opcional), dados pessoais, contato, endereço, a **modalidade** e as demais informações.
+Ao enviar, a conta e a pré-ficha são criadas juntas e a pessoa já entra na sua área. O **e-mail de Contato é o login**. Quem já tem conta usa **Entrar**. A modalidade **Casais** é escolhida depois, pela área da conta.
+Se a pessoa já estiver na fila (mesmo CPF, ou mesmo nome e data de nascimento, inclusive fichas importadas de outra planilha), o sistema não cria outra ficha nem a conta e orienta a falar com a coordenação,
+que pode vincular a ficha existente a uma conta pelo painel (ficha → "Vincular a uma conta").
+
 ### Filtros por coluna (como no Excel)
 Na **Fila**, cada cabeçalho tem um botão de funil. Clique para **classificar** a coluna e **filtrar por valores**: pesquise, marque ou desmarque o que quer ver e clique em **OK**. A coluna filtrada fica destacada e uma linha
 acima da tabela mostra "N de M fichas" com **limpar filtros das colunas**. As listas mostram só o que sobrou dos filtros das outras colunas. **Na fila desde** filtra por ano e mês; **Pos.** por faixa (de/até); **Telefone** por "contém".

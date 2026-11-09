@@ -5,7 +5,7 @@ import FormularioPreFicha from './FormularioPreFicha.jsx'
 import { api } from '../lib/api.js'
 import { TextoMarca, useMarca } from '../lib/marca.jsx'
 import { MODALIDADES, rotuloDe } from '../../shared/opcoes.js'
-import { cpfValido, formatarDataHora, mascaraCpf } from '../../shared/util.js'
+import { formatarDataHora, mascaraCpf } from '../../shared/util.js'
 import '@fontsource/roboto/400.css'
 import '@fontsource/roboto/500.css'
 import '@fontsource/roboto/700.css'
@@ -68,51 +68,7 @@ function Entrar({ marca, irPara, onEntrou }) {
       <div className="acoes"><button className="botao-principal largo" disabled={enviando}>{enviando ? 'Entrando…' : 'Entrar'}</button></div>
       <p className="termos-uso">Acessando você concorda com os Termos de Uso e a Política de Privacidade do acampamento.</p>
       <button type="button" className="link grande" onClick={() => irPara('esqueci')}>Esqueci minha senha</button>
-      <p className="criar-conta">Ainda não tem uma conta? <button type="button" className="link inline grande" onClick={() => irPara('cadastro')}>Crie uma aqui</button></p>
-    </form>
-  )
-}
-
-function Cadastro({ irPara, onEntrou }) {
-  const [d, setD] = useState({ cpf: '', email: '', senha: '', confirmar: '' })
-  const [foto, setFoto] = useState(null)
-  const [erros, setErros] = useState({})
-  const [erro, setErro] = useState('')
-  const [enviando, setEnviando] = useState(false)
-  const set = (c) => (v) => { setD((a) => ({ ...a, [c]: v })); setErros((a) => ({ ...a, [c]: undefined })) }
-  async function enviar(ev) {
-    ev.preventDefault()
-    setErro('')
-    const e = {}
-    if (!cpfValido(d.cpf)) e.cpf = 'CPF inválido.'
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(d.email.trim())) e.email = 'E-mail inválido.'
-    if (d.senha.length < 8) e.senha = 'A senha deve ter pelo menos 8 caracteres.'
-    if (d.confirmar !== d.senha) e.confirmar = 'As senhas não conferem.'
-    setErros(e)
-    if (Object.keys(e).length) return
-    setEnviando(true)
-    try {
-      await api.post('/api/conta/cadastro', { cpf: d.cpf, email: d.email, senha: d.senha })
-      // a foto é opcional: se falhar, a conta já existe e a pessoa pode enviá-la depois, na área dela
-      if (foto) await api.enviarArquivo('/api/conta/foto', foto).catch(() => {})
-      onEntrou()
-    } catch (err) {
-      if (err.dados?.erros) setErros(err.dados.erros)
-      setErro(err.dados?.mensagem || 'Não foi possível criar a conta.')
-    } finally { setEnviando(false) }
-  }
-  return (
-    <form className="cartao tela-entrada" onSubmit={enviar} noValidate>
-      <h1>Criar conta</h1>
-      <p className="subtitulo">Com a conta você faz a inscrição, acompanha a sua situação e atualiza seus dados quando precisar.</p>
-      <CampoTexto id="cpf" rotulo="CPF" value={d.cpf} onChange={(e) => set('cpf')(mascaraCpf(e.target.value))} inputMode="numeric" erro={erros.cpf} />
-      <CampoTexto id="email" rotulo="E-mail" type="email" value={d.email} onChange={(e) => set('email')(e.target.value)} autoComplete="email" maxLength={200} erro={erros.email} />
-      <CampoSenha id="nova-senha" rotulo="Senha (mínimo 8 caracteres)" valor={d.senha} onChange={set('senha')} erro={erros.senha} autoComplete="new-password" />
-      <CampoSenha id="confirmar" rotulo="Repita a senha" valor={d.confirmar} onChange={set('confirmar')} erro={erros.confirmar} autoComplete="new-password" />
-      <FotoPerfil onChange={setFoto} desabilitado={enviando} />
-      {erro && <div className="alerta-erro" role="alert">{erro}</div>}
-      <div className="acoes"><button className="botao-principal largo" disabled={enviando}>{enviando ? 'Criando…' : 'Criar conta'}</button></div>
-      <p className="criar-conta">Já tem conta? <button type="button" className="link inline grande" onClick={() => irPara('entrar')}>Entrar</button></p>
+      <p className="criar-conta">Primeira vez aqui? <button type="button" className="link inline grande" onClick={() => irPara('cadastro')}>Cadastre-se e faça a inscrição</button></p>
     </form>
   )
 }
@@ -314,14 +270,14 @@ function Pagina() {
   } else if (tela === 'redefinir') {
     conteudo = <Redefinir token={token} onEntrou={entrou} irPara={setTela} />
   } else if (tela === 'cadastro') {
-    conteudo = <Cadastro irPara={setTela} onEntrou={entrou} />
+    conteudo = <FormularioPreFicha marca={marca} modo="cadastro" onConcluido={entrou} onCancelar={() => setTela('entrar')} />
   } else if (tela === 'esqueci') {
     conteudo = <Esqueci irPara={setTela} recuperacao={info.recuperacao} />
   } else {
     conteudo = <Entrar marca={marca} irPara={setTela} onEntrou={entrou} />
   }
 
-  const telaDeEntrada = !info.conta && info.contaObrigatoria !== false
+  const telaDeEntrada = !info.conta && info.contaObrigatoria !== false && tela !== 'cadastro'
   return (
     <main className={`pagina ${telaDeEntrada ? 'pagina-entrada' : ''}`}>
       <header className="cabecalho">
