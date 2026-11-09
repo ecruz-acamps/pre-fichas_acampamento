@@ -42,7 +42,7 @@ async function consultarViaCep(baseUrl, cep) {
   return consulta
 }
 
-// Limite geral de envios por hora (todos os IPs somados)
+// Limite geral de envios por hora (todos os IPs somados). Um só contador para o formulário público e para o cadastro com ficha.
 function criarLimiteGlobal(maxPorHora) {
   let janela = 0, contagem = 0
   return () => {
@@ -52,8 +52,13 @@ function criarLimiteGlobal(maxPorHora) {
     return contagem <= maxPorHora
   }
 }
+const limitadoresGlobais = new WeakMap()
+export const limiteGlobalDe = (config) => {
+  if (!limitadoresGlobais.has(config)) limitadoresGlobais.set(config, criarLimiteGlobal(config.limiteEnviosGlobalHora))
+  return limitadoresGlobais.get(config)
+}
 
-async function conferirCaptcha(cfg, token, ip) {
+export async function conferirCaptcha(cfg, token, ip) {
   if (!cfg) return true
   if (typeof token !== 'string' || !token || token.length > 4096) return false
   try {
@@ -73,19 +78,28 @@ async function conferirCaptcha(cfg, token, ip) {
  * Grava uma pré-ficha já validada. Usado pelo formulário sem conta e pela área do participante.
  * Retorna { codigo, corpo, id }.
  */
-export async function registrarPreFicha(pool, config, registro, { ip, log, participanteId = null, cpf = null }) {
-  // Mesma pessoa já na fila (nome + data de nascimento)
-  const { rows: [existente] } = await pool.query(
+/** Mesma pessoa já na fila (nome + data de nascimento), ou ficha ativa com o mesmo CPF? Devolve a ficha existente ou undefined. */
+export async function acharDuplicada(db, registro, cpf = null) {
+  const { rows: [existente] } = await db.query(
     `select id from pre_fichas
-      where chave_local(nome_completo) = chave_local($1) and data_nascimento = $2
-        and status in ('aguardando', 'em_contato', 'confirmado')
-      order by id limit 1`, [registro.nome_completo, registro.data_nascimento])
+      where status in ('aguardando', 'em_contato', 'confirmado')
+        and ((chave_local(nome_completo) = chave_local($1) and data_nascimento = $2) or ($3::text is not null and cpf = $3))
+      order by id limit 1`, [registro.nome_completo, registro.data_nascimento, cpf])
+  return existente
+}
+/** Registra na ficha existente que alguém tentou enviar a mesma pessoa de novo (trilha de auditoria). */
+export async function anotarDuplicada(db, existente, registro, participanteId, log) {
+  await db.query(
+    `insert into pre_fichas_historico (pre_ficha_id, tipo, observacao, detalhes) values ($1, 'observacao', $2, $3)`,
+    [existente.id, 'Nova pré-ficha enviada para a mesma pessoa (nome e data de nascimento ou CPF) — descartada como duplicada.',
+      JSON.stringify({ duplicada: true, telefone: registro.telefone, email: registro.email, conta: participanteId })])
+  log?.info({ ficha: existente.id }, 'Pré-ficha duplicada descartada')
+}
+
+export async function registrarPreFicha(pool, config, registro, { ip, log, participanteId = null, cpf = null }) {
+  const existente = await acharDuplicada(pool, registro, cpf)
   if (existente) {
-    await pool.query(
-      `insert into pre_fichas_historico (pre_ficha_id, tipo, observacao, detalhes) values ($1, 'observacao', $2, $3)`,
-      [existente.id, 'Nova pré-ficha enviada para a mesma pessoa (nome e data de nascimento) — descartada como duplicada.',
-        JSON.stringify({ duplicada: true, telefone: registro.telefone, email: registro.email, conta: participanteId })])
-    log?.info({ ficha: existente.id }, 'Pré-ficha duplicada descartada')
+    await anotarDuplicada(pool, existente, registro, participanteId, log)
     // Sem conta: responde como sucesso (não revela a quem enviou). Com conta: avisa a pessoa.
     if (participanteId) {
       return { codigo: 409, corpo: { mensagem: 'Já existe uma pré-ficha na fila com este nome e data de nascimento. Fale com o acampamento para vinculá-la à sua conta.' } }
@@ -97,7 +111,7 @@ export async function registrarPreFicha(pool, config, registro, { ip, log, parti
   const { rows: [{ n }] } = await pool.query(
     `select count(*)::int n from pre_fichas
       where created_at > now() - interval '24 hours'
-        and (regexp_replace(telefone, '\D', '', 'g') = $1 or email = $2)`,
+        and (regexp_replace(telefone, '[^0-9]', '', 'g') = $1 or email = $2)`,
     [registro.telefone.replace(/\D/g, ''), registro.email])
   if (n >= config.limiteEnviosPorContatoDia) {
     return { codigo: 429, corpo: { mensagem: 'Muitas pré-fichas com este telefone ou e-mail hoje. Fale com o acampamento pelo WhatsApp.' } }
@@ -116,7 +130,7 @@ export async function registrarPreFicha(pool, config, registro, { ip, log, parti
 
 export default async function rotasPublicas(app) {
   const { pool, config } = app
-  const dentroDoLimiteGlobal = criarLimiteGlobal(config.limiteEnviosGlobalHora)
+  const dentroDoLimiteGlobal = limiteGlobalDe(config)
 
   app.get('/api/saude', async () => {
     await pool.query('select 1')

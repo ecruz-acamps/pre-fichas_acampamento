@@ -7,7 +7,7 @@ import { gerarHash, senhaForte, verificarSenha, verificarSenhaFicticia } from '.
 import { criarProtecaoLogin } from '../protecao.js'
 import { carregarMarca } from '../marca.js'
 import { licencaAtivada } from '../licenca.js'
-import { registrarPreFicha } from './publico.js'
+import { acharDuplicada, anotarDuplicada, conferirCaptcha, limiteGlobalDe, registrarPreFicha } from './publico.js'
 import { fezSenior, validarCasais } from '../casais.js'
 import { cabecalhosFoto, FOTO_MAX_BYTES, lerFoto, limparJpeg, removerFoto, salvarFoto } from '../foto.js'
 import { transacao } from '../db.js'
@@ -100,18 +100,41 @@ export default async function rotasConta(app) {
     return { ok: true }
   })
 
-  // ------------------------------------------------------------ criar conta
-  app.post('/api/conta/cadastro', { config: limite }, async (req, reply) => {
+  // ------------------------------------------------------------ criar conta (e, se vier a ficha, já inscrever)
+  // Cadastro em UMA etapa: com `ficha` no corpo, cria a conta E a pré-ficha juntas (tudo ou nada). O e-mail da ficha é o da conta.
+  // Sem `ficha`, só cria a conta (como antes).
+  app.post('/api/conta/cadastro', { config: { rateLimit: { max: config.limiteEnviosPorHora, timeWindow: '1 hour' } } }, async (req, reply) => {
     if (!(await licencaAtivada(pool))) return reply.code(503).send({ mensagem: 'As inscrições ainda não estão disponíveis.' })
+    const comFicha = req.body?.ficha !== undefined && req.body?.ficha !== null
+    const f = comFicha ? normalizarEntrada(req.body.ficha) : null
+    if (f?.website.trim()) {                                          // campo invisível preenchido = robô: finge sucesso e descarta
+      req.log.warn({ ip: req.ip }, 'Cadastro descartado pelo honeypot')
+      return reply.code(201).send({ ok: true })
+    }
     const cpf = somenteDigitos(req.body?.cpf)
-    const mail = String(req.body?.email ?? '').trim().toLowerCase()
+    const mail = (comFicha ? f.email : String(req.body?.email ?? '')).trim().toLowerCase()
     const senha = String(req.body?.senha ?? '')
-    const erros = {}
+    const marca = comFicha ? await carregarMarca(pool) : null
+    const erros = comFicha ? validar(f, marca.termos.length) : {}
     if (!cpfValido(cpf)) erros.cpf = 'CPF inválido.'
     if (mail.length > 200 || !EMAIL.test(mail)) erros.email = 'E-mail inválido.'
     const fraca = senhaForte(senha)
     if (fraca) erros.senha = fraca
+    if (comFicha && !erros.modalidade) {
+      // Casais exige conferir o CPF do cônjuge e o histórico: faça pela área da conta, depois do cadastro
+      if (f.modalidade === 'casais') erros.modalidade = 'Para a modalidade Casais, crie a conta primeiro e faça a inscrição pela sua área.'
+      else if (cpfValido(cpf) && (await modalidadesFeitas(null, cpf)).includes(f.modalidade)) erros.modalidade = 'Você já fez esta modalidade. Escolha outra para a qual tenha os requisitos.'
+    }
     if (Object.keys(erros).length) return reply.code(400).send({ mensagem: 'Confira os campos destacados.', erros })
+    if (comFicha) {
+      if (!(await conferirCaptcha(config.captcha, req.body?.captcha, req.ip))) {
+        return reply.code(400).send({ mensagem: 'Confirme que você não é um robô.', erros: { captcha: 'Confirme a verificação.' } })
+      }
+      if (!limiteGlobalDe(config)()) {
+        req.log.warn('Limite geral de envios por hora atingido')
+        return reply.code(429).send({ mensagem: 'Muitas inscrições neste momento. Tente novamente mais tarde.' })
+      }
+    }
 
     const { rows: [existe] } = await pool.query('select cpf, email from participantes where cpf = $1 or email = $2 limit 1', [cpf, mail])
     if (existe) {
@@ -119,10 +142,37 @@ export default async function rotasConta(app) {
         mensagem: 'Já existe uma conta com este CPF ou e-mail. Entre com sua senha ou use "Esqueci minha senha".',
       })
     }
-    const { rows: [nova] } = await pool.query(
-      'insert into participantes (cpf, email, senha_hash) values ($1, $2, $3) returning id', [cpf, mail, await hashLimitado(senha)])
-    await entrar(reply, nova.id)
-    return reply.code(201).send({ ok: true })
+    const registro = comFicha ? montarRegistro(f, marca.termos) : null
+    if (comFicha) {
+      // já está na fila (mesmo CPF, ou mesmo nome e nascimento): não duplica, não cria conta e não revela dados da ficha
+      const duplicada = await acharDuplicada(pool, registro, cpf)
+      if (duplicada) {
+        await anotarDuplicada(pool, duplicada, registro, null, req.log)
+        return reply.code(409).send({ mensagem: 'Já existe uma pré-ficha na fila com este CPF ou com este nome e data de nascimento. Fale com a coordenação do acampamento para vinculá-la à sua conta.' })
+      }
+    }
+    const hash = await hashLimitado(senha)
+    const cliente = await pool.connect()
+    let id
+    try {
+      await cliente.query('begin')
+      const { rows: [nova] } = await cliente.query(
+        'insert into participantes (cpf, email, senha_hash) values ($1, $2, $3) returning id', [cpf, mail, hash])
+      id = nova.id
+      if (comFicha) {
+        const r = await registrarPreFicha(cliente, config, registro, { ip: req.ip, log: req.log, participanteId: id, cpf })
+        if (!r.id) { await cliente.query('rollback'); return reply.code(r.codigo).send(r.corpo) }   // ex.: limite por contato: a conta também não é criada
+        await cliente.query('update participantes set dados = $1, nome = $2, data_nascimento = $3 where id = $4',
+          [JSON.stringify(DADOS_GUARDADOS(f)), registro.nome_completo, registro.data_nascimento, id])
+      }
+      await cliente.query('commit')
+    } catch (e) {
+      await cliente.query('rollback').catch(() => {})
+      if (e.code === '23505') return reply.code(409).send({ mensagem: 'Já existe uma conta com este CPF ou e-mail. Entre com sua senha ou use "Esqueci minha senha".' })
+      throw e
+    } finally { cliente.release() }
+    await entrar(reply, id)
+    return reply.code(201).send({ ok: true, inscrito: comFicha })
   })
 
   // ------------------------------------------------------------ entrar / sair
