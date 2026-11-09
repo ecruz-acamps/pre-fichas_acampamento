@@ -6,6 +6,7 @@ import RedefinirSenha from './RedefinirSenha.jsx'
 import CadastroEquipe from './CadastroEquipe.jsx'
 import Fila from './Fila.jsx'
 import Resumo from './Resumo.jsx'
+import Revisar from './Revisar.jsx'
 const Acampamentos = lazy(() => import('./Acampamentos.jsx')) // carregada só quando abrir a tela
 const Nucleos = lazy(() => import('./Nucleos.jsx')) // carregada só quando abrir a tela
 const Usuarios = lazy(() => import('./Usuarios.jsx')) // carregada só quando abrir a tela
@@ -21,6 +22,7 @@ import { BotaoAtualizacao, DialogoAtualizacao } from './Atualizacoes.jsx'
 const TELAS = [
   { id: 'fila', rotulo: 'Fila', papeis: ['admin', 'equipe', 'coordenador'] },
   { id: 'nomes', rotulo: 'Nomes (A–Z)', papeis: ['admin', 'equipe', 'coordenador'] },
+  { id: 'revisar', rotulo: 'Revisar modalidade', papeis: ['admin', 'coordenador'] },
   { id: 'resumo', rotulo: 'Resumo por cidade', papeis: ['admin', 'equipe', 'coordenador'] },
   { id: 'acampamentos', rotulo: 'Acampamentos', papeis: ['admin', 'equipe'] },
   { id: 'auditoria', rotulo: 'Auditoria', papeis: ['admin', 'equipe', 'coordenador'] },
@@ -143,6 +145,7 @@ export default function App() {
       {atual === 'fila' && <Fila {...props} />}
       {atual === 'nomes' && <Nomes {...props} />}
       {atual === 'resumo' && <Resumo {...props} />}
+      {atual === 'revisar' && <Revisar />}
       <Suspense fallback={<p className="carregando">Carregando…</p>}>
       {atual === 'acampamentos' && <Acampamentos {...props} />}
       {atual === 'auditoria' && <Auditoria {...props} />}

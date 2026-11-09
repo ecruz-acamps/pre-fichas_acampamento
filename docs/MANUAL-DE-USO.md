@@ -394,3 +394,9 @@ O aplicativo usa o nome e a cor do acampamento. Por segurança, **nenhum dado pe
 ## Contas das pessoas importadas
 
 Cada pessoa importada que tem CPF ganha uma conta: **usuário = CPF e senha = CPF** (só números ou com pontos, tanto faz). Ela entra em "Já tenho conta", vê a pré-ficha e pode trocar a senha em "Alterar senha". Quem não tinha e-mail na planilha não consegue usar "Esqueci minha senha": a coordenação precisa ajudar. Lembre que o CPF não é segredo; avise as pessoas para trocarem a senha.
+
+## Revisar e alterar a modalidade
+
+- **Detalhe da ficha → Modalidade:** administradores e coordenadores de núcleo podem trocar a modalidade (só as que cabem pela idade e estado civil). A data de inscrição e a posição na fila não mudam; a troca fica no histórico.
+- **Menu "Revisar modalidade":** mostra as fichas com "revisar" nas observações internas. Escolha "Alterar" ou "Manter"; a marca "revisar" é retirada e o registro da revisão fica na observação.
+- **Filtro por sexo:** a Fila tem a coluna "Sexo" com filtro (Masculino/Feminino).

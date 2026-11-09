@@ -2,7 +2,7 @@
 //   - "lista": marcar/desmarcar valores (com contagem e busca);  - "data": o mesmo, agrupado por ano/mês;
 //   - "faixa": de/até (posição);  - "texto": contém (telefone).
 // Como no Excel, a lista de valores de uma coluna mostra só o que sobrou dos filtros das OUTRAS colunas.
-import { MODALIDADES, STATUS, rotuloDe } from '../../shared/opcoes.js'
+import { MODALIDADES, SEXOS, STATUS, rotuloDe } from '../../shared/opcoes.js'
 import { calcularIdade, chaveLocal, melhorGrafia, somenteDigitos } from '../../shared/util.js'
 
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
@@ -22,6 +22,8 @@ export function criarColunas({ posicoes }) {
     { id: 'nome', rotulo: 'Nome', tipo: 'lista', valor: (l) => l.nome_completo, chave: (l) => String(l.nome_completo ?? '').trim(), rotuloChave: (k) => k, comparar: pt, sentido: ['Classificar de A a Z', 'Classificar de Z a A'] },
     { id: 'idade', rotulo: 'Idade', tipo: 'lista', valor: (l) => calcularIdade(l.data_nascimento), chave: (l) => { const i = calcularIdade(l.data_nascimento); return i == null ? '' : String(i) },
       rotuloChave: (k) => (k === '' ? '(vazio)' : k), comparar: num, compararChave: (a, b) => num(a === '' ? null : Number(a), b === '' ? null : Number(b)), sentido: ['Do menor para o maior', 'Do maior para o menor'] },
+    { id: 'sexo', rotulo: 'Sexo', tipo: 'lista', valor: (l) => ordemDe(SEXOS, l.sexo), chave: (l) => l.sexo ?? '',
+      rotuloChave: (k) => (k === '' ? '(vazio)' : rotuloDe(SEXOS, k)), comparar: num, compararChave: (a, b) => ordemDe(SEXOS, a) - ordemDe(SEXOS, b), sentido: ['Masculino primeiro', 'Feminino primeiro'] },
     { id: 'modalidade', rotulo: 'Modalidade', tipo: 'lista', valor: (l) => ordemDe(MODALIDADES, l.modalidade), chave: (l) => l.modalidade,
       rotuloChave: (k) => rotuloDe(MODALIDADES, k), comparar: num, compararChave: (a, b) => ordemDe(MODALIDADES, a) - ordemDe(MODALIDADES, b), sentido: ['Na ordem das modalidades', 'Na ordem inversa'] },
     { id: 'cidade', rotulo: 'Cidade / bairro', tipo: 'lista', valor: (l) => l.cidade, chave: (l) => chaveLocal(l.cidade) ?? '', rotuloChave: null, comparar: pt, sentido: ['Cidade de A a Z', 'Cidade de Z a A'] },

@@ -1,6 +1,6 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api.js'
-import { MODALIDADES, STATUS, STATUS_NA_FILA, rotuloDe } from '../../shared/opcoes.js'
+import { MODALIDADES, SEXOS, STATUS, STATUS_NA_FILA, rotuloDe } from '../../shared/opcoes.js'
 import { calcularIdade, chaveLocal, formatarDataHora, linkWhatsApp, melhorGrafia, somenteDigitos } from '../../shared/util.js'
 import Detalhe from './Detalhe.jsx'
 import { SeloPreferencia, declarouSemValidar, preferenciaAtiva } from './Preferencia.jsx'
@@ -343,6 +343,7 @@ export default function Fila({ usuario, marca, nucleos }) {
                     )}
                   </td>
                   <td>{calcularIdade(l.data_nascimento)}</td>
+                  <td>{rotuloDe(SEXOS, l.sexo)}</td>
                   <td>{rotuloDe(MODALIDADES, l.modalidade)}</td>
                   <td>{l.cidade}/{l.uf}{l.bairro && <small className="dica bloco">{l.bairro}</small>}</td>
                   <td className="nowrap" onClick={(e) => e.stopPropagation()}>

@@ -3,10 +3,11 @@ import { api } from '../lib/api.js'
 import { CorTribo } from '../lib/marca.jsx'
 import { DescricaoEvento, SeloTipo, autorEvento } from './EventoAuditoria.jsx'
 import ConjugePreferencia from './ConjugePreferencia.jsx'
+import ModalidadeFicha from './ModalidadeFicha.jsx'
 import FichaImpressao from './FichaImpressao.jsx'
 import { SeloPreferencia } from './Preferencia.jsx'
 import { ESTADOS_CIVIS, MODALIDADES, SEXOS, STATUS, rotuloDe } from '../../shared/opcoes.js'
-import { calcularIdade, formatarData, formatarDataHora, linkWhatsApp, mascaraCep, mascaraCpf, simNao } from '../../shared/util.js'
+import { calcularIdade, modalidadesCompativeis, formatarData, formatarDataHora, linkWhatsApp, mascaraCep, mascaraCpf, simNao } from '../../shared/util.js'
 
 function Item({ rotulo, children }) {
   const vazio = children === null || children === undefined || children === ''
@@ -301,7 +302,14 @@ export default function Detalhe({ ficha: resumo, marca, usuario, todas = [], pos
 
           <h3>Acampamento</h3>
           <dl className="grade">
-            <Item rotulo="Modalidade">{rotuloDe(MODALIDADES, f.modalidade)}</Item>
+            <Item rotulo="Modalidade">
+              {rotuloDe(MODALIDADES, f.modalidade)}
+              {!somenteLeitura && ['admin', 'coordenador'].includes(usuario?.papel) && (
+                <ModalidadeFicha ficha={{ ...f, revisar: /revisar/i.test(f.observacoes_internas ?? '') }}
+                  compativeis={modalidadesCompativeis(calcularIdade(f.data_nascimento), f.estado_civil).filter((m) => m !== 'casais')}
+                  onConcluir={(r) => onFichaAtualizada?.(r)} />
+              )}
+            </Item>
             {f.conjuge_cpf && <Item rotulo="CPF do cônjuge (Casais)">{mascaraCpf(f.conjuge_cpf)} <small className="dica">confirmado como campista na inscrição</small></Item>}
             <Item rotulo="Como conheceu">{f.como_conheceu}</Item>
           </dl>

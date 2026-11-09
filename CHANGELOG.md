@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 2.13.0 — revisar modalidade e filtro de sexo
+
+- **Alterar a modalidade da ficha** (administrador e coordenador de núcleo, dentro do seu núcleo), no detalhe da ficha. Só aceita modalidades compatíveis com a idade e o estado civil; Casais continua só pela conta (exige conferir o cônjuge). A data de inscrição e a posição na fila **não mudam**. Fica registrado no histórico (quem, de qual para qual).
+- **Menu "Revisar modalidade"**: lista as fichas com a palavra "revisar" nas observações internas (as importadas com modalidade fora da regra). Para cada uma: alterar ou manter a atual; a marca "revisar" sai da observação e fica registrado quem revisou.
+- **Coluna e filtro "Sexo"** (Masculino/Feminino) na Fila.
+- Migração `017` (tipo "modalidade" no histórico).
+
 ## 2.12.0 — importação cria a conta de cada pessoa com CPF
 
 - Cada ficha importada **com CPF** ganha uma conta: **usuário = CPF e senha inicial = CPF** (a pessoa pode trocar depois; a área da conta mostra um aviso recomendando a troca). CPF que já tem conta só é vinculado à ficha.
