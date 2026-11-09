@@ -79,7 +79,8 @@ export default async function rotasImportacao(app) {
       `select i.lote, i.criado_em, i.arquivo, i.por,
               (select count(*)::int from pre_fichas p where p.importada_lote = i.lote) as fichas,
               (select count(*)::int from pre_fichas p where p.importada_lote = i.lote
-                  and (p.atualizado_em is not null or p.conjuge_id is not null or p.participante_id is not null
+                  and (p.atualizado_em is not null or p.conjuge_id is not null
+                       or (p.participante_id is not null and not exists (select 1 from participantes c where c.id = p.participante_id and c.importada_lote = i.lote and c.ultimo_login is null))
                        or exists (select 1 from pre_fichas_historico h where h.pre_ficha_id = p.id and h.tipo <> 'inscricao'))) as alteradas
          from importacoes i order by i.criado_em desc limit 50`)
     return rows
