@@ -39,7 +39,13 @@ export function lerConfig(env = process.env) {
     pastaSite: env.PASTA_SITE || new URL('../dist', import.meta.url).pathname,
     // Endereço público do site (ex.: https://prefichas.seuacampamento.com.br), usado na
     // prévia de links (WhatsApp). Nunca é deduzido do cabeçalho da requisição.
-    microsoftClientSecret: env.MICROSOFT_CLIENT_SECRET || null,   // segredo do aplicativo no Microsoft Entra (login Microsoft)
+    // Login com a Microsoft: quem habilita e informa os IDs/segredo é o painel central da VM (grava no .env deste acampamento)
+    microsoft: {
+      habilitado: /^(1|true|sim)$/i.test(env.MICROSOFT_HABILITADO ?? ''),
+      tenantId: (env.MICROSOFT_TENANT_ID || '').trim() || null,
+      clientId: (env.MICROSOFT_CLIENT_ID || '').trim() || null,
+      segredo: env.MICROSOFT_CLIENT_SECRET || null,
+    },
     urlPublica: (env.URL_PUBLICA || '').replace(/\/+$/, '') || null,
     // Primeira inicialização: nome do acampamento escolhido na instalação (e, opcional,
     // um arquivo de marca completo). Depois disso, tudo é ajustado pelo painel.

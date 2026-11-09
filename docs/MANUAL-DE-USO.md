@@ -403,12 +403,14 @@ Cada pessoa importada que tem CPF ganha uma conta: **usuário = CPF e senha = CP
 
 ## Login com a Microsoft (conta corporativa)
 
-Em **Configurações → Login com a Microsoft** (só administrador). Passo a passo, no portal do Microsoft Entra (portal.azure.com → Microsoft Entra ID):
-1. **Registros de aplicativo → Novo registro**, tipo "Contas somente neste diretório organizacional".
-2. **URI de redirecionamento** (plataforma Web): copie o endereço mostrado na tela de Configurações (termina em `/api/auth/microsoft/callback`).
-3. **Certificados e segredos → Novo segredo de cliente**: copie o **Valor** (ele só aparece uma vez) para `MICROSOFT_CLIENT_SECRET` no `.env` do servidor e reinicie (`docker compose up -d`).
-4. Copie o **ID do diretório (locatário)** e o **ID do aplicativo (cliente)** do registro para a tela de Configurações, marque **Ativar** e salve.
+Cada acampamento é um "tenant": o login Microsoft é ligado **por acampamento**, pelo administrador da VM, no **painel central** (Instâncias → coluna "Login Microsoft" → configurar). Os acampamentos não ligados continuam só com senha.
 
-Como funciona: a pessoa clica em "Entrar com a Microsoft", faz o login (e o MFA) na Microsoft e volta ao painel. Se já tem acesso, entra; se não, aparece em **Usuários → Cadastros aguardando liberação** (se a opção estiver marcada). Depois da primeira entrada, a conta fica ligada à pessoa na Microsoft: outra conta Microsoft com o mesmo e-mail não entra. A senha local continua valendo; para exigir só a Microsoft, o administrador pode trocar a senha dos usuários por uma desconhecida (ou desativá-los de senha em uma versão futura).
+Passo a passo, no portal do Microsoft Entra (portal.azure.com → Microsoft Entra ID), para o acampamento:
+1. **Registros de aplicativo → Novo registro**, tipo "Contas somente neste diretório organizacional".
+2. **URI de redirecionamento** (plataforma Web): `https://ENDERECO-DO-ACAMPAMENTO/api/auth/microsoft/callback` (o painel central mostra o endereço certo).
+3. **Certificados e segredos → Novo segredo de cliente**: copie o **Valor** (aparece uma vez).
+4. No painel central, abra o acampamento em "configurar", marque **Usar login Microsoft**, cole o **ID do diretório (locatário)**, o **ID do aplicativo (cliente)** e o **valor do segredo**, e salve. O sistema do acampamento reinicia por alguns segundos. Em branco, o segredo guardado é mantido.
+
+Como funciona: a pessoa clica em "Entrar com a Microsoft", faz o login (e o MFA) na Microsoft e volta ao painel. Se já tem acesso, entra; se não, aparece em **Usuários → Cadastros aguardando liberação** (a opção "criar cadastro pendente" fica em Configurações do acampamento). Depois da primeira entrada, a conta fica ligada à pessoa na Microsoft: outra conta Microsoft com o mesmo e-mail não entra. A senha local continua valendo.
 
 SAML: este sistema usa OpenID Connect (o padrão atual da Microsoft), que dispensa certificados XML e é mais simples de manter. O resultado para o usuário é o mesmo.

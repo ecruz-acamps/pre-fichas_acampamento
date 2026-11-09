@@ -6,7 +6,9 @@
 - O token é conferido no próprio sistema, sem biblioteca de terceiros: assinatura (chaves públicas da Microsoft), emissor, diretório, destinatário, validade e nonce; `state` e PKCE de uso único.
 - A conta é ligada ao **identificador da pessoa na Microsoft (oid)**, não só ao e-mail: outro usuário Microsoft com o mesmo e-mail é negado.
 - Quem entra pela 1ª vez sem acesso vira **cadastro aguardando liberação** (opção em Configurações); o administrador libera em Usuários.
-- Configuração em **Configurações → Login com a Microsoft** (IDs do diretório e do aplicativo). O **segredo** fica só na variável `MICROSOFT_CLIENT_SECRET` do servidor, nunca no banco.
+- **Cada acampamento é um tenant: quem liga é o painel central da VM.** Em Instâncias → coluna "Login Microsoft" → configurar, o administrador da VM liga ou desliga o login Microsoft **por acampamento** (por exemplo, só o São Padre Pio) e informa o ID do diretório, o ID do aplicativo e o segredo. O painel grava no `.env` daquele acampamento e reinicia só ele; os demais continuam só com senha.
+- O **segredo** fica só no `.env` do acampamento (nunca no banco, na tela, nos logs nem na auditoria); em branco = mantém o guardado. Desligar mantém os dados para religar sem digitar tudo.
+- No painel do acampamento, Configurações → Login com a Microsoft só mostra a situação e a opção "criar cadastro pendente" para quem entra pela primeira vez.
 - Migração `018`. Quem entra pela Microsoft usa o autenticador/MFA da própria Microsoft (não pede o código de duas etapas do sistema).
 
 ## 2.13.0 — revisar modalidade e filtro de sexo

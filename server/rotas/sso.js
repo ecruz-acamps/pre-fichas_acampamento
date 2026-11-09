@@ -13,9 +13,12 @@ export default async function rotasSso(app) {
   const pedidos = new Map()   // id do cookie -> { state, nonce, verificador, ate }   (memória: vale 10 min)
   const limpar = () => { const t = Date.now(); for (const [k, v] of pedidos) if (v.ate < t) pedidos.delete(k) }
 
-  const carregar = async () => (await pool.query('select ativo, tenant_id, client_id, criar_pendentes from sso_config where id')).rows[0]
+  // ativo/IDs/segredo vêm do .env (gravado pelo painel central da VM); aqui no banco só fica a escolha "criar pendentes"
+  const ms = config.microsoft
+  const carregar = async () => { const { criar_pendentes } = (await pool.query('select criar_pendentes from sso_config where id')).rows[0]
+    return { ativo: ms.habilitado, tenant_id: ms.tenantId, client_id: ms.clientId, criar_pendentes } }
   const redirectUri = () => (config.urlPublica ? `${config.urlPublica}/api/auth/microsoft/callback` : null)
-  const pronto = (c) => c?.ativo && GUID.test(c.tenant_id ?? '') && GUID.test(c.client_id ?? '') && config.microsoftClientSecret && redirectUri()
+  const pronto = (c) => c?.ativo && GUID.test(c.tenant_id ?? '') && GUID.test(c.client_id ?? '') && ms.segredo && redirectUri()
   const voltar = (reply, erro) => reply.redirect(`/admin/${erro ? `?sso_erro=${erro}` : ''}`)
   const soAdmin = { onRequest: [app.exigirLogin, app.exigirAdmin] }
 
@@ -46,7 +49,7 @@ export default async function rotasSso(app) {
 
     let eu
     try {
-      const cfg = { tenant: c.tenant_id, clientId: c.client_id, segredo: config.microsoftClientSecret, redirectUri: redirectUri() }
+      const cfg = { tenant: c.tenant_id, clientId: c.client_id, segredo: ms.segredo, redirectUri: redirectUri() }
       eu = await validarIdToken(fetchFn, cfg, await trocarCodigo(fetchFn, cfg, code, pedido.verificador), pedido.nonce)
     } catch (e) {
       req.log.warn({ motivo: e.message, ip: req.ip }, 'Login Microsoft recusado')
@@ -83,28 +86,16 @@ export default async function rotasSso(app) {
     return voltar(reply)
   })
 
-  // ---- Configuração (só administrador) ----
+  // ---- Situação e a única escolha local (o resto é do painel central da VM) ----
   app.get('/api/admin/sso', soAdmin, async () => {
     const c = await carregar()
-    return { ativo: c.ativo, tenantId: c.tenant_id ?? '', clientId: c.client_id ?? '', criarPendentes: c.criar_pendentes,
-      segredoConfigurado: Boolean(config.microsoftClientSecret), redirectUri: redirectUri(), pronto: Boolean(pronto(c)) }
+    return { habilitado: ms.habilitado, tenantId: ms.tenantId ?? '', clientId: ms.clientId ?? '', criarPendentes: c.criar_pendentes,
+      segredoConfigurado: Boolean(ms.segredo), redirectUri: redirectUri(), pronto: Boolean(pronto(c)) }
   })
 
-  app.put('/api/admin/sso', { ...soAdmin, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req, reply) => {
-    const b = req.body ?? {}
-    const tenant = String(b.tenantId ?? '').trim(), cliente = String(b.clientId ?? '').trim()
-    const erros = {}
-    if (tenant && !GUID.test(tenant)) erros.tenantId = 'Use o "ID do diretório (locatário)" do Microsoft Entra (formato 00000000-0000-0000-0000-000000000000).'
-    if (cliente && !GUID.test(cliente)) erros.clientId = 'Use o "ID do aplicativo (cliente)" do Microsoft Entra.'
-    if (b.ativo && !tenant) erros.tenantId = 'Informe o ID do diretório para ativar.'
-    if (b.ativo && !cliente) erros.clientId = 'Informe o ID do aplicativo para ativar.'
-    if (b.ativo && !config.microsoftClientSecret) erros.ativo = 'Falta a variável MICROSOFT_CLIENT_SECRET no servidor (veja o manual).'
-    if (b.ativo && !config.urlPublica) erros.ativo = 'Falta o endereço público (URL_PUBLICA) do sistema.'
-    if (Object.keys(erros).length) return reply.code(400).send({ mensagem: 'Confira os campos.', erros })
-    await pool.query(
-      `update sso_config set ativo = $1, tenant_id = $2, client_id = $3, criar_pendentes = $4, atualizado_em = now() where id`,
-      [Boolean(b.ativo), tenant || null, cliente || null, b.criarPendentes !== false])
-    req.log.info({ por: req.usuario.email, ativo: Boolean(b.ativo) }, 'Configuração do login Microsoft alterada')
-    return reply.send({ ok: true })
+  app.put('/api/admin/sso', { ...soAdmin, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {
+    await pool.query('update sso_config set criar_pendentes = $1, atualizado_em = now() where id', [req.body?.criarPendentes !== false])
+    req.log.info({ por: req.usuario.email }, 'Opção "criar cadastro pendente" do login Microsoft alterada')
+    return { ok: true }
   })
 }

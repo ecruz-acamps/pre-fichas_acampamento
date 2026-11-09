@@ -81,6 +81,10 @@ services:
       SMTP_REMETENTE: ${SMTP_REMETENTE:-}
       # Endereço público (prévia de links no WhatsApp e link de redefinição de senha)
       URL_PUBLICA: ${URL_PUBLICA:-}
+      # Login com a Microsoft: gravado pelo painel central da VM (Instâncias → Login Microsoft)
+      MICROSOFT_HABILITADO: ${MICROSOFT_HABILITADO:-}
+      MICROSOFT_TENANT_ID: ${MICROSOFT_TENANT_ID:-}
+      MICROSOFT_CLIENT_ID: ${MICROSOFT_CLIENT_ID:-}
       MICROSOFT_CLIENT_SECRET: ${MICROSOFT_CLIENT_SECRET:-}
       # Aviso de atualização (GitHub)
       ATUALIZACAO_VERIFICAR: ${ATUALIZACAO_VERIFICAR:-true}
