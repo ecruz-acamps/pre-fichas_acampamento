@@ -5,6 +5,8 @@ import { calcularIdade, chaveLocal, formatarDataHora, linkWhatsApp, melhorGrafia
 import Detalhe from './Detalhe.jsx'
 import { SeloPreferencia, declarouSemValidar, preferenciaAtiva } from './Preferencia.jsx'
 import { exportarCsv } from './csv.js'
+import FiltroColuna, { Funil } from './FiltroColuna.jsx'
+import { aplicarFiltros, criarColunas, filtroAtivo, ordenarPorColuna, valoresDaColuna } from './filtroColunas.js'
 
 /** Posição na fila: por modalidade, ordem de chegada, contando só quem ainda está na fila. */
 export function calcularPosicoes(linhas) {
@@ -126,8 +128,12 @@ export default function Fila({ usuario, marca, nucleos }) {
   const preferencia = prefLigada ? preferenciaEscolhida : ''
   const [ordem, setOrdem] = useState('fila')
   const [selecionada, setSelecionada] = useState(null)
+  const [filtrosCol, setFiltrosCol] = useState({})      // filtros por coluna (estilo Excel)
+  const [ordemCol, setOrdemCol] = useState(null)         // { id, dir } quando se classifica por uma coluna
+  const [popover, setPopover] = useState(null)           // { id, ancora } da coluna com a janela de filtro aberta
 
   const posicoes = useMemo(() => calcularPosicoes(linhas), [linhas])
+  const colunas = useMemo(() => criarColunas({ posicoes }), [posicoes])
   const duplicados = useMemo(() => calcularDuplicados(linhas), [linhas])
 
   // Filtros de lugar (núcleo → cidade → bairro), antes de modalidade/status
@@ -163,12 +169,26 @@ export default function Fila({ usuario, marca, nucleos }) {
     })
   }, [porLugar, modalidade, filtroStatus, buscaAdiada, preferencia])
 
-  // Mostra 200 linhas por vez (desenhar milhares de linhas travava a tela)
-  useEffect(() => { setLimite(POR_PAGINA) }, [modalidade, filtroStatus, buscaAdiada, preferencia, nucleo, cidade, bairro, ordem])
+  // Filtros das colunas (como o filtro automático do Excel), por cima dos filtros do topo
+  const filtradasCol = useMemo(() => aplicarFiltros(visiveis, colunas, filtrosCol), [visiveis, colunas, filtrosCol])
+  const colunasFiltradas = colunas.filter((c) => filtroAtivo(filtrosCol[c.id]))
+  const colunaAberta = popover ? colunas.find((c) => c.id === popover.id) : null
+  // a lista de valores de uma coluna mostra só o que sobrou dos filtros das OUTRAS colunas
+  const valoresAbertos = useMemo(
+    () => (colunaAberta && colunaAberta.chave ? valoresDaColuna(aplicarFiltros(visiveis, colunas, filtrosCol, colunaAberta.id), colunaAberta) : []),
+    [colunaAberta, visiveis, colunas, filtrosCol])
+  const aplicarColuna = (id, filtro) => setFiltrosCol((f) => { const n = { ...f }; if (filtroAtivo(filtro)) n[id] = filtro; else delete n[id]; return n })
+  const fecharPopover = useCallback(() => setPopover(null), [])
 
-  const ordenadas = useMemo(() => (ordem === 'nome'
-    ? [...visiveis].sort((a, b) => a.nome_completo.localeCompare(b.nome_completo, 'pt-BR', { sensitivity: 'base' }))
-    : visiveis), [visiveis, ordem])
+  // Mostra 200 linhas por vez (desenhar milhares de linhas travava a tela)
+  useEffect(() => { setLimite(POR_PAGINA) }, [modalidade, filtroStatus, buscaAdiada, preferencia, nucleo, cidade, bairro, ordem, filtrosCol, ordemCol])
+
+  const ordenadas = useMemo(() => {
+    if (ordemCol) return ordenarPorColuna(filtradasCol, colunas.find((c) => c.id === ordemCol.id), ordemCol.dir)
+    return ordem === 'nome'
+      ? [...filtradasCol].sort((a, b) => a.nome_completo.localeCompare(b.nome_completo, 'pt-BR', { sensitivity: 'base' }))
+      : filtradasCol
+  }, [filtradasCol, ordem, ordemCol, colunas])
 
   const comPreferencia = useMemo(() => porLugar.filter((l) => STATUS_NA_FILA.includes(l.status) && preferenciaAtiva(l)).length, [porLugar])
 
@@ -233,9 +253,10 @@ export default function Fila({ usuario, marca, nucleos }) {
           <option value="validar">Declarou que o cônjuge fez — a validar</option>
           <option value="sem">Sem preferência</option>
         </select>}
-        <select value={ordem} onChange={(e) => setOrdem(e.target.value)} aria-label="Ordenar">
+        <select value={ordemCol ? 'coluna' : ordem} onChange={(e) => { setOrdemCol(null); setOrdem(e.target.value) }} aria-label="Ordenar">
           <option value="fila">Ordem: posição na fila</option>
           <option value="nome">Ordem: nome (A–Z)</option>
+          {ordemCol && <option value="coluna">Ordem: {colunas.find((c) => c.id === ordemCol.id)?.rotulo} ({ordemCol.dir === 1 ? '↑' : '↓'})</option>}
         </select>
       </div>
       <div className="filtros">
@@ -256,25 +277,44 @@ export default function Fila({ usuario, marca, nucleos }) {
             const completas = new Map((await api.get('/api/admin/pre-fichas?completo=1')).map((f) => [f.id, f]))
             exportarCsv(ordenadas.map((l) => completas.get(l.id) ?? l), posicoes, nomeNucleo)
           } catch { alert('Não foi possível exportar. Tente novamente.') }
-        }} disabled={!visiveis.length}>
+        }} disabled={!ordenadas.length}>
           Exportar CSV
         </button>
       </div>
 
       {erro && <div className="alerta-erro">{erro}</div>}
 
+      {(colunasFiltradas.length > 0 || ordemCol) && (
+        <p className="filtros-ativos" role="status">
+          Filtro por coluna: <strong>{colunasFiltradas.map((c) => c.rotulo).join(', ') || '—'}</strong>
+          {ordemCol && <> · classificada por <strong>{colunas.find((c) => c.id === ordemCol.id)?.rotulo}</strong> ({ordemCol.dir === 1 ? 'crescente' : 'decrescente'})</>}
+          {' · '}{ordenadas.length} de {visiveis.length} ficha(s) ·{' '}
+          <button className="link inline" onClick={() => { setFiltrosCol({}); setOrdemCol(null) }}>limpar filtros das colunas</button>
+        </p>
+      )}
+
       <div className="tabela-wrap">
         <table className="tabela">
           <thead>
             <tr>
-              <th title="Posição na fila da modalidade">Pos.</th>
-              <th title="Data que define a posição. Muda quando a pessoa vai para o fim da fila.">Na fila desde</th>
-              <th>Nome</th>
-              <th>Idade</th>
-              <th>Modalidade</th>
-              <th>Cidade / bairro</th>
-              <th>Telefone</th>
-              <th>Status</th>
+              {colunas.map((c) => {
+                const ativo = filtroAtivo(filtrosCol[c.id])
+                const ord = ordemCol?.id === c.id ? ordemCol.dir : 0
+                const dicas = { pos: 'Posição na fila da modalidade', desde: 'Data que define a posição. Muda quando a pessoa vai para o fim da fila.' }
+                return (
+                  <th key={c.id} title={dicas[c.id]} aria-sort={ord === 1 ? 'ascending' : ord === -1 ? 'descending' : 'none'} className={ativo ? 'col-filtrada' : ''}>
+                    <span className="th-conteudo">
+                      {c.rotulo}
+                      {ord !== 0 && <span className="th-ordem" aria-hidden="true">{ord === 1 ? '↑' : '↓'}</span>}
+                      <button type="button" className={`btn-filtro ${ativo ? 'ativo' : ''}`} aria-haspopup="dialog" aria-expanded={popover?.id === c.id}
+                        aria-label={`Filtrar e classificar a coluna ${c.rotulo}${ativo ? ' (filtro ativo)' : ''}`}
+                        onClick={(e) => { const r = e.currentTarget.getBoundingClientRect(); setPopover((p) => (p?.id === c.id ? null : { id: c.id, ancora: { left: r.left, bottom: r.bottom, botao: e.currentTarget } })) }}>
+                        <Funil cheio={ativo} />
+                      </button>
+                    </span>
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody>
@@ -317,7 +357,7 @@ export default function Fila({ usuario, marca, nucleos }) {
                 </tr>
               )
             })}
-            {!carregando && !visiveis.length && (
+            {!carregando && !ordenadas.length && (
               <tr><td colSpan={8} className="vazio">Nenhuma pré-ficha encontrada com esses filtros.</td></tr>
             )}
           </tbody>
@@ -329,6 +369,13 @@ export default function Fila({ usuario, marca, nucleos }) {
             Mostrar mais ({limite} de {ordenadas.length})
           </button>
         </div>
+      )}
+
+      {colunaAberta && (
+        <FiltroColuna key={colunaAberta.id} coluna={colunaAberta} valores={valoresAbertos} filtro={filtrosCol[colunaAberta.id]}
+          ordem={ordemCol?.id === colunaAberta.id ? ordemCol.dir : 0} ancora={popover.ancora}
+          onAplicar={(f) => { aplicarColuna(colunaAberta.id, f); setPopover(null) }}
+          onOrdenar={(dir) => setOrdemCol(dir ? { id: colunaAberta.id, dir } : null)} onFechar={fecharPopover} />
       )}
 
       {selecionada && (

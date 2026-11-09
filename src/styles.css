@@ -180,6 +180,31 @@ input:focus, select:focus, textarea:focus {
 .tabela { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
 .tabela th, .tabela td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--borda); vertical-align: middle; }
 .tabela th { background: var(--cor-clara); color: var(--cor-escura); font-weight: 500; position: sticky; top: 0; white-space: nowrap; }
+/* Filtros por coluna (estilo Excel) */
+.th-conteudo { display: inline-flex; align-items: center; gap: 6px; }
+.th-ordem { color: var(--cor); font-weight: 700; }
+.btn-filtro { display: inline-grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--texto-suave, #6b6258); cursor: pointer; }
+.btn-filtro:hover, .btn-filtro:focus-visible { background: #fff; border-color: var(--borda); color: var(--cor-escura); }
+.btn-filtro.ativo { background: var(--cor); border-color: var(--cor); color: #fff; }
+.tabela th.col-filtrada { background: color-mix(in srgb, var(--cor) 12%, var(--cor-clara)); }
+.filtros-ativos { margin: 8px 0; font-size: 0.9rem; color: var(--texto-suave, #6b6258); }
+.filtro-pop { position: fixed; z-index: 70; background: #fff; border: 1px solid var(--borda); border-radius: 8px; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18); padding: 8px; font-size: 0.9rem; max-height: calc(100vh - 24px); display: flex; flex-direction: column; }
+.filtro-pop hr { border: 0; border-top: 1px solid var(--borda); margin: 6px 0; width: 100%; }
+.filtro-ordem { text-align: left; background: transparent; border: 0; padding: 6px 8px; border-radius: 4px; cursor: pointer; font: inherit; color: inherit; }
+.filtro-ordem:hover, .filtro-ordem.ativa { background: var(--fundo-linha, #f4efe8); font-weight: 600; }
+.filtro-busca, .filtro-texto input, .filtro-faixa input { width: 100%; padding: 7px 9px; border: 1px solid var(--borda); border-radius: 6px; font: inherit; box-sizing: border-box; }
+.filtro-texto, .filtro-faixa label { display: grid; gap: 4px; font-weight: 500; }
+.filtro-faixa { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.filtro-lista { margin: 6px 0; overflow: auto; max-height: 260px; border: 1px solid var(--borda); border-radius: 6px; padding: 4px; }
+.filtro-item { display: flex; align-items: center; gap: 8px; padding: 3px 4px; cursor: pointer; border-radius: 4px; }
+.filtro-item:hover { background: var(--fundo-linha, #f4efe8); }
+.filtro-rotulo { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.filtro-total { color: var(--texto-suave, #6b6258); font-size: 0.8rem; }
+.filtro-tudo { border-bottom: 1px solid var(--borda); border-radius: 4px 4px 0 0; margin-bottom: 2px; font-weight: 600; }
+.filtro-mes { padding-left: 22px; }
+.filtro-vazio { padding: 6px 8px; margin: 0; }
+.filtro-rodape { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.filtro-espaco { flex: 1; }
 .tabela tbody tr:last-child td { border-bottom: 0; }
 .tabela tr.clicavel { cursor: pointer; }
 .tabela tr.clicavel:hover td { background: var(--fundo-linha); }
