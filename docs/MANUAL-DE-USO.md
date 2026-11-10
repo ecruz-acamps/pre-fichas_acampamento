@@ -433,3 +433,9 @@ Para que os coordenadores entrem pela Microsoft **sem esperar liberação**, com
 Quem está em um grupo de núcleo entra como **coordenador daquele núcleo** (e de todos os núcleos dos seus grupos). Quem não está em nenhum, não entra. Para tirar o acesso, remova a pessoa do grupo: na próxima entrada ela perde os núcleos (as sessões abertas dela são derrubadas); para valer na hora, desative o usuário em **Usuários**. Administradores continuam sendo definidos no painel e entram com senha e autenticador; os grupos nunca criam nem alteram administradores.
 
 Limitação: pessoas que estão em muitos grupos (mais de 200) não recebem a lista no token da Microsoft e são recusadas com aviso.
+
+## Coordenadores veem todas as fichas? (opção)
+
+Em **Configurações → Coordenadores de núcleo** o administrador escolhe:
+- **Não** (padrão): cada coordenador vê só as fichas do seu núcleo.
+- **Sim**: o coordenador **consulta** as fichas de todos os núcleos, mas **só altera** as do seu próprio núcleo. As de fora abrem em modo somente leitura (sem botões de ação).

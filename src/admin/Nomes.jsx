@@ -50,7 +50,7 @@ export default function Nomes({ usuario, marca, nucleos }) {
       status: f.status, modalidade: f.modalidade, participacoes: f.participacoes ?? [], ficha: f, ...extra,
     })
     // Pré-fichas que o usuário pode ver (coordenador: só do seu núcleo) — pode alterar
-    for (const f of fichas) mapa.set(f.id, pessoa(f, { editavel: true, preficha: true }))
+    for (const f of fichas) mapa.set(f.id, pessoa(f, { editavel: f.editavel !== false, preficha: true }))
     // Campistas de todos os núcleos — ficha completa; altera só se for do seu núcleo
     for (const c of campistas) {
       if (!mapa.has(c.id)) mapa.set(c.id, pessoa(c, { editavel: c.da_minha_area, preficha: false }))
