@@ -21,11 +21,11 @@ const acampamentosTexto = (parts) => (parts ?? [])
  *   - pré-fichas que o usuário pode ver (coordenador: só do seu núcleo);
  *   - todos os campistas (quem já fez o acampamento), de todos os núcleos.
  */
-export default function Nomes({ usuario, marca, nucleos }) {
+export default function Nomes({ usuario, marca, nucleos, tipoFixo = null }) {
   const { linhas: fichas, setLinhas, recarregar: recarregarFichas } = useFichas()
   const recarregar = async () => { const l = await recarregarFichas(); setVersaoCampistas((v) => v + 1); return l }
   const [campistas, setCampistas] = useState([])
-  const [tipo, setTipo] = useState('todos')
+  const [tipo, setTipo] = useState(tipoFixo ?? 'todos')
   const [busca, setBusca] = useState('')
   const [selecionada, setSelecionada] = useState(null)
   const coordenador = usuario.papel === 'coordenador'
@@ -110,21 +110,25 @@ export default function Nomes({ usuario, marca, nucleos }) {
   return (
     <>
       <div className="titulo-secao">
-        <h1>Nomes (A–Z)</h1>
+        <h1>{tipoFixo === 'campistas' ? 'Campistas' : tipoFixo === 'todos' ? 'Todos' : 'Nomes (A–Z)'}</h1>
         <p className="subtitulo">
-          {coordenador
-            ? `Pré-fichas apenas do seu núcleo${nucleos.length ? ` (${nucleos.map((n) => n.nome).join(', ')})` : ''} e todos os campistas de todos os núcleos (ficha completa), em ordem alfabética. Campistas de outros núcleos abrem em modo consulta.`
-            : 'Pré-fichas e campistas, em ordem alfabética.'}
+          {tipoFixo === 'campistas'
+            ? 'Quem já fez o acampamento, de todos os núcleos (ficha completa), em ordem alfabética.' + (coordenador ? ' Campistas de outros núcleos abrem em modo consulta.' : '')
+            : tipoFixo === 'todos'
+              ? `Campistas e também quem está esperando (pré-fichas), em ordem alfabética.${coordenador ? ` Pré-fichas apenas do seu núcleo${nucleos.length ? ` (${nucleos.map((n) => n.nome).join(', ')})` : ''}; campistas de outros núcleos abrem em modo consulta.` : ''}`
+              : 'Pré-fichas e campistas, em ordem alfabética.'}
         </p>
       </div>
 
-      <nav className="abas" aria-label="Tipo">
-        {abaRotulos.map(([v, r]) => (
-          <button key={v} className={`aba ${tipo === v ? 'ativa' : ''}`} onClick={() => setTipo(v)}>
-            {r} <span className="contador">{total[v]}</span>
-          </button>
-        ))}
-      </nav>
+      {!tipoFixo && (
+        <nav className="abas" aria-label="Tipo">
+          {abaRotulos.map(([v, r]) => (
+            <button key={v} className={`aba ${tipo === v ? 'ativa' : ''}`} onClick={() => setTipo(v)}>
+              {r} <span className="contador">{total[v]}</span>
+            </button>
+          ))}
+        </nav>
+      )}
 
       <div className="filtros">
         <input type="search" placeholder="Buscar por nome, cidade, bairro ou núcleo" value={busca} onChange={(e) => setBusca(e.target.value)} />
