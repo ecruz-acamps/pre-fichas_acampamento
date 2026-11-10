@@ -8,6 +8,7 @@ const chaveArea = (a) => `${a.uf}|${chaveLocal(a.cidade)}|${chaveLocal(a.bairro)
 
 function EditorNucleo({ inicial, localidades, onSalvo, onCancelar }) {
   const [nome, setNome] = useState(inicial?.nome ?? '')
+  const [grupo, setGrupo] = useState(inicial?.entraGrupoId ?? '')
   const [areas, setAreas] = useState(inicial?.areas?.length ? inicial.areas.map((a) => ({ ...a, bairro: a.bairro ?? '' })) : [])
   const [erro, setErro] = useState('')
   const [salvando, setSalvando] = useState(false)
@@ -25,7 +26,7 @@ function EditorNucleo({ inicial, localidades, onSalvo, onCancelar }) {
   async function salvar(e) {
     e.preventDefault()
     setErro(''); setSalvando(true)
-    const corpo = { nome, areas: areas.filter((a) => a.cidade.trim()).map((a) => ({ uf: a.uf, cidade: a.cidade, bairro: a.bairro || null })) }
+    const corpo = { nome, entraGrupoId: grupo.trim(), areas: areas.filter((a) => a.cidade.trim()).map((a) => ({ uf: a.uf, cidade: a.cidade, bairro: a.bairro || null })) }
     try {
       if (inicial?.id) await api.put(`/api/admin/nucleos/${inicial.id}`, corpo)
       else await api.post('/api/admin/nucleos', corpo)
@@ -43,6 +44,12 @@ function EditorNucleo({ inicial, localidades, onSalvo, onCancelar }) {
       <div className="campo">
         <label htmlFor="nucleo-nome">Nome do núcleo</label>
         <input id="nucleo-nome" required maxLength={120} placeholder="Ex.: Núcleo Grande Florianópolis" value={nome} onChange={(e) => setNome(e.target.value)} />
+      </div>
+
+      <div className="campo">
+        <label htmlFor="nucleo-grupo">Grupo do Microsoft Entra (opcional)</label>
+        <input id="nucleo-grupo" maxLength={36} spellCheck="false" placeholder="ID do objeto do grupo, ex.: 00000000-0000-0000-0000-000000000000" value={grupo} onChange={(e) => setGrupo(e.target.value)} />
+        <small className="dica">Com o login Microsoft no modo "grupos" (Configurações), quem estiver neste grupo entra como coordenador deste núcleo, sem precisar de liberação.</small>
       </div>
 
       <h3>Cidades e bairros atendidos</h3>

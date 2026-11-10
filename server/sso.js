@@ -74,5 +74,8 @@ export async function validarIdToken(fetchFn, { tenant, clientId }, token, nonce
   if (!nonce || c.nonce !== nonce) throw new Error('nonce')
   if (typeof c.oid !== 'string' || !GUID.test(c.oid)) throw new Error('sem_oid')
   const email = String(c.email ?? c.preferred_username ?? c.upn ?? '').trim().toLowerCase()
-  return { oid: c.oid.toLowerCase(), email: email.includes('@') && email.length <= 200 ? email : null, nome: String(c.name ?? '').trim().slice(0, 120) }
+  // grupos do Entra (só os GUIDs); se a pessoa está em grupos demais o token não os traz (excedeu) e não dá para decidir o núcleo
+  const grupos = Array.isArray(c.groups) ? [...new Set(c.groups.filter((g) => typeof g === 'string' && GUID.test(g)).map((g) => g.toLowerCase()))] : []
+  const excedeu = c.hasgroups === true || Boolean(c._claim_names?.groups)
+  return { oid: c.oid.toLowerCase(), email: email.includes('@') && email.length <= 200 ? email : null, nome: String(c.name ?? '').trim().slice(0, 120), grupos, excedeu }
 }

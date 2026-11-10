@@ -17,7 +17,9 @@ function validarNucleo(corpo) {
     if (bairro && bairro.length > 100) return { erro: 'Nome de bairro longo demais.' }
     limpas.push({ uf, cidade, bairro })
   }
-  return { nome, areas: limpas }
+  const grupo = typeof corpo?.entraGrupoId === 'string' ? corpo.entraGrupoId.trim().toLowerCase() : ''
+  if (grupo && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(grupo)) return { erro: 'ID do grupo do Entra inválido (formato 00000000-0000-0000-0000-000000000000).' }
+  return { nome, areas: limpas, grupo: grupo || null }
 }
 
 // Entre as grafias digitadas ("FLORIANOPOLIS", "Florianópolis"), escolhe a mais usada,
@@ -34,7 +36,7 @@ export default async function rotasNucleos(app) {
   app.get('/api/admin/nucleos', autenticado(), async (req) => {
     const escopo = await nucleosDoUsuario(pool, req.usuario)
     const { rows } = await pool.query(
-      `select n.id, n.nome,
+      `select n.id, n.nome, n.entra_grupo_id as "entraGrupoId",
          coalesce((select json_agg(json_build_object('uf', a.uf, 'cidade', a.cidade, 'bairro', a.bairro)
                     order by a.uf, a.cidade, a.bairro nulls first) from nucleo_areas a where a.nucleo_id = n.id), '[]') as areas,
          coalesce((select json_agg(json_build_object('id', u.id, 'nome', u.nome) order by u.nome)
@@ -55,11 +57,11 @@ export default async function rotasNucleos(app) {
       const nucleoId = await transacao(pool, async (db) => {
         let nid = id
         if (nid) {
-          const r = await db.query('update nucleos set nome = $1 where id = $2', [v.nome, nid])
+          const r = await db.query('update nucleos set nome = $1, entra_grupo_id = $3 where id = $2', [v.nome, nid, v.grupo])
           if (!r.rowCount) return null
           await db.query('delete from nucleo_areas where nucleo_id = $1', [nid])
         } else {
-          nid = (await db.query('insert into nucleos (nome) values ($1) returning id', [v.nome])).rows[0].id
+          nid = (await db.query('insert into nucleos (nome, entra_grupo_id) values ($1, $2) returning id', [v.nome, v.grupo])).rows[0].id
         }
         for (const a of v.areas) {
           await db.query(
@@ -71,7 +73,7 @@ export default async function rotasNucleos(app) {
       if (!nucleoId) return reply.code(404).send({ mensagem: 'Núcleo não encontrado.' })
       return reply.code(id ? 200 : 201).send({ id: nucleoId })
     } catch (e) {
-      if (e.code === '23505') return reply.code(409).send({ mensagem: 'Já existe um núcleo com este nome.' })
+      if (e.code === '23505') return reply.code(409).send({ mensagem: /entra_grupo/.test(e.constraint ?? '') ? 'Este grupo do Entra já está ligado a outro núcleo.' : 'Já existe um núcleo com este nome.' })
       throw e
     }
   }

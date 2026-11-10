@@ -1,5 +1,13 @@
 # Histórico de versões
 
+## 2.15.0 — coordenadores entram pelo Microsoft com o núcleo definido pelos grupos do Entra
+
+- Novo modo em Configurações → Login com a Microsoft: **"Entrar direto como coordenador, com o núcleo definido pelos grupos do Entra"** (sem liberação manual). Cada núcleo guarda o **ID do grupo do Entra** (Núcleos → editar).
+- Na 1ª entrada, quem está em algum grupo de núcleo vira **coordenador** (nunca administrador) dos núcleos dos seus grupos. Quem não está em nenhum grupo **não entra** e nada é criado.
+- A cada entrada os núcleos acompanham os grupos; quem sai de todos perde os núcleos e as sessões abertas, e não entra mais. Usuários cadastrados à mão (inclusive administradores) **não são alterados** pelos grupos. Cadastros que estavam aguardando liberação são promovidos quando o grupo chega.
+- Pessoas em muitos grupos (o token da Microsoft não traz a lista) são recusadas com aviso. O modo antigo ("aguardar liberação") continua disponível e é o padrão.
+- Migração `019`.
+
 ## 2.14.1 — diagnóstico do login Microsoft
 
 - Quando o login Microsoft é recusado, o log do servidor agora traz o motivo detalhado (o código `AADSTS…` da Microsoft, por exemplo segredo errado ou URI diferente). Isso só vai para o log, nunca para a tela.
