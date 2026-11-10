@@ -441,3 +441,16 @@ Limitação: pessoas que estão em muitos grupos (mais de 200) não recebem a li
 Em **Configurações → Coordenadores de núcleo** o administrador escolhe:
 - **Não** (padrão): cada coordenador vê só as fichas do seu núcleo.
 - **Sim**: o coordenador **consulta** as fichas de todos os núcleos, mas **só altera** as do seu próprio núcleo. As de fora abrem em modo somente leitura (sem botões de ação).
+
+### Ler os grupos do Entra e apagar o grupo junto com o núcleo
+
+Em **Núcleos**:
+- **Ler grupos do Entra:** lê os grupos cujo nome começa com "Pré-fichas". Grupos criados à mão com o nome **"Pré-fichas – NOME DO NÚCLEO"** são ligados sozinhos ao núcleo de mesmo nome; os outros aparecem em "Grupos do Entra sem núcleo", onde você escolhe o núcleo. Núcleos cujo grupo foi apagado no Entra ficam marcados "não existe mais no Entra". A página também permite escolher a **leitura automática** (a cada 1, 3, 7, 15 ou 30 dias).
+- **Excluir um núcleo:** o sistema pergunta se deve apagar **também** o grupo no Entra. Isso só vale para grupos **criados pelo sistema** e cujo nome ainda comece com "Pré-fichas"; grupos que você criou à mão e ligou nunca são apagados pelo sistema (apague-os no Entra). Sem permissão, o núcleo não é excluído e a mensagem diz o que falta.
+
+**Permissões do aplicativo no Entra** (Permissões de API → Microsoft Graph → Permissões de aplicação, com consentimento do administrador):
+- só criar grupos: `Group.Create`;
+- ler os grupos: `Group.Read.All`;
+- apagar grupos (e ler): `Group.ReadWrite.All`.
+
+Atenção: `Group.ReadWrite.All` permite alterar e apagar **qualquer grupo** do diretório. O sistema só apaga os que criou e que começam com "Pré-fichas", mas o segredo do aplicativo (no `.env` do servidor) passa a ter esse poder. Guarde-o bem e troque-o se houver suspeita de vazamento. Se não quiser dar esse poder, mantenha só `Group.Create` e apague os grupos à mão no Entra.

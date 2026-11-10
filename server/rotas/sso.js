@@ -3,7 +3,7 @@ import { transacao } from '../db.js'
 import { gerarHash } from '../senha.js'
 import { COOKIE, criarSessao } from '../sessao.js'
 import { licencaAtivada } from '../licenca.js'
-import { GUID, criarGrupoSeguranca, novoPedido, tokenGraph, trocarCodigo, urlAutorizacao, validarIdToken } from '../sso.js'
+import { GUID, PREFIXO_GRUPO, apagarGrupo, criarGrupoSeguranca, lerGrupo, lerGruposPrefixo, novoPedido, tokenGraph, trocarCodigo, urlAutorizacao, validarIdToken } from '../sso.js'
 
 const COOKIE_PEDIDO = 'prefichas_sso'
 const MAX_PENDENTES = 50
@@ -16,8 +16,8 @@ export default async function rotasSso(app) {
 
   // ativo/IDs/segredo vêm do .env (gravado pelo painel central da VM); aqui no banco só fica a escolha "criar pendentes"
   const ms = config.microsoft
-  const carregar = async () => { const r = (await pool.query('select criar_pendentes, provisionar from sso_config where id')).rows[0]
-    return { ativo: ms.habilitado, tenant_id: ms.tenantId, client_id: ms.clientId, criar_pendentes: r.criar_pendentes, provisionar: r.provisionar } }
+  const carregar = async () => { const r = (await pool.query('select criar_pendentes, provisionar, leitura_dias, ultima_leitura from sso_config where id')).rows[0]
+    return { ativo: ms.habilitado, tenant_id: ms.tenantId, client_id: ms.clientId, criar_pendentes: r.criar_pendentes, provisionar: r.provisionar, leitura_dias: r.leitura_dias, ultima_leitura: r.ultima_leitura } }
   const redirectUri = () => (config.urlPublica ? `${config.urlPublica}/api/auth/microsoft/callback` : null)
   const pronto = (c) => c?.ativo && GUID.test(c.tenant_id ?? '') && GUID.test(c.client_id ?? '') && ms.segredo && redirectUri()
   const voltar = (reply, erro) => reply.redirect(`/admin/${erro ? `?sso_erro=${erro}` : ''}`)
@@ -156,7 +156,7 @@ export default async function rotasSso(app) {
         const id = await criarGrupoSeguranca(fetchFn, token, {
           nome: `Pré-fichas – ${n.nome}`, descricao: `Coordenadores do núcleo ${n.nome} (login do sistema de pré-fichas). Gerenciado pelo Entra: coloque aqui os membros.`,
           apelido: `prefichas-n${n.id}-${randomBytes(3).toString('hex')}` })
-        await pool.query('update nucleos set entra_grupo_id = $1 where id = $2 and entra_grupo_id is null', [id, n.id])
+        await pool.query('update nucleos set entra_grupo_id = $1, entra_grupo_criado = true, entra_grupo_nome = $3, entra_grupo_visto = now(), entra_grupo_sumiu = false where id = $2 and entra_grupo_id is null', [id, n.id, `${PREFIXO_GRUPO} – ${n.nome}`])
         criados.push({ id: n.id, nome: n.nome, grupo: id })
       } catch (e) {
         falhas.push({ id: n.id, nome: n.nome, motivo: e.status === 403 || e.status === 401 ? 'sem permissão (falta Group.Create com consentimento do administrador)' : (e.codigo || 'falhou') })
@@ -167,16 +167,120 @@ export default async function rotasSso(app) {
     return { criados, falhas }
   })
 
+  // ---- Leitura do Entra: encontra os grupos "Pré-fichas…" (inclusive os criados à mão) e liga ao núcleo de mesmo nome ----
+  const norm = (t) => String(t ?? '').normalize('NFD').replace(/\p{M}/gu, '').toLowerCase().replace(/[–—-]/g, '-').replace(/\s+/g, ' ').trim()
+  let lendo = false
+  async function tokenDoGraph() {
+    const c = await carregar()
+    if (!pronto(c)) { const e = new Error('nao_pronto'); e.http = 409; e.mensagem = 'O login Microsoft ainda não está pronto neste acampamento (peça ao administrador da VM para configurar no painel central).'; throw e }
+    try { return await tokenGraph(fetchFn, { tenant: c.tenant_id, clientId: c.client_id, segredo: ms.segredo }) } catch (err) {
+      const e = new Error('token'); e.http = 502; e.mensagem = `A Microsoft recusou o acesso do aplicativo (${err.detalhe ?? 'erro'}). Confira o segredo e as permissões do aplicativo.`; throw e
+    }
+  }
+  const semPermissao = (err) => err.status === 403 || err.status === 401
+  async function lerEntra() {
+    if (lendo) { const e = new Error('ocupado'); e.http = 409; e.mensagem = 'Já há uma leitura em andamento.'; throw e }
+    lendo = true
+    try {
+      const token = await tokenDoGraph()
+      let achados
+      try { achados = await lerGruposPrefixo(fetchFn, token) } catch (err) {
+        const e = new Error('ler'); e.http = semPermissao(err) ? 403 : 502
+        e.mensagem = semPermissao(err) ? 'Sem permissão para ler os grupos: dê ao aplicativo a permissão Group.Read.All (ou Group.ReadWrite.All) com consentimento do administrador.' : `Não consegui ler os grupos (${err.detalhe || err.status || 'erro'}).`
+        throw e
+      }
+      const { rows: nucleos } = await pool.query('select id, nome, entra_grupo_id from nucleos')
+      const porId = new Map(achados.map((g) => [g.id, g]))
+      const ligados = new Set(nucleos.map((n) => n.entra_grupo_id?.toLowerCase()).filter(Boolean))
+      const r = { atualizados: 0, sumiram: 0, vinculados: [], livres: 0 }
+      for (const n of nucleos.filter((x) => x.entra_grupo_id)) {
+        const id = n.entra_grupo_id.toLowerCase()
+        let g = porId.get(id)
+        if (!g) { try { g = await lerGrupo(fetchFn, token, id) } catch { continue } }   // renomeado fora do prefixo: confirma pelo ID
+        if (!g) { await pool.query('update nucleos set entra_grupo_sumiu = true where id = $1', [n.id]); r.sumiram++; continue }
+        await pool.query('update nucleos set entra_grupo_nome = $2, entra_grupo_visto = now(), entra_grupo_sumiu = false where id = $1', [n.id, g.nome]); r.atualizados++
+      }
+      const semGrupo = new Map(nucleos.filter((x) => !x.entra_grupo_id).map((n) => [norm(`${PREFIXO_GRUPO} - ${n.nome}`), n]))
+      const livres = []
+      for (const g of achados) {
+        if (ligados.has(g.id)) continue
+        const n = semGrupo.get(norm(g.nome))
+        if (n) {   // mesmo nome "Pré-fichas – NÚCLEO": liga sozinho (o grupo não foi criado pelo sistema, então o sistema nunca o apaga)
+          await pool.query('update nucleos set entra_grupo_id = $2, entra_grupo_criado = false, entra_grupo_nome = $3, entra_grupo_visto = now(), entra_grupo_sumiu = false where id = $1 and entra_grupo_id is null', [n.id, g.id, g.nome])
+          semGrupo.delete(norm(g.nome)); r.vinculados.push({ nucleo: n.nome, grupo: g.nome })
+        } else livres.push(g)
+      }
+      await transacao(pool, async (db) => {
+        await db.query('delete from entra_grupos_livres')
+        for (const g of livres) await db.query('insert into entra_grupos_livres (grupo_id, nome) values ($1, $2) on conflict do nothing', [g.id, g.nome])
+        await db.query('update sso_config set ultima_leitura = now() where id')
+      })
+      r.livres = livres.length
+      return r
+    } finally { lendo = false }
+  }
+  const responderErro = (reply, e) => (e.http ? reply.code(e.http).send({ mensagem: e.mensagem }) : (() => { throw e })())
+
+  app.post('/api/admin/nucleos/ler-entra', { ...soAdmin, config: { rateLimit: { max: Math.max(10, config.limiteLoginPorMinuto), timeWindow: '1 hour' } } }, async (req, reply) => {
+    try {
+      const r = await lerEntra()
+      req.log.info({ por: req.usuario.email, ...r, vinculados: r.vinculados.length }, 'Leitura dos grupos do Entra')
+      return r
+    } catch (e) { return responderErro(reply, e) }
+  })
+
+  app.get('/api/admin/entra/grupos-livres', soAdmin, async () => (await pool.query('select grupo_id as id, nome, lido_em as "lidoEm" from entra_grupos_livres order by nome')).rows)
+
+  // Liga um grupo encontrado na leitura a um núcleo (só grupos que a leitura trouxe)
+  app.post('/api/admin/nucleos/:id/vincular-grupo', { ...soAdmin, config: { rateLimit: { max: 60, timeWindow: '1 minute' } } }, async (req, reply) => {
+    const id = Number(req.params.id), grupo = String(req.body?.grupo ?? '').toLowerCase()
+    if (!Number.isInteger(id) || !GUID.test(grupo)) return reply.code(400).send({ mensagem: 'Pedido inválido.' })
+    const ok = await transacao(pool, async (db) => {
+      const { rows: [g] } = await db.query('select nome from entra_grupos_livres where grupo_id = $1', [grupo])
+      if (!g) return 'grupo'
+      const r = await db.query('update nucleos set entra_grupo_id = $2, entra_grupo_criado = false, entra_grupo_nome = $3, entra_grupo_visto = now(), entra_grupo_sumiu = false where id = $1 and entra_grupo_id is null', [id, grupo, g.nome])
+      if (!r.rowCount) return 'nucleo'
+      await db.query('delete from entra_grupos_livres where grupo_id = $1', [grupo]); return true
+    }).catch((e) => (e.code === '23505' ? 'duplicado' : Promise.reject(e)))
+    if (ok === true) return { ok: true }
+    return reply.code(ok === 'grupo' ? 404 : 409).send({ mensagem: ok === 'grupo' ? 'Grupo não encontrado na última leitura. Leia o Entra de novo.' : ok === 'duplicado' ? 'Este grupo já está ligado a outro núcleo.' : 'O núcleo não existe ou já tem um grupo ligado.' })
+  })
+
+  // Usado pela exclusão de núcleo: apaga o grupo no Entra, só se o sistema o criou e o nome ainda começa com "Pré-fichas"
+  app.entra.apagarGrupo = async (id) => {
+    {
+      const token = await tokenDoGraph()
+      let g
+      try { g = await lerGrupo(fetchFn, token, id) } catch (err) { const e = new Error('ler'); e.http = semPermissao(err) ? 403 : 502; e.mensagem = semPermissao(err) ? 'Sem permissão para apagar grupos: o aplicativo precisa de Group.ReadWrite.All com consentimento do administrador.' : 'Não consegui consultar o grupo no Entra.'; throw e }
+      if (!g) return false   // já não existe
+      if (!g.nome.startsWith(PREFIXO_GRUPO)) { const e = new Error('nome'); e.http = 409; e.mensagem = `O grupo no Entra se chama "${g.nome}" (não começa com "${PREFIXO_GRUPO}"): por segurança o sistema não o apaga.`; throw e }
+      try { return await apagarGrupo(fetchFn, token, id) } catch (err) { const e = new Error('apagar'); e.http = semPermissao(err) ? 403 : 502; e.mensagem = semPermissao(err) ? 'Sem permissão para apagar grupos: o aplicativo precisa de Group.ReadWrite.All com consentimento do administrador.' : 'Não consegui apagar o grupo no Entra.'; throw e }
+    }
+  }
+
+  // Leitura automática a cada N dias (0 = desligada): confere uma vez por hora se já passou o prazo
+  const relogio = setInterval(async () => {
+    try {
+      const c = await carregar()
+      if (!c.leitura_dias || !pronto(c)) return
+      if (c.ultima_leitura && Date.now() - new Date(c.ultima_leitura).getTime() < c.leitura_dias * 86400e3) return
+      const r = await lerEntra(); app.log.info({ ...r, vinculados: r.vinculados.length }, 'Leitura automática dos grupos do Entra')
+    } catch (e) { app.log.warn({ motivo: e.mensagem ?? e.message }, 'Leitura automática dos grupos do Entra falhou') }
+  }, 3600e3)
+  relogio.unref()
+  app.addHook('onClose', async () => clearInterval(relogio))
+
   // ---- Situação e a única escolha local (o resto é do painel central da VM) ----
   app.get('/api/admin/sso', soAdmin, async () => {
     const c = await carregar()
-    return { habilitado: ms.habilitado, tenantId: ms.tenantId ?? '', clientId: ms.clientId ?? '', criarPendentes: c.criar_pendentes, provisionar: c.provisionar,
+    return { habilitado: ms.habilitado, tenantId: ms.tenantId ?? '', clientId: ms.clientId ?? '', criarPendentes: c.criar_pendentes, provisionar: c.provisionar, leituraDias: c.leitura_dias, ultimaLeitura: c.ultima_leitura,
       segredoConfigurado: Boolean(ms.segredo), redirectUri: redirectUri(), pronto: Boolean(pronto(c)) }
   })
 
   app.put('/api/admin/sso', { ...soAdmin, config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (req) => {
     const modo = req.body?.provisionar === 'grupos' ? 'grupos' : 'liberacao'
-    await pool.query('update sso_config set criar_pendentes = $1, provisionar = $2, atualizado_em = now() where id', [req.body?.criarPendentes !== false, modo])
+    const dias = Number.isInteger(req.body?.leituraDias) ? Math.min(90, Math.max(0, req.body.leituraDias)) : null
+    await pool.query('update sso_config set criar_pendentes = $1, provisionar = $2, leitura_dias = coalesce($3, leitura_dias), atualizado_em = now() where id', [req.body?.criarPendentes !== false, modo, dias])
     req.log.info({ por: req.usuario.email }, 'Opção "criar cadastro pendente" do login Microsoft alterada')
     return { ok: true }
   })

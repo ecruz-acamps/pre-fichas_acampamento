@@ -1,5 +1,14 @@
 # Histórico de versões
 
+## 2.19.0 — ler os grupos do Entra e apagar o grupo junto com o núcleo
+
+- **Ler grupos do Entra** (Núcleos): encontra os grupos cujo nome começa com "Pré-fichas" (inclusive os criados à mão). O grupo com o mesmo nome do núcleo ("Pré-fichas – NÚCLEO", sem diferenciar maiúsculas/acentos) é **ligado sozinho**; os demais aparecem em **"Grupos do Entra sem núcleo"** para você escolher o núcleo. Também acusa quando um grupo **não existe mais** no Entra.
+- **Leitura automática** a cada 1, 3, 7, 15 ou 30 dias (ou só pelo botão), escolhida na própria página de Núcleos.
+- **Excluir núcleo pode apagar também o grupo no Entra** (pergunta na hora). Travas: só apaga grupo **criado pelo sistema**, cujo nome ainda **comece com "Pré-fichas"**; se não houver permissão ou o nome mudou, o núcleo **não é excluído** e o motivo é mostrado. Grupo ligado à mão nunca é apagado por aqui.
+- Cada núcleo mostra o grupo ligado (nome, "criado pelo sistema"/"ligado" ou "não existe mais no Entra").
+- **Permissões do aplicativo:** ler exige `Group.Read.All`; apagar exige `Group.ReadWrite.All` (maior poder que o `Group.Create` das versões anteriores; veja o manual). Sem elas, cada ação avisa o que falta e o resto continua funcionando.
+- Migração `020`.
+
 ## 2.18.0 — menus renomeados
 
 - **Fila** passa a se chamar **Pré Ficha - Espera**.
