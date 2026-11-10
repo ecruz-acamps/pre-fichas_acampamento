@@ -7,6 +7,8 @@ const MENSAGENS_SSO = {
   expirado: 'A tentativa de entrada expirou. Tente novamente.',
   recusado: 'A Microsoft não confirmou o seu acesso. Tente novamente.',
   sem_email: 'A sua conta Microsoft não informou um e-mail. Fale com um administrador.',
+  sem_grupo: 'A sua conta Microsoft não está em nenhum grupo de núcleo deste acampamento. Fale com o administrador.',
+  grupos: 'A sua conta está em grupos demais para a Microsoft informar. Fale com o administrador.',
   indisponivel: 'O login com a Microsoft não está disponível.',
 }
 

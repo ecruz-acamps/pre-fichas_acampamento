@@ -414,3 +414,14 @@ Passo a passo, no portal do Microsoft Entra (portal.azure.com → Microsoft Entr
 Como funciona: a pessoa clica em "Entrar com a Microsoft", faz o login (e o MFA) na Microsoft e volta ao painel. Se já tem acesso, entra; se não, aparece em **Usuários → Cadastros aguardando liberação** (a opção "criar cadastro pendente" fica em Configurações do acampamento). Depois da primeira entrada, a conta fica ligada à pessoa na Microsoft: outra conta Microsoft com o mesmo e-mail não entra. A senha local continua valendo.
 
 SAML: este sistema usa OpenID Connect (o padrão atual da Microsoft), que dispensa certificados XML e é mais simples de manter. O resultado para o usuário é o mesmo.
+
+### Coordenadores entrando direto, com o núcleo definido pelo Entra
+
+Para que os coordenadores entrem pela Microsoft **sem esperar liberação**, com o núcleo definido pelo grupo do Entra:
+1. **Um grupo por núcleo** no Entra (Grupos → Novo grupo, tipo Segurança), com os coordenadores daquele núcleo como membros. Copie o **ID do objeto** de cada grupo.
+2. Em **Aplicações empresariais →** sua aplicação **→ Utilizadores e grupos**, atribua **cada grupo de núcleo** à aplicação. (Ative também "Atribuição necessária" em Propriedades, para só esses grupos entrarem.)
+3. Em **Registos de aplicações →** sua aplicação **→ Configuração do token → Adicionar afirmação de grupos**, marque **"Grupos atribuídos à aplicação"** e salve. Assim o token só traz os grupos da aplicação, sem exceder o limite.
+4. No painel do acampamento, em **Núcleos → editar**, cole o ID do grupo no campo **"Grupo do Microsoft Entra"** de cada núcleo.
+5. Em **Configurações → Login com a Microsoft**, escolha **"Entrar direto como coordenador, com o núcleo definido pelos grupos do Entra"**.
+
+Quem está em um grupo de núcleo entra como **coordenador daquele núcleo** (e de todos os núcleos dos seus grupos). Quem não está em nenhum, não entra. Para tirar o acesso, basta remover a pessoa do grupo: na próxima entrada ela perde os núcleos (as sessões abertas dela são derrubadas); para valer na hora, desative o usuário em **Usuários**. Administradores continuam sendo definidos no painel e entram com senha e autenticador; os grupos nunca criam nem alteram administradores.

@@ -1873,6 +1873,54 @@ describe('API', { skip: pular }, () => {
       await req('admin', 'PUT', '/api/admin/sso', { criarPendentes: true })
     })
 
+    test('modo "grupos": o núcleo vem do grupo do Entra, sem liberação; sincroniza a cada entrada; sem grupo não entra', async () => {
+      const g1 = randomUUID(), g2 = randomUUID(), gOutro = randomUUID()
+      const nuc = async (nome, entraGrupoId) => (await req('admin', 'POST', '/api/admin/nucleos', { nome, entraGrupoId, areas: [{ uf: 'RS', cidade: 'Pelotas', bairro: null }] }))
+      // cadastro do núcleo: só administrador, GUID válido, grupo único
+      assert.equal((await req('coord', 'POST', '/api/admin/nucleos', { nome: 'X', entraGrupoId: g1 })).statusCode, 403)
+      assert.equal((await nuc('Núcleo Grupo Inválido', 'nao-e-guid')).statusCode, 400)
+      const n1 = (await nuc('Núcleo Grupo Um', g1.toUpperCase())).json().id, n2 = (await nuc('Núcleo Grupo Dois', g2)).json().id
+      assert.ok(n1 && n2)
+      assert.equal((await nuc('Núcleo Grupo Repetido', g1)).statusCode, 409, 'o mesmo grupo não liga a dois núcleos')
+      assert.equal((await req('admin', 'GET', '/api/admin/nucleos')).json().find((n) => n.id === n1).entraGrupoId, g1, 'guardado em minúsculas')
+      assert.equal((await req('admin', 'PUT', '/api/admin/sso', { provisionar: 'grupos' })).statusCode, 200)
+      const nucleosDe = async (email) => (await pool.query(`select array_agg(un.nucleo_id order by un.nucleo_id) n from usuarios u join usuario_nucleos un on un.usuario_id = u.id where u.email = $1`, [email])).rows[0].n
+
+      // 1ª entrada: cria o coordenador já ativo, com o núcleo do grupo (e nunca administrador)
+      const oid = randomUUID(), email = 'coordenador.grupo@empresa.teste'
+      const r = await entrarMs({ oid, preferred_username: email, name: 'Coord Grupo', groups: [g1.toUpperCase()] })
+      assert.equal(r.destino, '/admin/'); const eu = await sessaoValida(r.sessao)
+      assert.deepEqual([eu.papel, eu.email], ['coordenador', email])
+      assert.deepEqual(await nucleosDe(email), [n1])
+      assert.equal((await pool.query('select ativo, pendente, sso_gerenciado from usuarios where email = $1', [email])).rows[0].sso_gerenciado, true)
+      // 2ª entrada com outro grupo: os núcleos acompanham o Entra
+      assert.equal((await entrarMs({ oid, preferred_username: email, groups: [g2, gOutro] })).destino, '/admin/')
+      assert.deepEqual(await nucleosDe(email), [n2])
+      // saiu de todos os grupos de núcleo: sem acesso, núcleos removidos, sessão derrubada
+      const viva = (await entrarMs({ oid, preferred_username: email, groups: [g1] })).sessao
+      const sem = await entrarMs({ oid, preferred_username: email, groups: [gOutro] })
+      assert.equal(sem.destino, '/admin/?sso_erro=sem_grupo'); assert.equal(sem.sessao, undefined)
+      assert.equal(await nucleosDe(email), null); assert.equal(await sessaoValida(viva), null)
+      // volta ao grupo: volta o acesso
+      assert.equal((await entrarMs({ oid, preferred_username: email, groups: [g1] })).destino, '/admin/')
+      // quem nunca entrou e não está em grupo de núcleo: negado, nada é criado
+      const estranho = await entrarMs({ oid: randomUUID(), preferred_username: 'estranho@empresa.teste', groups: [gOutro] })
+      assert.equal(estranho.destino, '/admin/?sso_erro=sem_grupo'); assert.equal((await pool.query(`select count(*)::int n from usuarios where email = 'estranho@empresa.teste'`)).rows[0].n, 0)
+      assert.equal((await entrarMs({ oid: randomUUID(), preferred_username: 'excedeu@empresa.teste', _claim_names: { groups: 'src1' } })).destino, '/admin/?sso_erro=grupos', 'grupos demais: o token não traz a lista')
+      // usuário cadastrado à mão (não gerenciado) não é mexido pelos grupos
+      await pool.query(`update usuarios set ativo = true where email = 'equipe@x.com'`)
+      assert.equal((await entrarMs({ groups: [g1, g2] })).destino, '/admin/')
+      assert.deepEqual([(await pool.query(`select papel from usuarios where email = 'equipe@x.com'`)).rows[0].papel, await nucleosDe('equipe@x.com')], ['equipe', null])
+      // cadastro que estava aguardando liberação é promovido quando o grupo chega
+      const oidP = randomUUID()
+      await req('admin', 'PUT', '/api/admin/sso', { provisionar: 'liberacao', criarPendentes: true })
+      assert.equal((await entrarMs({ oid: oidP, preferred_username: 'pendente.antigo@empresa.teste', groups: [g2] })).destino, '/admin/?sso_erro=pendente')
+      await req('admin', 'PUT', '/api/admin/sso', { provisionar: 'grupos' })
+      assert.equal((await entrarMs({ oid: oidP, preferred_username: 'pendente.antigo@empresa.teste', groups: [g2] })).destino, '/admin/')
+      assert.deepEqual(await nucleosDe('pendente.antigo@empresa.teste'), [n2])
+      await req('admin', 'PUT', '/api/admin/sso', { provisionar: 'liberacao', criarPendentes: true })
+    })
+
     test('se o painel central desligar, o botão some e a entrada é recusada', async () => {
       habilitar(false)
       assert.equal((await app.inject({ method: 'GET', url: '/api/auth/microsoft/status' })).json().ativo, false)

@@ -8,9 +8,10 @@ export default function SsoMicrosoft() {
   useEffect(() => { api.get('/api/admin/sso').then(setC).catch(() => setAviso('Não foi possível carregar.')) }, [])
   if (!c) return <section><h2>Login com a Microsoft</h2><p className="dica">{aviso || 'Carregando…'}</p></section>
 
-  async function alterar(criarPendentes) {
+  async function alterar(mudanca) {
     setAviso('')
-    try { await api.put('/api/admin/sso', { criarPendentes }); setC({ ...c, criarPendentes }); setAviso('Salvo.') } catch { setAviso('Não foi possível salvar.') }
+    const novo = { ...c, ...mudanca }
+    try { await api.put('/api/admin/sso', { criarPendentes: novo.criarPendentes, provisionar: novo.provisionar }); setC(novo); setAviso('Salvo.') } catch { setAviso('Não foi possível salvar.') }
   }
   return (
     <section>
@@ -23,10 +24,20 @@ export default function SsoMicrosoft() {
       {c.habilitado && (
         <>
           <p className="dica">Diretório: <code>{c.tenantId || '—'}</code> · Aplicativo: <code>{c.clientId || '—'}</code> · URI de redirecionamento: <code>{c.redirectUri || '—'}</code></p>
-          <label className="check">
-            <input type="checkbox" checked={c.criarPendentes} onChange={(e) => alterar(e.target.checked)} />
-            <span>Quem entrar pela Microsoft pela primeira vez e ainda não tiver acesso vira um <strong>cadastro aguardando liberação</strong> (em Usuários). Desmarcado = só entra quem já foi cadastrado.</span>
-          </label>
+          <div className="campo">
+            <label htmlFor="sso-modo">Primeiro acesso de quem entra pela Microsoft</label>
+            <select id="sso-modo" value={c.provisionar} onChange={(e) => alterar({ provisionar: e.target.value })}>
+              <option value="liberacao">Aguardar a liberação de um administrador (em Usuários)</option>
+              <option value="grupos">Entrar direto como coordenador, com o núcleo definido pelos grupos do Entra</option>
+            </select>
+            {c.provisionar === 'grupos' && <small className="dica">Cada núcleo guarda o ID do seu grupo do Entra (em Núcleos → editar). Quem não estiver em nenhum grupo de núcleo não entra. Quem sair de todos os grupos perde os núcleos na próxima entrada. O token precisa trazer os grupos: veja o manual.</small>}
+          </div>
+          {c.provisionar === 'liberacao' && (
+            <label className="check">
+              <input type="checkbox" checked={c.criarPendentes} onChange={(e) => alterar({ criarPendentes: e.target.checked })} />
+              <span>Quem entrar pela primeira vez e ainda não tiver acesso vira um <strong>cadastro aguardando liberação</strong>. Desmarcado = só entra quem já foi cadastrado.</span>
+            </label>
+          )}
           {aviso && <span className="dica" role="status">{aviso}</span>}
         </>
       )}
