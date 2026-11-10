@@ -4,6 +4,7 @@ const app = document.getElementById('app')
 let tela = 'instancias'
 let usuario = null
 let tarefaAberta = null
+let instanciaMs = null   // instância aberta na tela "Login Microsoft"
 let atualizador = null
 
 function h(tag, attrs = {}, ...filhos) {
@@ -129,6 +130,8 @@ async function telaInstancias(area) {
     h('td', {}, i.url ? h('a', { href: i.url, target: '_blank', rel: 'noreferrer' }, i.url) : '—', h('div', { class: 'dica' }, PUB[i.publicacao] ?? i.publicacao ?? '—')),
     h('td', {}, h('span', { class: `selo ${i.saude === 'ok' ? 'ok' : i.saude === 'fora' ? 'erro' : 'neutro'}` }, i.saude === 'ok' ? 'no ar' : i.saude === 'fora' ? 'fora do ar' : '—')),
     h('td', {}, i.versao || '—'), h('td', {}, i.memoria || '—'), h('td', {}, String(i.porta ?? '—')),
+    h('td', {}, h('span', { class: `selo ${i.microsoft?.habilitado ? 'ok' : 'neutro'}` }, i.microsoft?.habilitado ? 'ligado' : 'desligado'), ' ',
+      h('button', { class: 'link', onclick: () => { instanciaMs = i; tela = 'microsoft'; desenhar() } }, 'configurar')),
     h('td', {}, h('button', { class: 'secundario', onclick: () => pedir({ acao: 'atualizar', instancia: i.pasta }, `Atualizar ${i.nome || i.pasta}? Faz backup antes.`) }, 'Atualizar'), ' ',
       h('button', { class: 'secundario', onclick: () => pedir({ acao: 'backup', instancia: i.pasta }, `Fazer backup de ${i.nome || i.pasta} agora?`) }, 'Backup'))))
   area.append(h('section', { class: 'cartao' },
@@ -136,12 +139,47 @@ async function telaInstancias(area) {
       h('div', {}, h('button', { class: 'secundario', onclick: () => pedir({ acao: 'atualizar-todas' }, 'Atualizar TODAS as instâncias, uma de cada vez (com backup)?') }, 'Atualizar todas'), ' ',
         h('button', { class: 'principal', onclick: () => { tela = 'nova'; desenhar() } }, '+ Nova instância'))),
     (d.instancias ?? []).length ? h('div', { class: 'tabela-wrap' }, h('table', {},
-      h('thead', {}, h('tr', {}, ...['Acampamento', 'Endereço', 'Situação', 'Versão', 'Memória', 'Porta', 'Ações'].map((t) => h('th', {}, t)))),
+      h('thead', {}, h('tr', {}, ...['Acampamento', 'Endereço', 'Situação', 'Versão', 'Memória', 'Porta', 'Login Microsoft', 'Ações'].map((t) => h('th', {}, t)))),
       h('tbody', {}, linhas))) : h('p', { class: 'dica' }, 'Nenhuma instância ainda (ou o servidor ainda não publicou a lista — aguarde 1 minuto).')))
 }
 async function pedir(pedido, confirmacao) {
   if (confirmacao && !confirm(confirmacao)) return
   try { const r = await api('POST', '/api/tarefas', pedido); tarefaAberta = r.id; tela = 'tarefas'; desenhar() } catch (e) { alert(e.message) }
+}
+
+
+// ------------------------------------------------------------------ login Microsoft de uma instância
+function telaMicrosoft(area) {
+  const i = instanciaMs, m = i.microsoft ?? {}
+  const erros = {}
+  const campo = (nome, rotulo, input, dica) => h('div', { class: 'campo' }, h('label', { for: nome }, rotulo), input, dica && h('span', { class: 'dica' }, dica), erros[nome] = h('span', { class: 'erro-campo' }))
+  const aviso = h('div')
+  const caminho = '/api/auth/microsoft/callback'
+  const form = h('form', { class: 'cartao', onsubmit: async (e) => {
+    e.preventDefault(); aviso.replaceChildren(); Object.values(erros).forEach((el) => el.replaceChildren())
+    const d = Object.fromEntries(new FormData(form))
+    const habilitar = d.habilitar === 'on'
+    if (!confirm(habilitar ? `Ligar o login Microsoft em ${i.nome || i.pasta}? O sistema dele reinicia por alguns segundos.` : `Desligar o login Microsoft em ${i.nome || i.pasta}? O sistema dele reinicia por alguns segundos.`)) return
+    try { const r = await api('POST', '/api/tarefas', { acao: 'microsoft', instancia: i.pasta, habilitar, tenant_id: d.tenant_id, client_id: d.client_id, segredo: d.segredo }); tarefaAberta = r.id; tela = 'tarefas'; desenhar() } catch (err) {
+      aviso.append(h('div', { class: 'alerta erro' }, err.message))
+      for (const [k, v] of Object.entries(err.dados?.erros ?? {})) erros[k]?.append(v)
+    }
+  } },
+  h('h2', {}, `Login com a Microsoft · ${i.nome || i.pasta}`),
+  h('p', { class: 'dica' }, 'Cada acampamento é um tenant próprio: só os que você ligar aqui mostram o botão "Entrar com a Microsoft" no painel. Os demais continuam só com senha.'),
+  h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'habilitar', ...(m.habilitado ? { checked: true } : {}) }), ' Usar login Microsoft neste acampamento'),
+  h('ol', { class: 'dica' },
+    h('li', {}, 'No Microsoft Entra: Registros de aplicativo → Novo registro ("Contas somente neste diretório organizacional").'),
+    h('li', {}, 'URI de redirecionamento (Web): ', h('code', {}, i.url ? `${i.url.replace(/\/+$/, '')}${caminho}` : `https://ENDERECO-DO-ACAMPAMENTO${caminho}`)),
+    h('li', {}, 'Certificados e segredos → Novo segredo de cliente: copie o VALOR (aparece uma vez).')),
+  campo('tenant_id', 'ID do diretório (locatário)', h('input', { id: 'tenant_id', name: 'tenant_id', value: m.tenant_id ?? '', spellcheck: 'false', autocomplete: 'off' })),
+  campo('client_id', 'ID do aplicativo (cliente)', h('input', { id: 'client_id', name: 'client_id', value: m.client_id ?? '', spellcheck: 'false', autocomplete: 'off' })),
+  campo('segredo', 'Valor do segredo do aplicativo', h('input', { id: 'segredo', name: 'segredo', type: 'password', autocomplete: 'new-password', placeholder: m.segredo ? '(guardado — deixe em branco para manter)' : '' }),
+    'O segredo fica só no servidor e nunca é mostrado de novo.'),
+  aviso,
+  h('button', { class: 'principal', type: 'submit' }, 'Salvar e reiniciar o acampamento'), ' ',
+  h('button', { class: 'link', type: 'button', onclick: () => { tela = 'instancias'; desenhar() } }, 'cancelar'))
+  area.append(form)
 }
 
 // ------------------------------------------------------------------ nova instância
@@ -196,7 +234,7 @@ function telaNova(area) {
 // ------------------------------------------------------------------ tarefas
 async function telaTarefas(area) {
   const d = await api('GET', '/api/tarefas')
-  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas', 'atualizar-painel': 'Atualizar o painel', cloudflare: 'Token da Cloudflare', 'cloudflare-remover': 'Remover token da Cloudflare', 'tunel-unificar': 'Unificar túneis da Cloudflare', 'email': 'Servidor de e-mail', 'email-teste': 'E-mail de teste', 'email-remover': 'Remover servidor de e-mail', 'email-aplicar': 'Aplicar e-mail aos acampamentos', 'vpn-reconectar': 'Reconectar a VPN', 'vpn-credenciais': 'Trocar credenciais da VPN' }
+  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas', 'atualizar-painel': 'Atualizar o painel', cloudflare: 'Token da Cloudflare', 'cloudflare-remover': 'Remover token da Cloudflare', 'tunel-unificar': 'Unificar túneis da Cloudflare', 'email': 'Servidor de e-mail', 'email-teste': 'E-mail de teste', 'email-remover': 'Remover servidor de e-mail', 'email-aplicar': 'Aplicar e-mail aos acampamentos', 'microsoft': 'Login Microsoft', 'vpn-reconectar': 'Reconectar a VPN', 'vpn-credenciais': 'Trocar credenciais da VPN' }
   const linha = (t) => h('tr', { style: 'cursor:pointer', onclick: () => { tarefaAberta = t.id; desenhar() } },
     h('td', {}, dataHora(t.inicio || t.pedido_em)), h('td', {}, nomeAcao[t.acao] ?? t.acao), h('td', {}, t.alvo || t.nome || t.instancia || '—'),
     h('td', {}, h('span', { class: `selo ${t.situacao === 'concluida' ? 'ok' : t.situacao === 'erro' ? 'erro' : 'neutro'}` }, t.situacao)), h('td', {}, t.por || '—'))
@@ -394,6 +432,7 @@ async function desenhar() {
     area)
   try {
     if (tela === 'nova') telaNova(area)
+    else if (tela === 'microsoft' && instanciaMs) telaMicrosoft(area)
     else if (tela === 'tarefas') await telaTarefas(area)
     else if (tela === 'auditoria') await telaAuditoria(area)
     else if (tela === 'configuracoes') await telaConfiguracoes(area)

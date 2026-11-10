@@ -151,6 +151,8 @@ const RE = {
   senhaVpn: /^[^\x00-\x1f\x7f]{1,128}$/u,
   hostSmtp: /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/,
   usuarioSmtp: /^[A-Za-z0-9._%+@-]{3,120}$/,
+  guid: /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/,
+  segredoMs: /^[A-Za-z0-9._~-]{20,128}$/,   // valor do segredo do aplicativo no Microsoft Entra
   senhaSmtp: /^[A-Za-z0-9._~+=:@%!*,;?/-]{4,128}$/,   // sem aspas, espaços, $, # nem \ (a senha vai para arquivos .env)
 }
 function validarPedido(c) {
@@ -173,6 +175,18 @@ function validarPedido(c) {
     const existe = (lerJson(join(ESTADO, 'instancias.json'), { instancias: [] }).instancias ?? []).some((i) => i.pasta === c.instancia)
     if (!existe) return { erros: { instancia: 'Instância não encontrada.' } }
     return { pedido: { acao, instancia: c.instancia } }
+  }
+  if (acao === 'microsoft') {
+    const e = {}
+    if (!RE.instancia.test(c.instancia ?? '')) return { erros: { instancia: 'Instância inválida.' } }
+    const existe = (lerJson(join(ESTADO, 'instancias.json'), { instancias: [] }).instancias ?? []).some((i) => i.pasta === c.instancia)
+    if (!existe) return { erros: { instancia: 'Instância não encontrada.' } }
+    const habilitar = c.habilitar === true, tenant = String(c.tenant_id ?? '').trim(), cliente = String(c.client_id ?? '').trim(), segredo = String(c.segredo ?? '').trim()
+    if (habilitar && !RE.guid.test(tenant)) e.tenant_id = 'ID do diretório (locatário) inválido: formato 00000000-0000-0000-0000-000000000000.'
+    if (habilitar && !RE.guid.test(cliente)) e.client_id = 'ID do aplicativo (cliente) inválido: formato 00000000-0000-0000-0000-000000000000.'
+    if (segredo && !RE.segredoMs.test(segredo)) e.segredo = 'Segredo inválido: copie o VALOR do segredo (não o ID), sem espaços.'
+    if (Object.keys(e).length) return { erros: e }
+    return { pedido: { acao, instancia: c.instancia, habilitar, ...(habilitar ? { tenant_id: tenant, client_id: cliente } : {}), ...(segredo ? { segredo } : {}) } }
   }
   if (acao === 'atualizar-todas' || acao === 'atualizar-painel') return { pedido: { acao } }
   if (acao === 'cloudflare') {
@@ -408,7 +422,7 @@ const servidor = createServer(async (req, res) => {
       const lista = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.json'))
         .map((f) => lerJson(join(dir, f))).filter(Boolean).sort((a, b) => String(b.inicio).localeCompare(String(a.inicio))).slice(0, 30) : []
       const pendentes = readdirSync(PEDIDOS).filter((f) => f.endsWith('.json')).map((f) => ({ id: f.slice(0, -5), situacao: 'na fila', ...lerJson(join(PEDIDOS, f), {}) }))
-      for (const p of pendentes) { delete p.chave; delete p.token; delete p.psk; delete p.senha; delete p.link }
+      for (const p of pendentes) { delete p.chave; delete p.token; delete p.psk; delete p.senha; delete p.segredo; delete p.link }
       return responder(res, 200, { pendentes, tarefas: lista })
     }
     const mt = /^\/api\/tarefas\/([a-z0-9-]{8,40})$/.exec(url.pathname)
@@ -423,9 +437,9 @@ const servidor = createServer(async (req, res) => {
       const id = randomUUID()
       const dados = { ...pedido, por: s.email, pedido_em: new Date().toISOString() }
       gravarJson(join(PEDIDOS, `${id}.json`), dados)
-      const { chave, token, psk, senha, ...semChave } = dados // eslint-disable-line no-unused-vars
+      const { chave, token, psk, senha, segredo, ...semChave } = dados // eslint-disable-line no-unused-vars
       if (token) semChave.token = '(informado, não registrado)'
-      if (psk || senha) semChave.credenciais = '(informadas, não registradas)'
+      if (psk || senha || segredo) semChave.credenciais = '(informadas, não registradas)'
       auditar(s.email, `pedido-${pedido.acao}`, { id, ...semChave })
       return responder(res, 201, { id })
     }

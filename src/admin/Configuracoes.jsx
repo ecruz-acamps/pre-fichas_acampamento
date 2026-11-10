@@ -1,3 +1,4 @@
+import SsoMicrosoft from './SsoMicrosoft.jsx'
 import ImportarFichas from './ImportarFichas.jsx'
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../lib/api.js'
@@ -461,6 +462,8 @@ export default function Configuracoes({ marca, onSalvar }) {
             </label>
             <ContasAntigas />
           </section>
+
+          <SsoMicrosoft />
 
           <section>
             <h2>Tribos</h2>

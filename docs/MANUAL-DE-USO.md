@@ -400,3 +400,17 @@ Cada pessoa importada que tem CPF ganha uma conta: **usuário = CPF e senha = CP
 - **Detalhe da ficha → Modalidade:** administradores e coordenadores de núcleo podem trocar a modalidade (só as que cabem pela idade e estado civil). A data de inscrição e a posição na fila não mudam; a troca fica no histórico.
 - **Menu "Revisar modalidade":** mostra as fichas com "revisar" nas observações internas. Escolha "Alterar" ou "Manter"; a marca "revisar" é retirada e o registro da revisão fica na observação.
 - **Filtro por sexo:** a Fila tem a coluna "Sexo" com filtro (Masculino/Feminino).
+
+## Login com a Microsoft (conta corporativa)
+
+Cada acampamento é um "tenant": o login Microsoft é ligado **por acampamento**, pelo administrador da VM, no **painel central** (Instâncias → coluna "Login Microsoft" → configurar). Os acampamentos não ligados continuam só com senha.
+
+Passo a passo, no portal do Microsoft Entra (portal.azure.com → Microsoft Entra ID), para o acampamento:
+1. **Registros de aplicativo → Novo registro**, tipo "Contas somente neste diretório organizacional".
+2. **URI de redirecionamento** (plataforma Web): `https://ENDERECO-DO-ACAMPAMENTO/api/auth/microsoft/callback` (o painel central mostra o endereço certo).
+3. **Certificados e segredos → Novo segredo de cliente**: copie o **Valor** (aparece uma vez).
+4. No painel central, abra o acampamento em "configurar", marque **Usar login Microsoft**, cole o **ID do diretório (locatário)**, o **ID do aplicativo (cliente)** e o **valor do segredo**, e salve. O sistema do acampamento reinicia por alguns segundos. Em branco, o segredo guardado é mantido.
+
+Como funciona: a pessoa clica em "Entrar com a Microsoft", faz o login (e o MFA) na Microsoft e volta ao painel. Se já tem acesso, entra; se não, aparece em **Usuários → Cadastros aguardando liberação** (a opção "criar cadastro pendente" fica em Configurações do acampamento). Depois da primeira entrada, a conta fica ligada à pessoa na Microsoft: outra conta Microsoft com o mesmo e-mail não entra. A senha local continua valendo.
+
+SAML: este sistema usa OpenID Connect (o padrão atual da Microsoft), que dispensa certificados XML e é mais simples de manter. O resultado para o usuário é o mesmo.

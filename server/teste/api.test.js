@@ -18,6 +18,7 @@ import { modalidadesCompativeis } from '../../shared/util.js'
 import { limparJpeg } from '../foto.js'
 import { aplicar, casarTribo, decodificar, desfazer, lerCsv, lerEdicao, lerPlanilha, mapearLinha, planejar, relatorios } from '../importacao.js'
 import { crc32, deflateRawSync } from 'node:zlib'
+import { generateKeyPairSync, createSign, randomUUID } from 'node:crypto'
 
 const URL_TESTE = process.env.DATABASE_URL_TESTE
 const pular = !URL_TESTE && 'defina DATABASE_URL_TESTE para rodar os testes de integração'
@@ -31,6 +32,24 @@ const FICHA = {
   bairro: 'Centro', cidade: 'Florianópolis', uf: 'SC', como_conheceu: 'Instagram',
   motivo: 'Quero viver Deus', modalidade: 'juvenil', possui_vicio: false,
   aceites: [true, true, true],
+}
+
+// ---- Microsoft falsa (JWKS + troca do código) para o teste do login corporativo ----
+const MS = generateKeyPairSync('rsa', { modulusLength: 2048 })
+const MS_OUTRA = generateKeyPairSync('rsa', { modulusLength: 2048 })
+const TENANT = randomUUID(), CLIENTE = randomUUID()
+let msTokenAtual = null, msTroca = null
+const MS_CFG = { habilitado: false, tenantId: TENANT, clientId: CLIENTE, segredo: 'segredo-do-teste' }   // no sistema real vem do .env, gravado pelo painel central
+const msFetch = async (url, opcoes = {}) => {
+  const r = (corpo, ok = true) => ({ ok, json: async () => corpo })
+  if (String(url).endsWith('/discovery/v2.0/keys')) return r({ keys: [{ ...MS.publicKey.export({ format: 'jwk' }), kid: 'k1', use: 'sig' }] })
+  if (String(url).endsWith('/oauth2/v2.0/token')) { msTroca = Object.fromEntries(opcoes.body); return msTokenAtual ? r({ id_token: msTokenAtual }) : r({ error: 'invalid_grant' }, false) }
+  throw new Error(`url inesperada ${url}`)
+}
+const jwtMs = (claims, chave = MS.privateKey) => {
+  const b = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
+  const dados = `${b({ alg: 'RS256', kid: 'k1', typ: 'JWT' })}.${b(claims)}`
+  return `${dados}.${createSign('RSA-SHA256').update(dados).sign(chave).toString('base64url')}`
 }
 
 describe('API', { skip: pular }, () => {
@@ -61,9 +80,9 @@ describe('API', { skip: pular }, () => {
     const config = {
       ...lerConfig({ DATABASE_URL: URL_TESTE }), cookieSeguro: false, limiteEnviosPorHora: 1000, limiteLoginPorMinuto: 1000,
       limiteEnviosPorContatoDia: 100000, limiteEnviosGlobalHora: 100000,
-      contaObrigatoria: false, urlPublica: 'https://prefichas.teste',
+      contaObrigatoria: false, urlPublica: 'https://prefichas.teste', microsoft: MS_CFG,
     }
-    app = await construirApp({ pool, config, logger: false, chavesLicenca: chavesTeste, email: emailTeste })
+    app = await construirApp({ pool, config, logger: false, chavesLicenca: chavesTeste, email: emailTeste, fetchSso: (u, o) => msFetch(u, o) })
     await pool.query(
       `insert into usuarios (email, nome, papel, senha_hash, trocar_senha) values
         ('admin@x.com', 'Admin', 'admin', $1, false),
@@ -1761,6 +1780,108 @@ describe('API', { skip: pular }, () => {
 
 
   // ------------------------------------------------------------------ importação de pré-fichas de outra planilha (dados FICTÍCIOS)
+  describe('login com a Microsoft (Entra ID, OpenID Connect)', () => {
+    const OID = randomUUID()
+    const habilitar = (v) => { MS_CFG.habilitado = v }   // o painel central da VM é quem liga (variáveis no .env)
+    // percorre o fluxo: /entrar → (Microsoft) → /callback; devolve onde o navegador termina e o cookie de sessão, se houver
+    async function entrarMs(claims, { chave = MS.privateKey, state = null, cookiePedido = null } = {}) {
+      const e = await app.inject({ method: 'GET', url: '/api/auth/microsoft/entrar' })
+      if (e.statusCode !== 302 || !e.headers.location.startsWith('https://login.microsoftonline.com/')) return { destino: e.headers.location }
+      const u = new URL(e.headers.location), nonce = u.searchParams.get('nonce')
+      const ck = cookiePedido ?? `${e.cookies[0].name}=${e.cookies[0].value}`
+      const agora = Math.floor(Date.now() / 1000)
+      msTokenAtual = jwtMs({ iss: `https://login.microsoftonline.com/${TENANT}/v2.0`, tid: TENANT, aud: CLIENTE, iat: agora, nbf: agora, exp: agora + 3600, nonce, oid: OID, name: 'Pessoa Microsoft', preferred_username: 'equipe@x.com', ...claims }, chave)
+      const c = await app.inject({ method: 'GET', url: `/api/auth/microsoft/callback?code=codigo-123&state=${state ?? u.searchParams.get('state')}`, headers: { cookie: ck } })
+      const sessao = c.cookies.find((x) => x.name === 'prefichas_sessao')
+      return { destino: c.headers.location, sessao: sessao && `${sessao.name}=${sessao.value}`, url: u, ck }
+    }
+    const sessaoValida = async (cookie) => cookie && (await app.inject({ method: 'GET', url: '/api/auth/eu', headers: { cookie } })).json().usuario
+
+    test('o acampamento só vê a situação (quem habilita é o painel central); administrador escolhe "criar pendentes"; o segredo nunca sai', async () => {
+      assert.equal((await req('equipe', 'GET', '/api/admin/sso')).statusCode, 403)
+      assert.equal((await req('equipe', 'PUT', '/api/admin/sso', { criarPendentes: false })).statusCode, 403)
+      assert.equal((await app.inject({ method: 'GET', url: '/api/admin/sso' })).statusCode, 401)
+      assert.equal((await app.inject({ method: 'GET', url: '/api/auth/microsoft/status' })).json().ativo, false, 'desligado por padrão')
+      assert.equal((await app.inject({ method: 'GET', url: '/api/auth/microsoft/entrar' })).headers.location, '/admin/?sso_erro=indisponivel')
+      habilitar(true)
+      const c = (await req('admin', 'GET', '/api/admin/sso')).json()
+      assert.deepEqual([c.habilitado, c.pronto, c.segredoConfigurado, c.tenantId, c.clientId, c.redirectUri], [true, true, true, TENANT, CLIENTE, 'https://prefichas.teste/api/auth/microsoft/callback'])
+      assert.equal(JSON.stringify(c).includes('segredo-do-teste'), false, 'o segredo nunca sai do servidor')
+      assert.equal((await app.inject({ method: 'GET', url: '/api/auth/microsoft/status' })).json().ativo, true)
+      // habilitado mas sem segredo: não liga
+      MS_CFG.segredo = null
+      assert.equal((await app.inject({ method: 'GET', url: '/api/auth/microsoft/status' })).json().ativo, false)
+      MS_CFG.segredo = 'segredo-do-teste'
+    })
+
+    test('entra com PKCE + state + nonce, só no diretório configurado; usuário existente é ligado ao oid', async () => {
+      const r = await entrarMs({})
+      assert.equal(r.destino, '/admin/'); assert.ok(r.sessao, 'sessão criada')
+      assert.equal(r.url.searchParams.get('code_challenge_method'), 'S256'); assert.ok(r.url.searchParams.get('code_challenge'))
+      assert.equal(r.url.searchParams.get('redirect_uri'), 'https://prefichas.teste/api/auth/microsoft/callback')
+      assert.equal(r.url.pathname, `/${TENANT}/oauth2/v2.0/authorize`)
+      assert.ok(msTroca.code_verifier && msTroca.client_secret === 'segredo-do-teste', 'a troca usa o verificador PKCE e o segredo do servidor')
+      assert.equal((await sessaoValida(r.sessao)).email, 'equipe@x.com')
+      assert.equal((await pool.query(`select sso_oid from usuarios where email = 'equipe@x.com'`)).rows[0].sso_oid, OID)
+      // o mesmo pedido não vale duas vezes (uso único)
+      const e = await app.inject({ method: 'GET', url: '/api/auth/microsoft/entrar' })
+      const ck = `${e.cookies[0].name}=${e.cookies[0].value}`, st = new URL(e.headers.location).searchParams.get('state')
+      await app.inject({ method: 'GET', url: `/api/auth/microsoft/callback?code=x&state=${st}`, headers: { cookie: ck } })
+      assert.equal((await app.inject({ method: 'GET', url: `/api/auth/microsoft/callback?code=x&state=${st}`, headers: { cookie: ck } })).headers.location, '/admin/?sso_erro=expirado')
+    })
+
+    test('recusa token falso: assinatura de outra chave, destinatário, diretório, expirado, nonce errado, state errado, sem cookie', async () => {
+      const agora = Math.floor(Date.now() / 1000)
+      const falhas = [
+        ['assinatura', { chave: MS_OUTRA.privateKey }, {}],
+        ['destinatário', {}, { aud: randomUUID() }],
+        ['diretório', {}, { tid: randomUUID(), iss: `https://login.microsoftonline.com/${TENANT}/v2.0` }],
+        ['emissor', {}, { iss: 'https://evil.example/v2.0' }],
+        ['expirado', {}, { exp: agora - 3600 }],
+        ['nonce', {}, { nonce: 'outro' }],
+        ['sem oid', {}, { oid: undefined }],
+      ]
+      for (const [nome, opcoes, claims] of falhas) {
+        const r = await entrarMs(claims, opcoes)
+        assert.equal(r.destino, '/admin/?sso_erro=recusado', nome); assert.equal(r.sessao, undefined, `${nome}: sem sessão`)
+      }
+      assert.equal((await entrarMs({}, { state: 'forjado' })).destino, '/admin/?sso_erro=expirado')
+      assert.equal((await entrarMs({}, { cookiePedido: 'prefichas_sso=inexistente' })).destino, '/admin/?sso_erro=expirado')
+      const microsoftRecusou = await app.inject({ method: 'GET', url: '/api/auth/microsoft/callback?error=access_denied&state=x' })
+      assert.equal(microsoftRecusou.headers.location, '/admin/?sso_erro=expirado')
+    })
+
+    test('o e-mail não basta: conta já ligada a outro oid é negada; inativo é negado; pendente aguarda', async () => {
+      assert.equal((await entrarMs({ oid: randomUUID() })).destino, '/admin/?sso_erro=negado', 'e-mail já ligado a outra pessoa Microsoft')
+      await pool.query(`update usuarios set ativo = false where email = 'equipe@x.com'`)
+      const inativo = await entrarMs({})
+      assert.equal(inativo.destino, '/admin/?sso_erro=negado'); assert.equal(inativo.sessao, undefined)
+      await pool.query(`update usuarios set ativo = true where email = 'equipe@x.com'`)
+    })
+
+    test('quem não tem acesso vira cadastro pendente (sem sessão), a menos que a opção esteja desligada', async () => {
+      const oid = randomUUID()
+      const r = await entrarMs({ oid, preferred_username: 'Novo.Colega@empresa.teste', name: 'Novo Colega' })
+      assert.equal(r.destino, '/admin/?sso_erro=pendente'); assert.equal(r.sessao, undefined)
+      const { rows: [u] } = await pool.query(`select email, pendente, ativo, email_confirmado, papel, sso_oid from usuarios where sso_oid = $1`, [oid])
+      assert.deepEqual([u.email, u.pendente, u.ativo, u.email_confirmado, u.papel], ['novo.colega@empresa.teste', true, false, true, 'coordenador'])
+      assert.equal((await entrarMs({ oid, preferred_username: 'novo.colega@empresa.teste' })).destino, '/admin/?sso_erro=pendente', 'continua aguardando')
+      assert.equal((await req('admin', 'PUT', '/api/admin/sso', { criarPendentes: false })).statusCode, 200)
+      const outro = randomUUID()
+      assert.equal((await entrarMs({ oid: outro, preferred_username: 'outra.pessoa@empresa.teste' })).destino, '/admin/?sso_erro=negado')
+      assert.equal((await pool.query('select count(*)::int n from usuarios where sso_oid = $1', [outro])).rows[0].n, 0)
+      await req('admin', 'PUT', '/api/admin/sso', { criarPendentes: true })
+    })
+
+    test('se o painel central desligar, o botão some e a entrada é recusada', async () => {
+      habilitar(false)
+      assert.equal((await app.inject({ method: 'GET', url: '/api/auth/microsoft/status' })).json().ativo, false)
+      assert.equal((await app.inject({ method: 'GET', url: '/api/auth/microsoft/entrar' })).headers.location, '/admin/?sso_erro=indisponivel')
+      const cb = await app.inject({ method: 'GET', url: '/api/auth/microsoft/callback?code=x&state=y' })
+      assert.equal(cb.headers.location, '/admin/?sso_erro=indisponivel')
+    })
+  })
+
   describe('importação de fichas', () => {
     const HOJE = new Date('2026-11-09T12:00:00Z')
     const CAB = ['Nome', 'CPF', 'Idade', 'Data de Nascimento', 'Sexo', 'Estado Civil', 'Nome do Cônjuge', 'CPF do Cônjuge', 'Data de Casamento', 'Casado no Religioso',

@@ -179,3 +179,25 @@ test('servidor de e-mail pela aba Configurações: valida, não vaza a senha e "
   const esq = await fetch(`${url}/api/esqueci`, { method: 'POST', headers: H, body: JSON.stringify({ email: 'adm@x.com' }) })
   assert.equal(esq.status, 503)
 })
+
+test('login Microsoft por acampamento: valida, não vaza o segredo e só vale para instância que existe', async () => {
+  const post = (corpo) => fetch(`${url}/api/tarefas`, { method: 'POST', headers: { ...H, cookie: globalThis.cookie }, body: JSON.stringify(corpo) })
+  const G1 = '11111111-2222-3333-4444-555555555555', G2 = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee', SEG = 'abcdefghijklmnopqrst~._-SEGREDO'
+  const ok = { acao: 'microsoft', instancia: 'prefichas-sao-pedro', habilitar: true, tenant_id: G1, client_id: G2, segredo: SEG }
+  for (const ruim of [
+    { instancia: 'prefichas-nao-existe' }, { instancia: '../../etc' }, { tenant_id: 'nao-e-guid' }, { client_id: '' }, { tenant_id: `${G1}; id` },
+    { segredo: 'curto' }, { segredo: 'com espaco e $(id) no meio do segredo' }, { segredo: 'aspas"no-meio-do-segredo-1234' },
+  ]) assert.equal((await post({ ...ok, ...ruim })).status, 400, JSON.stringify(ruim))
+  // desligar não exige IDs; segredo em branco = manter o guardado
+  assert.equal((await post({ acao: 'microsoft', instancia: 'prefichas-sao-pedro', habilitar: false })).status, 201)
+  const antes = new Set(readdirSync(join(base_, 'pedidos')))
+  assert.equal((await post(ok)).status, 201)
+  const novo = readdirSync(join(base_, 'pedidos')).find((f) => !antes.has(f))
+  const pedido = JSON.parse(readFileSync(join(base_, 'pedidos', novo), 'utf8'))
+  assert.equal(pedido.segredo, SEG, 'o executor recebe o segredo')
+  assert.equal((await post({ ...ok, segredo: '' })).status, 201)
+  const aud = readFileSync(join(base_, 'dados', 'auditoria.jsonl'), 'utf8')
+  assert.doesNotMatch(aud, /SEGREDO/); assert.match(aud, /pedido-microsoft/)
+  assert.doesNotMatch(JSON.stringify(await (await fetch(`${url}/api/tarefas`, { headers: { cookie: globalThis.cookie } })).json()), /SEGREDO/)
+  assert.equal((await fetch(`${url}/api/tarefas`, { method: 'POST', headers: H, body: JSON.stringify(ok) })).status, 401, 'sem login não liga nada')
+})

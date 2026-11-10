@@ -220,6 +220,39 @@ acao_email_aplicar() {
   [ "$falhou" = 0 ] || return 1
   echo "✓ Servidor de e-mail aplicado em ${n} acampamento(s)."
 }
+# ---------------------------------------------------------------- Login com a Microsoft (por acampamento)
+RE_GUID='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+RE_SEGREDO_MS='^[A-Za-z0-9._~-]{20,128}$'      # valor do segredo do aplicativo no Entra (vai para o .env, sem aspas)
+# Liga/desliga o login Microsoft de UM acampamento: grava as variáveis no .env dele e reinicia só esse sistema.
+# Pedido: {instancia, habilitar, tenant_id, client_id, segredo?}  — segredo em branco = manter o guardado.
+acao_microsoft() { # arquivo do pedido
+  local p="$1" i hab tenant cli seg f tmp
+  i="$(jq -r '.instancia // empty' "$p")"; hab="$(jq -r '.habilitar // false' "$p")"
+  tenant="$(jq -r '.tenant_id // empty' "$p")"; cli="$(jq -r '.client_id // empty' "$p")"; seg="$(jq -r '.segredo // empty' "$p")"
+  f="/opt/$i/.env"
+  casa "$i" "$RE_INST" && [ -f "$f" ] && [ ! -L "$f" ] || { echo "✗ Instância inválida."; return 1; }
+  if [ "$hab" = true ]; then
+    casa "$tenant" "$RE_GUID" || { echo "✗ ID do diretório (locatário) inválido."; return 1; }
+    casa "$cli" "$RE_GUID" || { echo "✗ ID do aplicativo (cliente) inválido."; return 1; }
+    [ -n "$seg" ] || seg="$(valor_env "$i" MICROSOFT_CLIENT_SECRET)"
+    [ -n "$seg" ] || { echo "✗ Informe o segredo do aplicativo (ainda não há um guardado)."; return 1; }
+    casa "$seg" "$RE_SEGREDO_MS" || { echo "✗ Segredo em formato inválido (copie o VALOR do segredo, não o ID)."; return 1; }
+  else
+    # desligar: mantém IDs e segredo guardados (para religar sem digitar tudo de novo)
+    tenant="$(valor_env "$i" MICROSOFT_TENANT_ID)"; cli="$(valor_env "$i" MICROSOFT_CLIENT_ID)"; seg="$(valor_env "$i" MICROSOFT_CLIENT_SECRET)"
+  fi
+  tmp="$(mktemp "/opt/$i/.env.XXXXXX")"
+  { grep -vE '^MICROSOFT_(HABILITADO|TENANT_ID|CLIENT_ID|CLIENT_SECRET)=' "$f" || true
+    printf 'MICROSOFT_HABILITADO=%s\n' "$([ "$hab" = true ] && echo true || echo false)"
+    [ -z "$tenant" ] || printf 'MICROSOFT_TENANT_ID=%s\n' "$tenant"
+    [ -z "$cli" ] || printf 'MICROSOFT_CLIENT_ID=%s\n' "$cli"
+    [ -z "$seg" ] || printf 'MICROSOFT_CLIENT_SECRET=%s\n' "$seg"
+  } > "$tmp"
+  chmod --reference="$f" "$tmp" && mv -f "$tmp" "$f"
+  echo "→ $i: reiniciando o sistema para aplicar…"
+  (cd "/opt/$i" && timeout 300 docker compose up -d >/dev/null 2>&1) || { echo "✗ Gravado, mas falhou ao reiniciar $i."; return 1; }
+  if [ "$hab" = true ]; then echo "✓ Login Microsoft ligado em $i."; else echo "✓ Login Microsoft desligado em $i."; fi
+}
 # "Esqueci minha senha" do painel central: manda o link. Só envia para um usuário ATIVO do painel e só com
 # link do formato esperado (o pedido vem de uma página sem login; o painel pode estar comprometido).
 acao_email_redefinicao() { # arquivo do pedido
@@ -304,6 +337,7 @@ processar() { # arquivo do pedido
     email-teste) acao_email_teste "$tmp" >> "$log" 2>&1 && ok=1 ;;
     email-remover) acao_email_remover >> "$log" 2>&1 && ok=1 ;;
     email-aplicar) acao_email_aplicar >> "$log" 2>&1 && ok=1 ;;
+    microsoft) acao_microsoft "$tmp" >> "$log" 2>&1 && ok=1 ;;
     vpn-reconectar) acao_vpn_reconectar >> "$log" 2>&1 && ok=1 ;;
     vpn-credenciais) acao_vpn_credenciais "$tmp" >> "$log" 2>&1 && ok=1 ;;
     atualizar-todas)
@@ -330,8 +364,12 @@ coletar() {
     versao="$(git -C "/opt/$i" rev-parse --short HEAD 2>/dev/null || true)"
     saude=fora; curl -fsS -m 3 "http://127.0.0.1:${porta}/api/saude" >/dev/null 2>&1 && saude=ok
     mem="$(docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' 2>/dev/null | awk -v p="$proj" 'index($1,p"-")==1{split($2,a,"MiB"); s+=a[1]} END{if(s) printf "%.0f MB", s}')"
-    itens+=("$(printf '{"pasta":%s,"nome":%s,"url":%s,"publicacao":%s,"porta":%s,"versao":%s,"saude":"%s","memoria":%s}' \
-      "$(json_str "$i")" "$(json_str "$nome")" "$(json_str "$url")" "$(json_str "$pub")" "${porta//[^0-9]/}" "$(json_str "$versao")" "$saude" "$(json_str "$mem")")")
+    local msh=false mst msc msseg=false
+    case "$(valor_env "$i" MICROSOFT_HABILITADO)" in true|1|sim) msh=true ;; esac
+    mst="$(valor_env "$i" MICROSOFT_TENANT_ID)"; msc="$(valor_env "$i" MICROSOFT_CLIENT_ID)"; [ -n "$(valor_env "$i" MICROSOFT_CLIENT_SECRET)" ] && msseg=true
+    itens+=("$(printf '{"pasta":%s,"nome":%s,"url":%s,"publicacao":%s,"porta":%s,"versao":%s,"saude":"%s","memoria":%s,"microsoft":{"habilitado":%s,"tenant_id":%s,"client_id":%s,"segredo":%s}}' \
+      "$(json_str "$i")" "$(json_str "$nome")" "$(json_str "$url")" "$(json_str "$pub")" "${porta//[^0-9]/}" "$(json_str "$versao")" "$saude" "$(json_str "$mem")" \
+      "$msh" "$(json_str "$mst")" "$(json_str "$msc")" "$msseg")")
   done
   local lista; lista="$(IFS=,; echo "${itens[*]:-}")"
   printf '{"coletado_em":"%s","instancias":[%s]}\n' "$(date -Iseconds)" "$lista" > "$ESTADO/instancias.json.tmp" && mv -f "$ESTADO/instancias.json.tmp" "$ESTADO/instancias.json"
