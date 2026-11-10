@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 2.14.1 — diagnóstico do login Microsoft
+
+- Quando o login Microsoft é recusado, o log do servidor agora traz o motivo detalhado (o código `AADSTS…` da Microsoft, por exemplo segredo errado ou URI diferente). Isso só vai para o log, nunca para a tela.
+
 ## 2.14.0 — login com a conta Microsoft corporativa
 
 - Botão **"Entrar com a Microsoft"** no login do painel (Microsoft Entra ID / Microsoft 365) por **OpenID Connect** (authorization code + PKCE), restrito a **um diretório (tenant)**. A senha continua funcionando.
