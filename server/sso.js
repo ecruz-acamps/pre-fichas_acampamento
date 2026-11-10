@@ -32,7 +32,10 @@ export async function trocarCodigo(fetchFn, { tenant, clientId, segredo, redirec
     signal: AbortSignal.timeout(10000),
   })
   const j = await r.json().catch(() => ({}))
-  if (!r.ok || typeof j.id_token !== 'string') throw new Error('troca_recusada')
+  if (!r.ok || typeof j.id_token !== 'string') {
+    // o erro da Microsoft (ex.: AADSTS7000215 = segredo errado) só vai para o log do servidor, nunca para a tela
+    const e = new Error('troca_recusada'); e.detalhe = `${String(j.error ?? r.status).slice(0, 60)}: ${String(j.error_description ?? '').replace(/\s+/g, ' ').slice(0, 200)}`; throw e
+  }
   return j.id_token
 }
 

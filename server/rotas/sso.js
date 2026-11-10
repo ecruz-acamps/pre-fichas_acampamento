@@ -45,14 +45,17 @@ export default async function rotasSso(app) {
     if (!pronto(c)) return voltar(reply, 'indisponivel')
     const { code, state } = req.query ?? {}
     if (!pedido || pedido.ate < Date.now() || typeof state !== 'string' || state !== pedido.state) return voltar(reply, 'expirado')
-    if (typeof code !== 'string' || !code || code.length > 4096) return voltar(reply, 'recusado')   // inclui "error=" devolvido pela Microsoft
+    if (typeof code !== 'string' || !code || code.length > 4096) {   // inclui "error=" devolvido pela Microsoft (usuário recusou, sem permissão, URI errado…)
+      req.log.warn({ erro: String(req.query?.error ?? '').slice(0, 60), detalhe: String(req.query?.error_description ?? '').replace(/\s+/g, ' ').slice(0, 200), ip: req.ip }, 'Login Microsoft: a Microsoft não devolveu o código')
+      return voltar(reply, 'recusado')
+    }
 
     let eu
     try {
       const cfg = { tenant: c.tenant_id, clientId: c.client_id, segredo: ms.segredo, redirectUri: redirectUri() }
       eu = await validarIdToken(fetchFn, cfg, await trocarCodigo(fetchFn, cfg, code, pedido.verificador), pedido.nonce)
     } catch (e) {
-      req.log.warn({ motivo: e.message, ip: req.ip }, 'Login Microsoft recusado')
+      req.log.warn({ motivo: e.message, detalhe: e.detalhe, ip: req.ip }, 'Login Microsoft recusado')
       return voltar(reply, 'recusado')
     }
     if (!eu.email) return voltar(reply, 'sem_email')
