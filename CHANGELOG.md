@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 2.18.0 — menus renomeados
+
+- **Fila** passa a se chamar **Pré Ficha - Espera**.
+- **Nomes (A–Z)** vira dois menus: **Campistas** (só quem já fez o acampamento, de todos os núcleos) e **Todos** (campistas e também quem está esperando), ambos em ordem alfabética, com busca e exportação.
+
 ## 2.17.0 — coordenadores podem ver todas as fichas (opção)
 
 - Configurações → **Coordenadores de núcleo**: "podem ver todas as fichas?" **Não** (padrão) = como sempre, só as do núcleo dele. **Sim** = consulta as fichas de **todos** os núcleos, mas **só altera** (status, recusa, fim da fila, modalidade…) as do seu próprio núcleo; as de fora abrem em modo somente leitura.

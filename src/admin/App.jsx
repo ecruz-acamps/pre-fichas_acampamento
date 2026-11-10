@@ -20,8 +20,9 @@ import { BotaoAtualizacao, DialogoAtualizacao } from './Atualizacoes.jsx'
 
 // Telas do painel e quem pode ver cada uma
 const TELAS = [
-  { id: 'fila', rotulo: 'Fila', papeis: ['admin', 'equipe', 'coordenador'] },
-  { id: 'nomes', rotulo: 'Nomes (A–Z)', papeis: ['admin', 'equipe', 'coordenador'] },
+  { id: 'fila', rotulo: 'Pré Ficha - Espera', papeis: ['admin', 'equipe', 'coordenador'] },
+  { id: 'campistas', rotulo: 'Campistas', papeis: ['admin', 'equipe', 'coordenador'] },
+  { id: 'todos', rotulo: 'Todos', papeis: ['admin', 'equipe', 'coordenador'] },
   { id: 'revisar', rotulo: 'Revisar modalidade', papeis: ['admin', 'coordenador'] },
   { id: 'resumo', rotulo: 'Resumo por cidade', papeis: ['admin', 'equipe', 'coordenador'] },
   { id: 'acampamentos', rotulo: 'Acampamentos', papeis: ['admin', 'equipe'] },
@@ -143,7 +144,8 @@ export default function App() {
 
 
       {atual === 'fila' && <Fila {...props} />}
-      {atual === 'nomes' && <Nomes {...props} />}
+      {atual === 'campistas' && <Nomes key="campistas" {...props} tipoFixo="campistas" />}
+      {atual === 'todos' && <Nomes key="todos" {...props} tipoFixo="todos" />}
       {atual === 'resumo' && <Resumo {...props} />}
       {atual === 'revisar' && <Revisar />}
       <Suspense fallback={<p className="carregando">Carregando…</p>}>

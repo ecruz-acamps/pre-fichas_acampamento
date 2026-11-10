@@ -11,7 +11,7 @@ Este manual explica **como usar o sistema no dia a dia**. Para instalar e manter
 5. [A ficha da pessoa (detalhe)](#5-a-ficha-da-pessoa)
 6. [Chamar, recusas e fim da fila](#6-chamar-recusas-e-fim-da-fila)
 7. [Imprimir a pré-ficha](#7-imprimir-a-pré-ficha)
-8. [Nomes (A–Z) e Resumo por cidade](#8-nomes-az-e-resumo-por-cidade)
+8. [Campistas, Todos e Resumo por cidade](#8-campistas-todos-e-resumo-por-cidade)
 9. [Acampamentos: registrar quem fez e as tribos](#9-acampamentos)
 10. [Cônjuge e preferência](#10-cônjuge-e-preferência)
 11. [Auditoria](#11-auditoria)
@@ -102,7 +102,7 @@ o botão **Atualizações**.
 
 ## 4. Fila de espera
 
-A aba **Fila** mostra quem está aguardando, na ordem da fila.
+A aba **Pré Ficha - Espera** (antes chamada "Fila") mostra quem está aguardando, na ordem da fila.
 
 | Coluna | Significado |
 |---|---|
@@ -169,11 +169,13 @@ registrada** no histórico da ficha.
 
 ---
 
-## 8. Nomes (A–Z) e Resumo por cidade
+## 8. Campistas, Todos e Resumo por cidade
 
-- **Nomes (A–Z)**: lista alfabética de pré-fichas e campistas (quem já fez acampamento), com busca e
-  exportação. O coordenador vê os campistas de **todos** os núcleos em modo consulta e as
-  pré-fichas só do seu núcleo.
+- **Campistas**: lista alfabética só de quem **já fez** o acampamento, de todos os núcleos, com busca e
+  exportação. O coordenador vê os campistas de **todos** os núcleos em modo consulta.
+- **Todos**: lista alfabética de campistas **e também de quem está esperando** (pré-fichas), com busca e
+  exportação. O coordenador vê as pré-fichas só do seu núcleo (ou de todos, se o administrador ligou
+  a opção em Configurações).
 - **Resumo por cidade**: quantas pessoas há por cidade e bairro, por modalidade. Útil para planejar
   vagas e núcleos. Tem exportação CSV.
 
