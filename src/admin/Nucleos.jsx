@@ -111,11 +111,19 @@ export default function Nucleos({ nucleos, onAlterar }) {
   const [editando, setEditando] = useState(null) // null | {} (novo) | núcleo
   const [dividindo, setDividindo] = useState(false)
   const [erro, setErro] = useState('')
+  const [grupos, setGrupos] = useState(null)   // resultado de "Criar grupos no Entra"
+  const [criando, setCriando] = useState(false)
 
   const carregarLocalidades = () => api.get('/api/admin/localidades').then(setLocalidades).catch(() => {})
   useEffect(() => { carregarLocalidades() }, [])
 
   const semNucleo = localidades.filter((l) => !l.coberto).reduce((s, l) => s + l.fichas, 0)
+
+  async function criarGrupos() {
+    if (!confirm('Criar no Microsoft Entra um grupo de segurança para cada núcleo que ainda não tem? Depois, coloque os coordenadores de cada núcleo no grupo dele.')) return
+    setErro(''); setGrupos(null); setCriando(true)
+    try { setGrupos(await api.post('/api/admin/nucleos/criar-grupos-entra', {})); onAlterar() } catch (err) { setErro(err.dados?.mensagem || 'Não foi possível criar os grupos.') } finally { setCriando(false) }
+  }
 
   async function excluir(n) {
     if (!confirm(`Excluir o ${n.nome}? Os coordenadores dele deixarão de ver essas fichas.`)) return
@@ -149,6 +157,7 @@ export default function Nucleos({ nucleos, onAlterar }) {
           <p className="subtitulo">Cada núcleo reúne cidades e bairros. O coordenador de núcleo só vê as pré-fichas da sua área (associe em Usuários).</p>
         </div>
         <div className="acoes-linha">
+          <button className="botao-secundario" onClick={criarGrupos} disabled={criando}>{criando ? 'Criando…' : 'Criar grupos no Entra'}</button>
           <button className="botao-secundario" onClick={() => setDividindo(true)}>Dividir cidade por bairros</button>
           <button className="botao-principal pequeno" onClick={() => setEditando({})}>+ Novo núcleo</button>
         </div>
@@ -160,6 +169,13 @@ export default function Nucleos({ nucleos, onAlterar }) {
         </div>
       )}
       {erro && <div className="alerta-erro">{erro}</div>}
+      {grupos && (
+        <div className={grupos.falhas.length ? 'alerta-erro' : 'alerta-ok'} role="status">
+          {grupos.mensagem || `${grupos.criados.length} grupo(s) criado(s) no Entra.`}
+          {grupos.criados.length > 0 && <> Nomes: {grupos.criados.map((c) => `Pré-fichas – ${c.nome}`).join('; ')}. Agora adicione os coordenadores de cada núcleo como membros do grupo dele, no Entra.</>}
+          {grupos.falhas.length > 0 && <> Falhou: {grupos.falhas.map((f) => `${f.nome} (${f.motivo})`).join('; ')}.</>}
+        </div>
+      )}
 
       <div className="grade-nucleos">
         {nucleos.map((n) => (

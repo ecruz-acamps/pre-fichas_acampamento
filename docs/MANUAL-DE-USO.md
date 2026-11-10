@@ -418,10 +418,18 @@ SAML: este sistema usa OpenID Connect (o padrão atual da Microsoft), que dispen
 ### Coordenadores entrando direto, com o núcleo definido pelo Entra
 
 Para que os coordenadores entrem pela Microsoft **sem esperar liberação**, com o núcleo definido pelo grupo do Entra:
-1. **Um grupo por núcleo** no Entra (Grupos → Novo grupo, tipo Segurança), com os coordenadores daquele núcleo como membros. Copie o **ID do objeto** de cada grupo.
-2. Em **Aplicações empresariais →** sua aplicação **→ Utilizadores e grupos**, atribua **cada grupo de núcleo** à aplicação. (Ative também "Atribuição necessária" em Propriedades, para só esses grupos entrarem.)
-3. Em **Registos de aplicações →** sua aplicação **→ Configuração do token → Adicionar afirmação de grupos**, marque **"Grupos atribuídos à aplicação"** e salve. Assim o token só traz os grupos da aplicação, sem exceder o limite.
-4. No painel do acampamento, em **Núcleos → editar**, cole o ID do grupo no campo **"Grupo do Microsoft Entra"** de cada núcleo.
-5. Em **Configurações → Login com a Microsoft**, escolha **"Entrar direto como coordenador, com o núcleo definido pelos grupos do Entra"**.
 
-Quem está em um grupo de núcleo entra como **coordenador daquele núcleo** (e de todos os núcleos dos seus grupos). Quem não está em nenhum, não entra. Para tirar o acesso, basta remover a pessoa do grupo: na próxima entrada ela perde os núcleos (as sessões abertas dela são derrubadas); para valer na hora, desative o usuário em **Usuários**. Administradores continuam sendo definidos no painel e entram com senha e autenticador; os grupos nunca criam nem alteram administradores.
+**Uma vez só, no registro do aplicativo (Entra):**
+1. **Permissões de API → Adicionar uma permissão → Microsoft Graph → Permissões de aplicação → `Group.Create`**, e clique em **Conceder consentimento de administrador**. É a **única** permissão pedida: o aplicativo só consegue **criar** grupos de segurança novos. Ele não lê, não altera nem apaga grupos existentes e não mexe em membros.
+2. **Configuração do token → Adicionar afirmação de grupos →** marque **Grupos de segurança** e salve (para o token de ID). O token traz só os IDs dos grupos da pessoa.
+
+**No painel do acampamento:**
+3. Em **Núcleos**, clique em **Criar grupos no Entra**. O sistema cria um grupo de segurança "Pré-fichas – NOME DO NÚCLEO" para cada núcleo que ainda não tem e já guarda o ID de cada um. (Se preferir criar o grupo à mão, cole o ID em Núcleos → editar → "Grupo do Microsoft Entra".)
+4. Em **Configurações → Login com a Microsoft**, escolha **"Entrar direto como coordenador, com o núcleo definido pelos grupos do Entra"**.
+
+**No Entra, de rotina:**
+5. Coloque os coordenadores de cada núcleo como **membros do grupo dele**. Esse é o único passo manual: quem decide quem entra e em qual núcleo é o Entra.
+
+Quem está em um grupo de núcleo entra como **coordenador daquele núcleo** (e de todos os núcleos dos seus grupos). Quem não está em nenhum, não entra. Para tirar o acesso, remova a pessoa do grupo: na próxima entrada ela perde os núcleos (as sessões abertas dela são derrubadas); para valer na hora, desative o usuário em **Usuários**. Administradores continuam sendo definidos no painel e entram com senha e autenticador; os grupos nunca criam nem alteram administradores.
+
+Limitação: pessoas que estão em muitos grupos (mais de 200) não recebem a lista no token da Microsoft e são recusadas com aviso.

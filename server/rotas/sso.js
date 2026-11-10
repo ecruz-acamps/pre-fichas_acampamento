@@ -3,7 +3,7 @@ import { transacao } from '../db.js'
 import { gerarHash } from '../senha.js'
 import { COOKIE, criarSessao } from '../sessao.js'
 import { licencaAtivada } from '../licenca.js'
-import { GUID, novoPedido, trocarCodigo, urlAutorizacao, validarIdToken } from '../sso.js'
+import { GUID, criarGrupoSeguranca, novoPedido, tokenGraph, trocarCodigo, urlAutorizacao, validarIdToken } from '../sso.js'
 
 const COOKIE_PEDIDO = 'prefichas_sso'
 const MAX_PENDENTES = 50
@@ -136,6 +136,35 @@ export default async function rotasSso(app) {
       }
     }
     return entrar(u.id)
+  })
+
+  // ---- Cria no Entra um grupo de segurança para cada núcleo que ainda não tem (só administrador) ----
+  app.post('/api/admin/nucleos/criar-grupos-entra', { ...soAdmin, config: { rateLimit: { max: Math.max(5, config.limiteLoginPorMinuto), timeWindow: '1 hour' } } }, async (req, reply) => {
+    const c = await carregar()
+    if (!pronto(c)) return reply.code(409).send({ mensagem: 'O login Microsoft ainda não está pronto neste acampamento (peça ao administrador da VM para configurar no painel central).' })
+    const { rows: nucleos } = await pool.query('select id, nome from nucleos where entra_grupo_id is null order by nome')
+    if (!nucleos.length) return { criados: [], falhas: [], mensagem: 'Todos os núcleos já têm grupo.' }
+    const cfg = { tenant: c.tenant_id, clientId: c.client_id, segredo: ms.segredo }
+    let token
+    try { token = await tokenGraph(fetchFn, cfg) } catch (e) {
+      req.log.warn({ detalhe: e.detalhe }, 'Criar grupos no Entra: token do Graph recusado')
+      return reply.code(502).send({ mensagem: `A Microsoft recusou o acesso do aplicativo (${e.detalhe ?? 'erro'}). Confira o segredo e a permissão Group.Create.` })
+    }
+    const criados = [], falhas = []
+    for (const n of nucleos) {
+      try {
+        const id = await criarGrupoSeguranca(fetchFn, token, {
+          nome: `Pré-fichas – ${n.nome}`, descricao: `Coordenadores do núcleo ${n.nome} (login do sistema de pré-fichas). Gerenciado pelo Entra: coloque aqui os membros.`,
+          apelido: `prefichas-n${n.id}-${randomBytes(3).toString('hex')}` })
+        await pool.query('update nucleos set entra_grupo_id = $1 where id = $2 and entra_grupo_id is null', [id, n.id])
+        criados.push({ id: n.id, nome: n.nome, grupo: id })
+      } catch (e) {
+        falhas.push({ id: n.id, nome: n.nome, motivo: e.status === 403 || e.status === 401 ? 'sem permissão (falta Group.Create com consentimento do administrador)' : (e.codigo || 'falhou') })
+        if (e.status === 403 || e.status === 401) break   // sem permissão: não adianta insistir nos outros
+      }
+    }
+    req.log.info({ por: req.usuario.email, criados: criados.length, falhas: falhas.length }, 'Grupos criados no Entra')
+    return { criados, falhas }
   })
 
   // ---- Situação e a única escolha local (o resto é do painel central da VM) ----

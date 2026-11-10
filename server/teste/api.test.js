@@ -39,11 +39,21 @@ const MS = generateKeyPairSync('rsa', { modulusLength: 2048 })
 const MS_OUTRA = generateKeyPairSync('rsa', { modulusLength: 2048 })
 const TENANT = randomUUID(), CLIENTE = randomUUID()
 let msTokenAtual = null, msTroca = null
+const msGraph = { modo: 'ok', pedidos: [] }
 const MS_CFG = { habilitado: false, tenantId: TENANT, clientId: CLIENTE, segredo: 'segredo-do-teste' }   // no sistema real vem do .env, gravado pelo painel central
 const msFetch = async (url, opcoes = {}) => {
   const r = (corpo, ok = true) => ({ ok, json: async () => corpo })
   if (String(url).endsWith('/discovery/v2.0/keys')) return r({ keys: [{ ...MS.publicKey.export({ format: 'jwk' }), kid: 'k1', use: 'sig' }] })
-  if (String(url).endsWith('/oauth2/v2.0/token')) { msTroca = Object.fromEntries(opcoes.body); return msTokenAtual ? r({ id_token: msTokenAtual }) : r({ error: 'invalid_grant' }, false) }
+  if (String(url).endsWith('/oauth2/v2.0/token')) {
+    msTroca = Object.fromEntries(opcoes.body)
+    if (msTroca.grant_type === 'client_credentials') return msGraph.modo === 'token-ruim' ? r({ error: 'invalid_client', error_description: 'AADSTS7000215: segredo errado' }, false) : r({ access_token: 'token-graph-teste' })
+    return msTokenAtual ? r({ id_token: msTokenAtual }) : r({ error: 'invalid_grant' }, false)
+  }
+  if (String(url) === 'https://graph.microsoft.com/v1.0/groups') {
+    const corpo = JSON.parse(opcoes.body); msGraph.pedidos.push({ corpo, auth: opcoes.headers.authorization })
+    if (msGraph.modo === 'sem-permissao') return r({ error: { code: 'Authorization_RequestDenied', message: 'Insufficient privileges' } }, false) && { ok: false, status: 403, json: async () => ({ error: { code: 'Authorization_RequestDenied', message: 'Insufficient privileges' } }) }
+    return { ok: true, status: 201, json: async () => ({ id: randomUUID().toUpperCase() }) }
+  }
   throw new Error(`url inesperada ${url}`)
 }
 const jwtMs = (claims, chave = MS.privateKey) => {
@@ -1919,6 +1929,41 @@ describe('API', { skip: pular }, () => {
       assert.equal((await entrarMs({ oid: oidP, preferred_username: 'pendente.antigo@empresa.teste', groups: [g2] })).destino, '/admin/')
       assert.deepEqual(await nucleosDe('pendente.antigo@empresa.teste'), [n2])
       await req('admin', 'PUT', '/api/admin/sso', { provisionar: 'liberacao', criarPendentes: true })
+    })
+
+    test('criar grupos no Entra: só administrador; cria só para núcleo sem grupo, com permissão mínima; trata falta de permissão', async () => {
+      assert.equal((await req('coord', 'POST', '/api/admin/nucleos/criar-grupos-entra', {})).statusCode, 403)
+      assert.equal((await app.inject({ method: 'POST', url: '/api/admin/nucleos/criar-grupos-entra', headers: H, payload: {} })).statusCode, 401)
+      habilitar(false)
+      assert.equal((await req('admin', 'POST', '/api/admin/nucleos/criar-grupos-entra', {})).statusCode, 409, 'sem login Microsoft pronto não cria nada')
+      habilitar(true)
+      const gExiste = randomUUID()
+      const a = (await req('admin', 'POST', '/api/admin/nucleos', { nome: "Núcleo Criar A", areas: [{ uf: 'RS', cidade: 'Rio Grande', bairro: null }] })).json().id
+      const b = (await req('admin', 'POST', '/api/admin/nucleos', { nome: 'Núcleo Criar B', entraGrupoId: gExiste, areas: [{ uf: 'RS', cidade: 'Rio Grande', bairro: null }] })).json().id
+      const grupoDe = async (id) => (await pool.query('select entra_grupo_id g from nucleos where id = $1', [id])).rows[0].g
+      // sem permissão (consentimento do administrador): relata e não grava nada
+      msGraph.modo = 'sem-permissao'; msGraph.pedidos.length = 0
+      const sem = await req('admin', 'POST', '/api/admin/nucleos/criar-grupos-entra', {})
+      assert.equal(sem.statusCode, 200); assert.equal(sem.json().criados.length, 0); assert.match(sem.json().falhas[0].motivo, /Group\.Create/)
+      assert.equal(await grupoDe(a), null)
+      // segredo recusado pela Microsoft: erro claro, sem vazar o segredo
+      msGraph.modo = 'token-ruim'
+      const ruim = await req('admin', 'POST', '/api/admin/nucleos/criar-grupos-entra', {})
+      assert.equal(ruim.statusCode, 502); assert.equal(ruim.body.includes('segredo-do-teste'), false)
+      // funcionando: cria só para o núcleo sem grupo (o que já tinha não é tocado), grupo de segurança sem e-mail
+      msGraph.modo = 'ok'; msGraph.pedidos.length = 0
+      const ok = await req('admin', 'POST', '/api/admin/nucleos/criar-grupos-entra', {})
+      assert.equal(ok.statusCode, 200, ok.body)
+      const criados = ok.json().criados
+      assert.ok(criados.some((c) => c.id === a)); assert.equal(criados.some((c) => c.id === b), false)
+      const doA = msGraph.pedidos.find((p) => /Núcleo Criar A/.test(p.corpo.displayName))
+      assert.deepEqual([doA.corpo.displayName, doA.corpo.securityEnabled, doA.corpo.mailEnabled, doA.auth], ['Pré-fichas – Núcleo Criar A', true, false, 'Bearer token-graph-teste'])
+      assert.match(doA.corpo.mailNickname, /^prefichas-n\d+-[0-9a-f]{6}$/)
+      assert.equal(await grupoDe(a), criados.find((c) => c.id === a).grupo); assert.match(await grupoDe(a), /^[0-9a-f-]{36}$/, 'guardado em minúsculas')
+      assert.equal(await grupoDe(b), gExiste)
+      // de novo: nada a fazer, nenhum grupo duplicado
+      msGraph.pedidos.length = 0
+      assert.equal((await req('admin', 'POST', '/api/admin/nucleos/criar-grupos-entra', {})).json().criados.length, 0); assert.equal(msGraph.pedidos.length, 0)
     })
 
     test('se o painel central desligar, o botão some e a entrada é recusada', async () => {
