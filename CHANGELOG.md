@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 2.16.0 — o sistema cria os grupos de núcleo no Entra
+
+- Núcleos → **Criar grupos no Entra** (só administrador): cria um grupo de segurança "Pré-fichas – NÚCLEO" para cada núcleo que ainda não tem e guarda o ID. Não recria o que já existe.
+- Usa o Microsoft Graph com **uma única permissão de aplicação, `Group.Create`** (só cria grupos novos; não lê, altera nem apaga grupos existentes, e não mexe em membros). Quem põe os coordenadores nos grupos é o Entra.
+- Sem a permissão, o sistema avisa o que falta e não grava nada. O segredo nunca aparece em respostas.
+- O token de ID passa a trazer os grupos pela afirmação "Grupos de segurança" (não é mais preciso atribuir cada grupo à aplicação).
+
 ## 2.15.0 — coordenadores entram pelo Microsoft com o núcleo definido pelos grupos do Entra
 
 - Novo modo em Configurações → Login com a Microsoft: **"Entrar direto como coordenador, com o núcleo definido pelos grupos do Entra"** (sem liberação manual). Cada núcleo guarda o **ID do grupo do Entra** (Núcleos → editar).

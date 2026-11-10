@@ -79,3 +79,32 @@ export async function validarIdToken(fetchFn, { tenant, clientId }, token, nonce
   const excedeu = c.hasgroups === true || Boolean(c._claim_names?.groups)
   return { oid: c.oid.toLowerCase(), email: email.includes('@') && email.length <= 200 ? email : null, nome: String(c.name ?? '').trim().slice(0, 120), grupos, excedeu }
 }
+
+// ---------------------------------------------------------------- criar grupos no Entra (Microsoft Graph, permissão de aplicação Group.Create)
+// Permissão mínima: o aplicativo só consegue CRIAR grupos de segurança novos; não lê, não altera nem apaga grupos existentes
+// e não mexe em membros. Quem coloca as pessoas nos grupos é o administrador do Entra.
+export async function tokenGraph(fetchFn, { tenant, clientId, segredo }) {
+  const r = await fetchFn(url(tenant).token, {
+    method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: clientId, client_secret: segredo, grant_type: 'client_credentials', scope: 'https://graph.microsoft.com/.default' }),
+    signal: AbortSignal.timeout(10000),
+  })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok || typeof j.access_token !== 'string') {
+    const e = new Error('token_graph'); e.detalhe = `${String(j.error ?? r.status).slice(0, 60)}: ${String(j.error_description ?? '').replace(/\s+/g, ' ').slice(0, 160)}`; throw e
+  }
+  return j.access_token
+}
+
+export async function criarGrupoSeguranca(fetchFn, token, { nome, apelido, descricao }) {
+  const r = await fetchFn('https://graph.microsoft.com/v1.0/groups', {
+    method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ displayName: nome.slice(0, 256), description: descricao.slice(0, 1000), mailEnabled: false, mailNickname: apelido, securityEnabled: true }),
+    signal: AbortSignal.timeout(15000),
+  })
+  const j = await r.json().catch(() => ({}))
+  if (!r.ok || typeof j.id !== 'string' || !GUID.test(j.id)) {
+    const e = new Error('grupo_recusado'); e.status = r.status; e.codigo = String(j.error?.code ?? '').slice(0, 60); e.detalhe = String(j.error?.message ?? '').replace(/\s+/g, ' ').slice(0, 160); throw e
+  }
+  return j.id.toLowerCase()
+}
