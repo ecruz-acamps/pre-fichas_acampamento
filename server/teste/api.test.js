@@ -336,6 +336,37 @@ describe('API', { skip: pular }, () => {
       assert.equal(comp[0].ip_origem, undefined)
     })
 
+    test('opção "coordenadores veem todas as fichas": só consulta; alterar continua só no núcleo; só o administrador liga', async () => {
+      const marcaAtual = async () => (await app.inject({ method: 'GET', url: '/api/marca' })).json()
+      const ligar = async (v) => req('admin', 'PUT', '/api/admin/marca', { ...(await marcaAtual()), coordenadorVeTudo: v })
+      const dentro = await idPorNome('Maria Silva'), fora = await idPorNome('Terceiro Juvenil')
+      const ids = async () => (await req('coord', 'GET', '/api/admin/pre-fichas')).json()
+      // desligada (padrão): como sempre
+      assert.equal((await marcaAtual()).coordenadorVeTudo, false)
+      assert.equal((await ids()).some((f) => f.id === fora), false)
+      assert.equal((await req('coord', 'GET', `/api/admin/pre-fichas/${fora}`)).statusCode, 404)
+      // só o administrador liga
+      assert.equal((await req('equipe', 'PUT', '/api/admin/marca', { ...(await marcaAtual()), coordenadorVeTudo: true })).statusCode, 403)
+      assert.equal((await req('coord', 'PUT', '/api/admin/marca', { ...(await marcaAtual()), coordenadorVeTudo: true })).statusCode, 403)
+      assert.equal((await ligar(true)).statusCode, 200)
+      try {
+        const lista = await ids(); const f = lista.find((x) => x.id === fora), d = lista.find((x) => x.id === dentro)
+        assert.ok(f && d, 'agora vê as fichas de todos os núcleos')
+        assert.deepEqual([d.editavel, f.editavel], [true, false], 'as de fora são só consulta')
+        assert.equal((await req('coord', 'GET', `/api/admin/pre-fichas/${fora}`)).statusCode, 200)
+        assert.equal((await req('coord', 'GET', `/api/admin/pre-fichas/${fora}/historico`)).statusCode, 200)
+        // ...mas não altera nada fora do núcleo
+        assert.equal((await req('coord', 'PATCH', `/api/admin/pre-fichas/${fora}`, { status: 'em_contato' })).statusCode, 404)
+        assert.equal((await req('coord', 'POST', `/api/admin/pre-fichas/${fora}/recusa`, { comentario: 'Comentário de teste com tamanho suficiente' })).statusCode, 404)
+        assert.equal((await req('coord', 'POST', `/api/admin/pre-fichas/${fora}/fim-da-fila`, { motivo: 'Motivo de teste com tamanho suficiente' })).statusCode, 404)
+        assert.equal((await req('coord', 'POST', `/api/admin/pre-fichas/${fora}/modalidade`, { modalidade: 'juvenil' })).statusCode, 404)
+        assert.equal((await req('coord', 'PATCH', `/api/admin/pre-fichas/${dentro}`, { observacoes_internas: 'ok dentro' })).statusCode, 200, 'no núcleo dele continua alterando')
+        assert.equal((await pool.query('select status from pre_fichas where id = $1', [fora])).rows[0].status, 'aguardando')
+      } finally { await ligar(false) }
+      assert.equal((await ids()).some((f) => f.id === fora), false, 'desligando, volta a restringir')
+      assert.equal((await req('coord', 'GET', `/api/admin/pre-fichas/${fora}`)).statusCode, 404)
+    })
+
     test('revisar modalidade: só administrador e coordenador (no escopo); lista as fichas com "revisar"; altera ou mantém e registra', async () => {
       const dentro = await idPorNome('Maria Silva'), fora = await idPorNome('Terceiro Juvenil')
       await pool.query(`update pre_fichas set data_nascimento = '2000-01-01', estado_civil = 'solteiro', modalidade = 'senior',
@@ -757,7 +788,7 @@ describe('API', { skip: pular }, () => {
       // ver o histórico de um campista de outro núcleo: pode; alterar: não
       assert.equal((await req('aririu', 'GET', `/api/admin/pre-fichas/${ponte.id}/historico`)).statusCode, 200)
       assert.equal((await req('aririu', 'PATCH', `/api/admin/pre-fichas/${ponte.id}`, { observacoes_internas: 'x' })).statusCode, 404)
-      assert.equal((await req('aririu', 'POST', `/api/admin/pre-fichas/${ponte.id}/recusa`, { comentario: 'x' })).statusCode, 404)
+      assert.equal((await req('aririu', 'POST', `/api/admin/pre-fichas/${ponte.id}/recusa`, { comentario: 'Comentário de teste com tamanho suficiente' })).statusCode, 404)
       // pré-ficha (não campista) de outro núcleo continua restrita
       const centro = await idPorNome('Pessoa Centro')
       assert.equal((await req('aririu', 'GET', `/api/admin/pre-fichas/${centro}/historico`)).statusCode, 404)

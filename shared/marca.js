@@ -39,6 +39,7 @@ export const MARCA_PADRAO = {
   preferenciaConjuge: true,
   // Modalidade Casais: os DOIS precisam ter feito o Sênior? (depende da regra de cada acampamento)
   casaisExigeSenior: true,
+  coordenadorVeTudo: false,      // coordenador de núcleo só CONSULTA as fichas de fora do seu núcleo (alterar continua só no núcleo dele)
   cadastroEquipe: true,          // permite que coordenadores/equipe se cadastrem sozinhos (ficam pendentes até um admin liberar)
   // Área do participante: mostrar a posição na fila (desligado = mostra só a situação)
   mostrarPosicaoFila: false,
@@ -95,6 +96,7 @@ export function validarMarca(entrada) {
 
   if (bruto.casaisExigeSenior !== undefined) m.casaisExigeSenior = bruto.casaisExigeSenior === true
   if (bruto.cadastroEquipe !== undefined) m.cadastroEquipe = bruto.cadastroEquipe === true
+  if (bruto.coordenadorVeTudo !== undefined) m.coordenadorVeTudo = bruto.coordenadorVeTudo === true
   if (bruto.preferenciaConjuge !== undefined) m.preferenciaConjuge = bruto.preferenciaConjuge === true
   if (bruto.mostrarPosicaoFila !== undefined) m.mostrarPosicaoFila = bruto.mostrarPosicaoFila === true
 

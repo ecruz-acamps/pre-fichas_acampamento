@@ -6,7 +6,7 @@ import { carregarMarca, TextoMarca } from '../lib/marca.jsx'
 import { ajustarCor, corTextoSobre } from '../../shared/marca.js'
 
 const CAMPOS_EXPORTADOS = ['nome', 'nomeCurto', 'corPrimaria', 'whatsapp', 'email', 'instagram', 'site',
-  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila', 'edicoesPreferenciaConjuge', 'preferenciaConjuge', 'casaisExigeSenior', 'cadastroEquipe', 'mostrarPosicaoFila', 'impressaoTitulo', 'impressaoSubtitulo', 'impressaoTextoDireita']
+  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila', 'edicoesPreferenciaConjuge', 'preferenciaConjuge', 'casaisExigeSenior', 'cadastroEquipe', 'coordenadorVeTudo', 'mostrarPosicaoFila', 'impressaoTitulo', 'impressaoSubtitulo', 'impressaoTextoDireita']
 
 /** Publicação na internet pela Cloudflare: o administrador liga ou desliga. */
 function Publicacao({ nomeCurto }) {
@@ -438,6 +438,18 @@ export default function Configuracoes({ marca, onSalvar }) {
                 onChange={(e) => setM({ ...m, cadastroEquipe: e.target.value === 'sim' })}>
                 <option value="sim">Sim: a pessoa se cadastra e o administrador libera</option>
                 <option value="nao">Não: só o administrador cria usuários</option>
+              </select>
+            </Campo>
+          </section>
+
+          <section>
+            <h2>Coordenadores de núcleo</h2>
+            <Campo id="cfg-coord-tudo" rotulo="Coordenadores de núcleo podem ver todas as fichas?"
+              dica="Não (padrão): cada coordenador vê só as fichas do seu núcleo. Sim: ele consulta as fichas de todos os núcleos, mas só pode alterar (status, recusa, modalidade…) as do seu próprio núcleo. As de fora abrem em modo somente leitura.">
+              <select id="cfg-coord-tudo" value={m.coordenadorVeTudo === true ? 'sim' : 'nao'}
+                onChange={(e) => setM({ ...m, coordenadorVeTudo: e.target.value === 'sim' })}>
+                <option value="nao">Não: só as fichas do núcleo dele</option>
+                <option value="sim">Sim: vê todas (altera só as do seu núcleo)</option>
               </select>
             </Campo>
           </section>

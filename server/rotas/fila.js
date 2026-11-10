@@ -2,7 +2,7 @@ import { cabecalhosFoto } from '../foto.js'
 import { MODALIDADES, STATUS, rotuloDe } from '../../shared/opcoes.js'
 import { calcularIdade, modalidadesCompativeis } from '../../shared/util.js'
 import { transacao } from '../db.js'
-import { nucleosDoUsuario, podeVerFicha } from '../escopo.js'
+import { escopoLeitura, nucleosDoUsuario, podeVerFicha } from '../escopo.js'
 import { carregarMarca } from '../marca.js'
 
 const STATUS_VALIDOS = STATUS.map((s) => s.valor)
@@ -126,10 +126,11 @@ export default async function rotasFila(app) {
   // Pré-fichas visíveis para o usuário, na ordem da fila (data/hora de inscrição).
   // ?completo=1 traz todas as colunas (exportação). O padrão é a lista resumida.
   app.get('/api/admin/pre-fichas', autenticado(), async (req) => {
-    const escopo = await nucleosDoUsuario(pool, req.usuario)
+    const [leitura, escrita] = [await escopoLeitura(pool, req.usuario), await nucleosDoUsuario(pool, req.usuario)]
     const completo = req.query?.completo === '1'
-    const { rows } = await pool.query(SQL_LISTA(escopoLista(1), { completo }), [escopo])
-    return rows.map(limparFicha)
+    const { rows } = await pool.query(SQL_LISTA(escopoLista(1), { completo }), [leitura])
+    // editavel: dentro do núcleo do coordenador (as de fora, liberadas só para consulta, abrem em modo somente leitura)
+    return rows.map((f) => ({ ...limparFicha(f), editavel: escrita === null || (f.nucleos ?? []).some((n) => escrita.includes(n)) }))
   })
 
   // ---- Revisão de modalidade: só administrador e coordenador de núcleo (dentro do seu escopo) ----
@@ -324,7 +325,7 @@ export default async function rotasFila(app) {
   // Trilha de auditoria geral (respeita a área do coordenador)
   app.get('/api/admin/auditoria', autenticado(), async (req) => {
     const q = req.query ?? {}
-    const escopo = await nucleosDoUsuario(pool, req.usuario)
+    const escopo = await escopoLeitura(pool, req.usuario)
     // Escopo do coordenador verificado por ficha (pela chave primária), sem varrer todas as fichas
     const filtros = [`($1::bigint[] is null or exists (
       select 1 from pre_fichas pe join nucleo_areas a

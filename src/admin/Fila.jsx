@@ -389,6 +389,7 @@ export default function Fila({ usuario, marca, nucleos }) {
           onSalvar={(campos) => atualizar(selecionada.id, campos)}
           onFilaAlterada={filaAlterada}
           usuario={usuario}
+          somenteLeitura={selecionada.editavel === false}
           todas={linhas}
           onFichaAtualizada={async (f) => {
             const lista = await recarregar()

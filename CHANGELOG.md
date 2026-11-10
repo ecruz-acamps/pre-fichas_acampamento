@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 2.17.0 — coordenadores podem ver todas as fichas (opção)
+
+- Configurações → **Coordenadores de núcleo**: "podem ver todas as fichas?" **Não** (padrão) = como sempre, só as do núcleo dele. **Sim** = consulta as fichas de **todos** os núcleos, mas **só altera** (status, recusa, fim da fila, modalidade…) as do seu próprio núcleo; as de fora abrem em modo somente leitura.
+- Só o administrador liga/desliga. A consulta vale para a Fila, o detalhe, o histórico, a impressão, a foto e a Auditoria.
+
 ## 2.16.0 — o sistema cria os grupos de núcleo no Entra
 
 - Núcleos → **Criar grupos no Entra** (só administrador): cria um grupo de segurança "Pré-fichas – NÚCLEO" para cada núcleo que ainda não tem e guarda o ID. Não recria o que já existe.
