@@ -243,6 +243,56 @@ function validarPedido(c) {
     return { pedido: { acao, host, porta, usuario, remetente, aplicar: c.aplicar === true, ...(senha ? { senha } : {}) } }
   }
   if (acao === 'email-teste' || acao === 'email-remover' || acao === 'email-aplicar' || acao === 'tunel-unificar') return { pedido: { acao } }
+  // ---- backup na nuvem (OneDrive) e mensagens de aniversário (textbee): só o painel da VM mexe nisso
+  const instanciaExiste = (i) => RE.instancia.test(i ?? '') && (lerJson(join(ESTADO, 'instancias.json'), { instancias: [] }).instancias ?? []).some((x) => x.pasta === i)
+  const hora = (v) => /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(String(v ?? ''))
+  if (['backup-conectar', 'backup-desconectar', 'backup-chave-guardada', 'backup-listar'].includes(acao)) return { pedido: { acao } }
+  if (acao === 'backup-chave-gerar') return { pedido: { acao, substituir: c.substituir === true } }
+  if (acao === 'backup-config') {
+    const e = {}
+    const t = String(c.tenant_id ?? '').trim(), cl = String(c.client_id ?? '').trim()
+    if (!hora(c.hora)) e.hora = 'Horário inválido (HH:MM).'
+    if ((t || cl) && !(RE.guid.test(t) && RE.guid.test(cl))) e.tenant_id = 'Informe o ID do diretório e o ID do aplicativo (formato 00000000-0000-0000-0000-000000000000).'
+    const md = Number(c.manter_diarios ?? 14), mm = Number(c.manter_mensais ?? 6)
+    if (!Number.isInteger(md) || md < 3 || md > 90) e.manter_diarios = 'De 3 a 90.'
+    if (!Number.isInteger(mm) || mm < 0 || mm > 24) e.manter_mensais = 'De 0 a 24.'
+    if (Object.keys(e).length) return { erros: e }
+    return { pedido: { acao, ligado: c.ligado === true, hora: c.hora, tenant_id: t, client_id: cl, manter_diarios: md, manter_mensais: mm } }
+  }
+  if (acao === 'backup-nuvem') {
+    if (c.instancia && !instanciaExiste(c.instancia)) return { erros: { instancia: 'Instância não encontrada.' } }
+    return { pedido: { acao, ...(c.instancia ? { instancia: c.instancia } : {}) } }
+  }
+  if (acao === 'backup-restaurar') {
+    const e = {}
+    if (!instanciaExiste(c.instancia)) e.instancia = 'Instância não encontrada (crie a instância antes de restaurar nela).'
+    if (c.confirmar !== c.instancia) e.confirmar = `Digite exatamente ${c.instancia} para confirmar.`
+    if (!/^[A-Za-z0-9!_.-]{4,200}$/.test(c.arquivo ?? '') || !/^prefichas-[a-z0-9-]{1,80}__\d{4}-\d{2}-\d{2}_\d{4}\.dump\.age$/.test(c.nome ?? '')) e.arquivo = 'Escolha um backup da lista.'
+    const chave = String(c.chave ?? '').trim()
+    if (!/^AGE-SECRET-KEY-1[0-9A-Z]{58}$/.test(chave)) e.chave = 'Chave de recuperação inválida: cole a linha inteira, que começa com AGE-SECRET-KEY-1.'
+    if (Object.keys(e).length) return { erros: e }
+    return { pedido: { acao, instancia: c.instancia, confirmar: c.confirmar, arquivo: c.arquivo, nome: c.nome, chave } }
+  }
+  const foneValido = (v) => /^\+?[0-9 ()-]{10,20}$/.test(String(v ?? '')) && String(v).replace(/\D/g, '').length >= 10
+  if (acao === 'sms-config') {
+    const e = {}
+    if (!hora(c.hora)) e.hora = 'Horário inválido (HH:MM).'
+    const lim = Number(c.limite_dia ?? 200)
+    if (!Number.isInteger(lim) || lim < 1 || lim > 10000) e.limite_dia = 'De 1 a 10000.'
+    for (const k of ['modelo_aniversario', 'modelo_acampamento']) if (String(c[k] ?? '').length > 480) e[k] = 'Máximo de 480 letras.'
+    if (c.device_id && !/^[A-Za-z0-9_-]{6,64}$/.test(c.device_id)) e.device_id = 'ID do aparelho inválido.'
+    const token = String(c.token ?? '').trim()
+    if (token && !/^[A-Za-z0-9._-]{16,200}$/.test(token)) e.token = 'Chave da API inválida.'
+    if (c.telefone_teste && !foneValido(c.telefone_teste)) e.telefone_teste = 'Telefone inválido.'
+    if (Object.keys(e).length) return { erros: e }
+    return { pedido: { acao, ligado: c.ligado === true, hora: c.hora, limite_dia: lim, modelo_aniversario: String(c.modelo_aniversario ?? '').trim(), modelo_acampamento: String(c.modelo_acampamento ?? '').trim(),
+      rodape_sair: c.rodape_sair !== false, device_id: String(c.device_id ?? '').trim(), telefone_teste: String(c.telefone_teste ?? '').trim(), ...(token ? { token } : {}) } }
+  }
+  if (acao === 'sms-enviar') return { pedido: { acao, previa: c.previa === true } }
+  if (acao === 'sms-teste' || acao === 'sms-bloqueio') {
+    if (!foneValido(c.telefone)) return { erros: { telefone: 'Telefone inválido (com DDD).' } }
+    return { pedido: { acao, telefone: String(c.telefone).trim(), ...(acao === 'sms-bloqueio' ? { bloquear: c.bloquear !== false } : {}) } }
+  }
   return { erros: { acao: 'Ação desconhecida.' } }
 }
 
@@ -430,6 +480,21 @@ const servidor = createServer(async (req, res) => {
       // só a situação (configurado ou não); o token em si nunca volta para o navegador
       return responder(res, 200, lerJson(join(ESTADO, 'configuracoes.json'), { cloudflare: { token_configurado: null } }))
     }
+    // backup na nuvem e mensagens: arquivos de estado publicados pelo executor (nada de segredo, exceto a chave mostrada uma vez)
+    const ESTADOS_LIVRES = { '/api/backups': 'backups-nuvem.json', '/api/nuvem-codigo': 'nuvem-codigo.json', '/api/sms-previa': 'sms-previa.json' }
+    if (req.method === 'GET' && ESTADOS_LIVRES[url.pathname]) return responder(res, 200, lerJson(join(ESTADO, ESTADOS_LIVRES[url.pathname]), {}) ?? {})
+    if (req.method === 'GET' && url.pathname === '/api/backup-chave') {
+      const k = lerJson(join(ESTADO, 'backup-chave.json'), {}) ?? {}
+      const valida = k.chave && Date.parse(k.expira) > Date.now()
+      if (valida) auditar(s.email, 'viu-chave-backup', {})
+      return responder(res, 200, valida ? { chave: k.chave, expira: k.expira } : {})
+    }
+    if (req.method === 'GET' && url.pathname === '/api/sms-historico') {
+      const dia = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get('dia') ?? '') ? url.searchParams.get('dia') : new Date().toLocaleDateString('sv-SE', { timeZone: 'America/Sao_Paulo' })
+      const arq = join(ESTADO, 'sms', `${dia}.jsonl`)
+      const linhas = existsSync(arq) ? readFileSync(arq, 'utf8').split('\n').filter(Boolean).slice(-2000).map((l) => { try { return JSON.parse(l) } catch { return null } }).filter(Boolean) : []
+      return responder(res, 200, { dia, mensagens: linhas })
+    }
     if (req.method === 'GET' && url.pathname === '/api/vpn') {
       return responder(res, 200, lerJson(join(ESTADO, 'vpn.json'), { configurada: null }))
     }
@@ -438,7 +503,8 @@ const servidor = createServer(async (req, res) => {
       const lista = existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith('.json'))
         .map((f) => lerJson(join(dir, f))).filter(Boolean).sort((a, b) => String(b.inicio).localeCompare(String(a.inicio))).slice(0, 30) : []
       const pendentes = readdirSync(PEDIDOS).filter((f) => f.endsWith('.json')).map((f) => ({ id: f.slice(0, -5), situacao: 'na fila', ...lerJson(join(PEDIDOS, f), {}) }))
-      for (const p of pendentes) { delete p.chave; delete p.token; delete p.psk; delete p.senha; delete p.segredo; delete p.link }
+      for (const p of pendentes) { delete p.chave; delete p.token; delete p.psk; delete p.senha; delete p.segredo; delete p.link; delete p.telefone_teste
+        if (p.telefone) p.telefone = String(p.telefone).replace(/\D/g, '').replace(/^(\d{4})\d+(\d{4})$/, '$1••••$2') }
       return responder(res, 200, { pendentes, tarefas: lista })
     }
     const mt = /^\/api\/tarefas\/([a-z0-9-]{8,40})$/.exec(url.pathname)
@@ -456,6 +522,8 @@ const servidor = createServer(async (req, res) => {
       const { chave, token, psk, senha, segredo, ...semChave } = dados // eslint-disable-line no-unused-vars
       if (token) semChave.token = '(informado, não registrado)'
       if (psk || senha || segredo) semChave.credenciais = '(informadas, não registradas)'
+      if (semChave.telefone) semChave.telefone = String(semChave.telefone).replace(/\D/g, '').replace(/^(\d{4})\d+(\d{4})$/, '$1••••$2')
+      if (semChave.telefone_teste) semChave.telefone_teste = '(informado)'
       auditar(s.email, `pedido-${pedido.acao}`, { id, ...semChave })
       return responder(res, 201, { id })
     }

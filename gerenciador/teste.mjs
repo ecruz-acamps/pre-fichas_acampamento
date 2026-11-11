@@ -226,3 +226,34 @@ test('apagar instância e trocar link: validam o pedido (nome digitado, instânc
   assert.equal((await fetch(`${url}/api/tarefas`, { method: 'POST', headers: H, body: JSON.stringify({ acao: 'apagar', instancia: I, confirmar: I }) })).status, 401)
   const aud = readFileSync(join(base_, 'dados', 'auditoria.jsonl'), 'utf8'); assert.match(aud, /pedido-apagar/); assert.match(aud, /pedido-trocar-link/)
 })
+
+test('backup na nuvem e mensagens: o painel valida os pedidos e nunca registra a chave de recuperação, a chave do textbee nem o telefone completo', async () => {
+  const post = (corpo) => fetch(`${url}/api/tarefas`, { method: 'POST', headers: { ...H, cookie: globalThis.cookie }, body: JSON.stringify(corpo) })
+  const G1 = '11111111-2222-3333-4444-555555555555', G2 = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee'
+  const CHAVE = 'AGE-SECRET-KEY-1' + 'Q'.repeat(58), TOKEN = 'textbee-chave-secreta-0123456789'
+  for (const ruim of [{ hora: '25:00' }, { tenant_id: 'x', client_id: G2 }, { client_id: '' }, { manter_diarios: 1 }, { manter_mensais: 99 }]) {
+    assert.equal((await post({ acao: 'backup-config', ligado: true, hora: '02:30', tenant_id: G1, client_id: G2, manter_diarios: 14, manter_mensais: 6, ...ruim })).status, 400, JSON.stringify(ruim))
+  }
+  assert.equal((await post({ acao: 'backup-config', ligado: true, hora: '02:30', tenant_id: G1, client_id: G2, manter_diarios: 14, manter_mensais: 6 })).status, 201)
+  const rest = { acao: 'backup-restaurar', instancia: 'prefichas-sao-pedro', confirmar: 'prefichas-sao-pedro', arquivo: '01ABCDEF', nome: 'prefichas-sao-pedro__2026-11-10_0230.dump.age', chave: CHAVE }
+  for (const ruim of [{ confirmar: 'prefichas-outra' }, { chave: 'errada' }, { nome: '../../etc/passwd' }, { arquivo: 'a b' }, { instancia: 'prefichas-nao-existe', confirmar: 'prefichas-nao-existe' }]) {
+    assert.equal((await post({ ...rest, ...ruim })).status, 400, JSON.stringify(ruim))
+  }
+  assert.equal((await post(rest)).status, 201)
+  for (const ruim of [{ hora: '9h' }, { limite_dia: 0 }, { token: 'curta' }, { device_id: 'a b' }, { modelo_aniversario: 'x'.repeat(481) }, { telefone_teste: '123' }]) {
+    assert.equal((await post({ acao: 'sms-config', ligado: true, hora: '09:00', limite_dia: 100, ...ruim })).status, 400, JSON.stringify(ruim))
+  }
+  assert.equal((await post({ acao: 'sms-config', ligado: true, hora: '09:00', limite_dia: 100, token: TOKEN, telefone_teste: '(48) 99999-0000' })).status, 201)
+  assert.equal((await post({ acao: 'sms-teste', telefone: 'abc' })).status, 400)
+  assert.equal((await post({ acao: 'sms-bloqueio', telefone: '(48) 98888-1234', bloquear: true })).status, 201)
+  // nada sensível na lista de pendentes nem na auditoria
+  const lista = JSON.stringify(await (await fetch(`${url}/api/tarefas`, { headers: { cookie: globalThis.cookie } })).json())
+  const aud = readFileSync(join(base_, 'dados', 'auditoria.jsonl'), 'utf8')
+  for (const segredo of [CHAVE, TOKEN, '98888-1234', '988881234']) { assert.equal(lista.includes(segredo), false, segredo); assert.equal(aud.includes(segredo), false, segredo) }
+  assert.match(aud, /pedido-backup-restaurar/); assert.match(aud, /pedido-sms-bloqueio/)
+  // estados do painel: só com login
+  for (const rota of ['/api/backups', '/api/backup-chave', '/api/nuvem-codigo', '/api/sms-previa', '/api/sms-historico']) {
+    assert.equal((await fetch(`${url}${rota}`)).status, 401, rota)
+    assert.equal((await fetch(`${url}${rota}`, { headers: { cookie: globalThis.cookie } })).status, 200, rota)
+  }
+})

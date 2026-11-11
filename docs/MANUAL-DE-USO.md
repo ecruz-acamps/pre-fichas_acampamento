@@ -474,3 +474,28 @@ Em **Instâncias** (painel central):
 ### Modalidade só para homens (ou só para mulheres)
 
 Ao criar ou editar uma modalidade (menu **Modalidades**), o campo **"Quem pode se inscrever"** permite escolher **Só homens** ou **Só mulheres**. O formulário passa a oferecer essa modalidade apenas a quem informou o sexo correspondente, e o servidor recusa inscrições fora da regra. Vale para novas inscrições; as fichas que já existem não mudam.
+
+## Painel da VM: backup diário no OneDrive
+
+Aba **Backups** do painel central. Os administradores dos acampamentos não veem esta parte.
+
+**Preparar (uma vez):**
+1. No Microsoft Entra: **Registos de aplicações → Novo registo** "Pré-fichas Backup" (contas só desta organização). Em **Autenticação → Definições avançadas**, ative **"Permitir fluxos de cliente público"**. Em **Permissões de API → Microsoft Graph → Permissões delegadas**, adicione **Files.ReadWrite** e **offline_access**.
+2. No painel, cole o **ID do diretório** e o **ID do aplicativo** e salve.
+3. Clique em **Conectar o OneDrive**: aparece um código; abra o endereço indicado, entre com a conta que vai guardar os backups e digite o código.
+4. Clique em **Gerar chave de recuperação** e **guarde a chave fora do servidor** (cofre de senhas ou impressa). Ela aparece uma vez só. **Sem ela, nenhum backup pode ser aberto.**
+5. Marque **Fazer o backup automaticamente todo dia**, escolha o horário e salve.
+
+**Como funciona:** todo dia, um arquivo por acampamento vai para `PreFichas-Backups/<acampamento>/` no OneDrive, cifrado. Ficam os últimos N dias e um backup por mês dos últimos M meses.
+
+**Restaurar:** em **Backups no OneDrive**, escolha o acampamento e o backup → **Restaurar…** → cole a chave de recuperação, digite o nome da pasta e confirme. Antes de restaurar, o sistema confere a chave, faz um backup de segurança local do banco atual e, se algo falhar, nada é alterado. **Servidor novo:** instale o painel, conecte o mesmo OneDrive, crie a instância com o **mesmo nome** (Nova instância) e restaure nela.
+
+## Painel da VM: mensagens de aniversário (SMS)
+
+Aba **Mensagens** do painel central, pelo **textbee.dev** (um celular Android com o app do textbee envia os SMS).
+
+**Preparar:** crie a conta no textbee, instale o app no celular e conecte-o; em **app.textbee.dev → API Keys**, crie uma chave. No painel, cole a chave (e o ID do aparelho, se tiver mais de um), confira as mensagens e use **Enviar mensagem de teste**. Depois marque **Enviar automaticamente todo dia** e escolha o horário.
+
+**Quem recebe:** só **campistas** (quem já participou) de todos os acampamentos: no aniversário e no aniversário de acampamento (pela data de início da edição). A mesma pessoa em dois acampamentos recebe uma vez. Quem responder **SAIR** (ou PARAR) deixa de receber; também dá para bloquear um número pelo painel.
+
+**Atenção ao plano do textbee:** o gratuito permite 50 mensagens por dia e 300 por mês. Com ~40 mil pessoas, os aniversários dos campistas passam disso: use o plano Pro (5.000/mês) ou maior e ajuste o **máximo por dia**. Use **Ver prévia de hoje** para saber quantas mensagens sairiam.

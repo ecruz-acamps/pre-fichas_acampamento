@@ -249,6 +249,164 @@ function telaApagar(area) {
   area.append(form)
 }
 
+
+// ------------------------------------------------------------------ campo de formulário com erro
+function campoF(erros, nome, rotulo, input, dica) {
+  return h('div', { class: 'campo' }, h('label', { for: nome }, rotulo), input, dica && h('span', { class: 'dica' }, dica), erros[nome] = h('span', { class: 'erro-campo' }))
+}
+async function enviarForm(corpo, aviso, erros, confirmacao) {
+  aviso.replaceChildren(); Object.values(erros).forEach((x) => x.replaceChildren())
+  if (confirmacao && !confirm(confirmacao)) return
+  try { const r = await api('POST', '/api/tarefas', corpo); tarefaAberta = r.id; tela = 'tarefas'; desenhar() } catch (err) {
+    aviso.append(h('div', { class: 'alerta erro' }, err.message))
+    for (const [k, v] of Object.entries(err.dados?.erros ?? {})) erros[k]?.append(v)
+  }
+}
+const tamanho = (b) => (b >= 1073741824 ? `${(b / 1073741824).toFixed(1)} GB` : b >= 1048576 ? `${(b / 1048576).toFixed(1)} MB` : `${Math.ceil((b ?? 0) / 1024)} KB`)
+
+// ------------------------------------------------------------------ backups na nuvem (OneDrive), por acampamento
+async function telaBackups(area) {
+  const [conf, inst, lista, codigo, chave] = await Promise.all([api('GET', '/api/configuracoes'), api('GET', '/api/instancias'), api('GET', '/api/backups'),
+    api('GET', '/api/nuvem-codigo').catch(() => ({})), api('GET', '/api/backup-chave').catch(() => ({}))])
+  const b = conf.backup ?? {}
+  const nomeDe = Object.fromEntries((inst.instancias ?? []).map((i) => [i.pasta, i.nome || i.pasta]))
+
+  if (chave.chave) {
+    area.append(h('section', { class: 'cartao' }, h('h2', {}, 'Chave de recuperação — guarde agora'),
+      h('div', { class: 'alerta erro' }, 'Esta chave aparece só agora (some em 30 minutos). Sem ela, NENHUM backup pode ser aberto. Guarde em um cofre de senhas ou imprima e guarde fora do servidor.'),
+      h('pre', { class: 'chave' }, chave.chave),
+      h('button', { class: 'secundario', type: 'button', onclick: () => navigator.clipboard?.writeText(chave.chave) }, 'Copiar'), ' ',
+      h('button', { class: 'principal', type: 'button', onclick: () => pedir({ acao: 'backup-chave-guardada' }, 'Confirma que guardou a chave em lugar seguro? Ela não será mostrada de novo.') }, 'Já guardei a chave')))
+  }
+  if (codigo.codigo && Date.parse(codigo.expira) > Date.now()) {
+    area.append(h('section', { class: 'cartao' }, h('h2', {}, 'Conectar o OneDrive'),
+      h('p', {}, 'Abra ', h('a', { href: codigo.url, target: '_blank', rel: 'noreferrer' }, codigo.url), ', entre com a conta Microsoft que vai guardar os backups e digite o código:'),
+      h('pre', { class: 'chave' }, codigo.codigo), h('p', { class: 'dica' }, `Vale até ${dataHora(codigo.expira)}. Depois de entrar, acompanhe em Tarefas.`)))
+  }
+
+  // ---- situação e configuração
+  const erros = {}; const aviso = h('div')
+  const lig = h('input', { type: 'checkbox', id: 'bk-ligado', ...(b.ligado ? { checked: true } : {}) })
+  const horaI = h('input', { id: 'hora', type: 'time', value: b.hora || '02:30' })
+  const tenant = h('input', { id: 'tenant_id', value: b.tenant_id || '', spellcheck: 'false', autocomplete: 'off' })
+  const cliente = h('input', { id: 'client_id', value: b.client_id || '', spellcheck: 'false', autocomplete: 'off' })
+  const md = h('input', { id: 'manter_diarios', type: 'number', min: '3', max: '90', value: String(b.manter_diarios ?? 14) })
+  const mm = h('input', { id: 'manter_mensais', type: 'number', min: '0', max: '24', value: String(b.manter_mensais ?? 6) })
+  const ult = b.ultimo ? `${dataHora(b.ultimo.em)} · ${b.ultimo.instancias} acampamento(s)${b.ultimo.falhas ? ` · ${b.ultimo.falhas} falha(s)` : ' · ok'}` : 'nenhum ainda'
+  area.append(h('section', { class: 'cartao' },
+    h('h2', {}, 'Backup diário na nuvem (OneDrive)'),
+    h('p', { class: 'dica' }, 'Um backup por acampamento, todo dia, cifrado antes de sair do servidor, na pasta PreFichas-Backups do OneDrive (uma subpasta por acampamento). Os administradores dos acampamentos não veem nada disso.'),
+    h('div', { class: 'grade-servidor' },
+      h('div', { class: 'metrica' }, h('b', {}, b.conectado ? 'conectado' : 'não conectado'), h('span', {}, b.conta || 'OneDrive')),
+      h('div', { class: 'metrica' }, h('b', {}, b.chave_definida ? 'definida' : 'não gerada'), h('span', {}, 'chave de recuperação')),
+      h('div', { class: 'metrica' }, h('b', {}, b.ligado ? `todo dia às ${b.hora}` : 'desligado'), h('span', {}, 'backup automático')),
+      h('div', { class: 'metrica' }, h('b', {}, ult), h('span', {}, 'último backup'))),
+    h('ol', { class: 'dica' },
+      h('li', {}, 'No Microsoft Entra: Registos de aplicações → Novo registo "Pré-fichas Backup" (só esta organização). Em Autenticação, ative "Permitir fluxos de cliente público". Em Permissões de API, Microsoft Graph → delegadas: Files.ReadWrite e offline_access.'),
+      h('li', {}, 'Cole abaixo o ID do diretório e o ID do aplicativo e salve.'),
+      h('li', {}, 'Clique em "Conectar o OneDrive" e entre com a conta que vai guardar os backups.'),
+      h('li', {}, 'Clique em "Gerar chave de recuperação" e guarde a chave fora do servidor.'),
+      h('li', {}, 'Ligue o backup diário.')),
+    h('form', { onsubmit: (e) => { e.preventDefault(); enviarForm({ acao: 'backup-config', ligado: lig.checked, hora: horaI.value, tenant_id: tenant.value.trim(), client_id: cliente.value.trim(), manter_diarios: Number(md.value), manter_mensais: Number(mm.value) }, aviso, erros) } },
+      h('div', { class: 'linha-2' }, campoF(erros, 'tenant_id', 'ID do diretório (locatário)', tenant), campoF(erros, 'client_id', 'ID do aplicativo (cliente)', cliente)),
+      h('div', { class: 'linha-2' }, campoF(erros, 'hora', 'Horário do backup', horaI), campoF(erros, 'manter_diarios', 'Manter backups diários (dias)', md), campoF(erros, 'manter_mensais', 'E 1 por mês, por (meses)', mm)),
+      h('label', { class: 'check' }, lig, ' Fazer o backup automaticamente todo dia'),
+      aviso, h('button', { class: 'principal', type: 'submit' }, 'Salvar')),
+    h('p', {},
+      h('button', { class: 'secundario', type: 'button', onclick: () => pedir({ acao: 'backup-conectar' }) }, b.conectado ? 'Reconectar o OneDrive' : 'Conectar o OneDrive'), ' ',
+      h('button', { class: 'secundario', type: 'button', onclick: () => pedir({ acao: 'backup-chave-gerar', substituir: !!b.chave_definida },
+        b.chave_definida ? 'Gerar uma chave NOVA? Os backups antigos continuam abrindo só com a chave antiga; os novos só com a nova.' : null) }, b.chave_definida ? 'Trocar a chave de recuperação' : 'Gerar chave de recuperação'), ' ',
+      h('button', { class: 'secundario', type: 'button', onclick: () => pedir({ acao: 'backup-nuvem' }, 'Fazer agora o backup de TODOS os acampamentos?') }, 'Fazer backup de todos agora'), ' ',
+      b.conectado && h('button', { class: 'link', type: 'button', onclick: () => pedir({ acao: 'backup-desconectar' }, 'Desconectar o OneDrive e desligar o backup diário?') }, 'desconectar'))))
+
+  // ---- backups existentes, por acampamento
+  const porInst = lista.acampamentos ?? {}
+  const linhas = Object.keys({ ...porInst, ...nomeDe }).sort().map((pasta) => {
+    const arqs = porInst[pasta] ?? []
+    return h('div', { class: 'cartao' },
+      h('div', { class: 'topo' }, h('h3', {}, nomeDe[pasta] ?? `${pasta} (sem instância nesta VM)`),
+        nomeDe[pasta] && h('button', { class: 'secundario', type: 'button', onclick: () => pedir({ acao: 'backup-nuvem', instancia: pasta }, `Fazer agora o backup de ${nomeDe[pasta]}?`) }, 'Backup agora')),
+      arqs.length ? h('div', { class: 'tabela-wrap' }, h('table', {},
+        h('thead', {}, h('tr', {}, ...['Backup', 'Tamanho', ''].map((t) => h('th', {}, t)))),
+        h('tbody', {}, arqs.map((a) => h('tr', {},
+          h('td', {}, a.name.replace(/^.*__(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2}).*$/, '$3/$2/$1 $4:$5')),
+          h('td', {}, tamanho(a.size)),
+          h('td', {}, h('button', { class: 'link', type: 'button', onclick: () => { restaurarAlvo = { pasta, nome: nomeDe[pasta], arquivo: a }; tela = 'restaurar'; desenhar() } }, 'Restaurar…'))))))) : h('p', { class: 'dica' }, 'Nenhum backup no OneDrive ainda.'))
+  })
+  area.append(h('section', {}, h('div', { class: 'topo' }, h('h2', {}, 'Backups no OneDrive'),
+    h('button', { class: 'secundario', type: 'button', onclick: () => pedir({ acao: 'backup-listar' }) }, 'Atualizar lista')),
+    h('p', { class: 'dica' }, lista.lido_em ? `Lista lida em ${dataHora(lista.lido_em)}.` : 'Clique em "Atualizar lista" para ler o OneDrive.'), ...linhas))
+}
+let restaurarAlvo = null
+function telaRestaurar(area) {
+  const r = restaurarAlvo; const erros = {}; const aviso = h('div')
+  const chave = h('textarea', { id: 'chave', rows: '2', spellcheck: 'false', autocomplete: 'off', placeholder: 'AGE-SECRET-KEY-1…' })
+  const conf = h('input', { id: 'confirmar', autocomplete: 'off', spellcheck: 'false', placeholder: r.pasta })
+  area.append(h('form', { class: 'cartao', onsubmit: (e) => { e.preventDefault(); enviarForm({ acao: 'backup-restaurar', instancia: r.pasta, arquivo: r.arquivo.id, nome: r.arquivo.name, chave: chave.value.trim(), confirmar: conf.value.trim() }, aviso, erros,
+    `RESTAURAR ${r.nome ?? r.pasta}? O banco atual será substituído pelo backup de ${r.arquivo.name.replace(/^.*__(\d{4})-(\d{2})-(\d{2})_(\d{2})(\d{2}).*$/, '$3/$2/$1 $4:$5')}. Antes, é feito um backup de segurança local do banco atual.`) } },
+    h('h2', {}, `Restaurar · ${r.nome ?? r.pasta}`),
+    h('p', {}, 'Backup: ', h('strong', {}, r.arquivo.name), ` (${tamanho(r.arquivo.size)})`),
+    !r.nome && h('div', { class: 'alerta erro' }, 'Esta instância não existe nesta VM. Crie primeiro uma instância com o mesmo nome (Nova instância) e depois restaure nela.'),
+    h('ul', { class: 'dica' }, h('li', {}, 'O sistema do acampamento fica parado por alguns instantes.'), h('li', {}, 'Antes de restaurar é feito um backup de segurança local do banco atual (na pasta backups da instância).'), h('li', {}, 'Se der qualquer erro, nada é alterado.')),
+    campoF(erros, 'chave', 'Chave de recuperação (só é usada agora; não fica guardada)', chave),
+    campoF(erros, 'confirmar', `Para confirmar, digite o nome da pasta: ${r.pasta}`, conf),
+    erros.arquivo = h('span', { class: 'erro-campo' }), erros.instancia = h('span', { class: 'erro-campo' }),
+    aviso, h('button', { class: 'perigo', type: 'submit', ...(r.nome ? {} : { disabled: true }) }, 'Restaurar este backup'), ' ',
+    h('button', { class: 'link', type: 'button', onclick: () => { tela = 'backups'; desenhar() } }, 'cancelar')))
+}
+
+// ------------------------------------------------------------------ mensagens de aniversário (SMS pelo textbee.dev)
+async function telaMensagens(area) {
+  const [conf, previa, hist] = await Promise.all([api('GET', '/api/configuracoes'), api('GET', '/api/sms-previa').catch(() => ({})), api('GET', '/api/sms-historico').catch(() => ({}))])
+  const m = conf.sms ?? {}
+  const erros = {}; const aviso = h('div')
+  const lig = h('input', { type: 'checkbox', id: 'sms-ligado', ...(m.ligado ? { checked: true } : {}) })
+  const sair = h('input', { type: 'checkbox', id: 'sms-sair', ...(m.rodape_sair !== false ? { checked: true } : {}) })
+  const horaI = h('input', { id: 'hora', type: 'time', value: m.hora || '09:00' })
+  const lim = h('input', { id: 'limite_dia', type: 'number', min: '1', max: '10000', value: String(m.limite_dia ?? 200) })
+  const token = h('input', { id: 'token', type: 'password', autocomplete: 'off', placeholder: m.token_configurado ? '•••••••• (configurada — cole só para trocar)' : 'chave da API do textbee' })
+  const dev = h('input', { id: 'device_id', value: m.device_id || '', spellcheck: 'false', placeholder: '(opcional: usa o aparelho padrão)' })
+  const teste = h('input', { id: 'telefone_teste', value: m.telefone_teste || '', placeholder: '(48) 99999-0000' })
+  const ma = h('textarea', { id: 'modelo_aniversario', rows: '3', maxlength: '480', placeholder: 'Olá, {nome}! Hoje é o seu aniversário. Que Deus abençoe a sua vida e Nossa Senhora interceda por você. Parabéns! {comunidade}' })
+  ma.value = m.modelo_aniversario || ''
+  const mc = h('textarea', { id: 'modelo_acampamento', rows: '3', maxlength: '480', placeholder: 'Olá, {nome}! Hoje faz {anos} ano(s) que você viveu o {acampamento}. Que o fogo do Espírito Santo continue aceso em você! Deus te abençoe. {comunidade}' })
+  mc.value = m.modelo_acampamento || ''
+  area.append(h('section', { class: 'cartao' },
+    h('h2', {}, 'Mensagens de aniversário (SMS)'),
+    h('p', { class: 'dica' }, 'Todo dia, no horário escolhido, o painel lê os bancos de TODOS os acampamentos e envia pelo textbee.dev: parabéns no aniversário e no aniversário de acampamento (quem participou). Só campistas recebem. A mesma pessoa em mais de um acampamento recebe uma vez. Quem responder SAIR deixa de receber.'),
+    h('div', { class: 'grade-servidor' },
+      h('div', { class: 'metrica' }, h('b', {}, m.ligado ? `todo dia às ${m.hora}` : 'desligado'), h('span', {}, 'envio automático')),
+      h('div', { class: 'metrica' }, h('b', {}, m.token_configurado ? 'configurada' : 'não configurada'), h('span', {}, 'chave do textbee')),
+      h('div', { class: 'metrica' }, h('b', {}, String(m.bloqueados ?? 0)), h('span', {}, 'pediram para não receber')),
+      h('div', { class: 'metrica' }, h('b', {}, m.ultimo_dia || '—'), h('span', {}, 'último envio'))),
+    h('form', { onsubmit: (e) => { e.preventDefault(); enviarForm({ acao: 'sms-config', ligado: lig.checked, hora: horaI.value, limite_dia: Number(lim.value), token: token.value.trim(), device_id: dev.value.trim(),
+      telefone_teste: teste.value.trim(), modelo_aniversario: ma.value.trim(), modelo_acampamento: mc.value.trim(), rodape_sair: sair.checked }, aviso, erros) } },
+      h('div', { class: 'linha-2' }, campoF(erros, 'token', 'Chave da API do textbee', token, 'Em app.textbee.dev → API Keys. Fica só no servidor.'), campoF(erros, 'device_id', 'ID do aparelho', dev)),
+      campoF(erros, 'modelo_aniversario', 'Mensagem de aniversário', ma, 'Use {nome} (primeiro nome) e {comunidade} (nome do acampamento). Em branco = mensagem padrão (exemplo acima).'),
+      campoF(erros, 'modelo_acampamento', 'Mensagem de aniversário de acampamento', mc, 'Use {nome}, {anos}, {acampamento} (ex.: 16º Sênior) e {comunidade}.'),
+      h('div', { class: 'linha-2' }, campoF(erros, 'hora', 'Horário do envio', horaI), campoF(erros, 'limite_dia', 'Máximo de mensagens por dia', lim, 'O plano gratuito do textbee permite 50/dia e 300/mês.'), campoF(erros, 'telefone_teste', 'Telefone para teste', teste)),
+      h('label', { class: 'check' }, sair, ' Terminar cada mensagem com "Para não receber, responda SAIR." (recomendado — LGPD)'),
+      h('label', { class: 'check' }, lig, ' Enviar automaticamente todo dia'),
+      aviso, h('button', { class: 'principal', type: 'submit' }, 'Salvar')),
+    h('p', {},
+      h('button', { class: 'secundario', type: 'button', onclick: () => pedir({ acao: 'sms-enviar', previa: true }) }, 'Ver prévia de hoje (não envia)'), ' ',
+      h('button', { class: 'secundario', type: 'button', onclick: () => { const t = teste.value.trim() || prompt('Telefone para o teste (com DDD):'); if (t) pedir({ acao: 'sms-teste', telefone: t }) } }, 'Enviar mensagem de teste'), ' ',
+      h('button', { class: 'secundario', type: 'button', onclick: () => pedir({ acao: 'sms-enviar' }, 'Enviar AGORA as mensagens de hoje? Quem já recebeu hoje não recebe de novo.') }, 'Enviar as de hoje agora'), ' ',
+      h('button', { class: 'link', type: 'button', onclick: () => { const t = prompt('Telefone que NÃO deve mais receber (com DDD):'); if (t) pedir({ acao: 'sms-bloqueio', telefone: t, bloquear: true }) } }, 'bloquear um telefone'), ' ',
+      h('button', { class: 'link', type: 'button', onclick: () => { const t = prompt('Telefone que volta a receber (com DDD):'); if (t) pedir({ acao: 'sms-bloqueio', telefone: t, bloquear: false }) } }, 'desbloquear'))))
+
+  const tabela = (itens, colunas) => h('div', { class: 'tabela-wrap' }, h('table', {}, h('thead', {}, h('tr', {}, ...colunas.map(([t]) => h('th', {}, t)))),
+    h('tbody', {}, itens.map((x) => h('tr', {}, ...colunas.map(([, f]) => h('td', {}, f(x))))))))
+  const tipo = (t) => (t === 'aniversario' ? 'Aniversário' : 'Acampamento')
+  if (previa.mensagens) {
+    area.append(h('section', { class: 'cartao' }, h('h2', {}, `Prévia de ${previa.dia} (${previa.mensagens.length})`), h('p', { class: 'dica' }, `Gerada em ${dataHora(previa.gerada_em)}. Nada foi enviado.`),
+      previa.mensagens.length ? tabela(previa.mensagens, [['Tipo', (x) => tipo(x.tipo)], ['Acampamento', (x) => x.instancia], ['Nome', (x) => x.nome], ['Telefone', (x) => x.telefone], ['Mensagem', (x) => x.mensagem]]) : h('p', { class: 'dica' }, 'Ninguém para hoje.')))
+  }
+  const env = hist.mensagens ?? []
+  area.append(h('section', { class: 'cartao' }, h('h2', {}, `Enviadas hoje (${env.filter((x) => x.ok).length})`),
+    env.length ? tabela(env.slice().reverse(), [['Hora', (x) => x.hora], ['Tipo', (x) => tipo(x.tipo)], ['Acampamento', (x) => x.instancia], ['Nome', (x) => x.nome ?? ''], ['Telefone', (x) => x.telefone], ['Situação', (x) => (x.ok ? 'enviada ao textbee' : `falhou: ${x.erro ?? ''}`)]]) : h('p', { class: 'dica' }, 'Nenhuma mensagem enviada hoje.')))
+}
+
 // ------------------------------------------------------------------ nova instância
 function telaNova(area) {
   const erros = {}
@@ -301,7 +459,7 @@ function telaNova(area) {
 // ------------------------------------------------------------------ tarefas
 async function telaTarefas(area) {
   const d = await api('GET', '/api/tarefas')
-  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas', 'atualizar-painel': 'Atualizar o painel', cloudflare: 'Token da Cloudflare', 'cloudflare-remover': 'Remover token da Cloudflare', 'tunel-unificar': 'Unificar túneis da Cloudflare', 'email': 'Servidor de e-mail', 'email-teste': 'E-mail de teste', 'email-remover': 'Remover servidor de e-mail', 'email-aplicar': 'Aplicar e-mail aos acampamentos', 'microsoft': 'Login Microsoft', 'apagar': 'Apagar instância', 'trocar-link': 'Trocar link de acesso', 'vpn-reconectar': 'Reconectar a VPN', 'vpn-credenciais': 'Trocar credenciais da VPN' }
+  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas', 'atualizar-painel': 'Atualizar o painel', cloudflare: 'Token da Cloudflare', 'cloudflare-remover': 'Remover token da Cloudflare', 'tunel-unificar': 'Unificar túneis da Cloudflare', 'email': 'Servidor de e-mail', 'email-teste': 'E-mail de teste', 'email-remover': 'Remover servidor de e-mail', 'email-aplicar': 'Aplicar e-mail aos acampamentos', 'microsoft': 'Login Microsoft', 'apagar': 'Apagar instância', 'trocar-link': 'Trocar link de acesso', 'backup-config': 'Configurar backup na nuvem', 'backup-conectar': 'Conectar o OneDrive', 'backup-desconectar': 'Desconectar o OneDrive', 'backup-chave-gerar': 'Gerar chave de recuperação', 'backup-chave-guardada': 'Chave de recuperação guardada', 'backup-nuvem': 'Backup na nuvem', 'backup-listar': 'Ler backups do OneDrive', 'backup-restaurar': 'Restaurar backup', 'sms-config': 'Configurar mensagens', 'sms-enviar': 'Mensagens de aniversário', 'sms-teste': 'Mensagem de teste', 'sms-bloqueio': 'Lista de não receber', 'vpn-reconectar': 'Reconectar a VPN', 'vpn-credenciais': 'Trocar credenciais da VPN' }
   const linha = (t) => h('tr', { style: 'cursor:pointer', onclick: () => { tarefaAberta = t.id; desenhar() } },
     h('td', {}, dataHora(t.inicio || t.pedido_em)), h('td', {}, nomeAcao[t.acao] ?? t.acao), h('td', {}, t.alvo || t.nome || t.instancia || '—'),
     h('td', {}, h('span', { class: `selo ${t.situacao === 'concluida' ? 'ok' : t.situacao === 'erro' ? 'erro' : 'neutro'}` }, t.situacao)), h('td', {}, t.por || '—'))
@@ -495,7 +653,7 @@ async function desenhar() {
   app.replaceChildren(
     h('header', { class: 'topo' }, h('div', {}, h('h1', {}, 'Painel central'), h('small', {}, 'Acampamentos deste servidor')),
       h('div', {}, h('small', {}, usuario), ' ', h('button', { class: 'link', onclick: async () => { await api('POST', '/api/sair').catch(() => {}); usuario = null; desenhar() } }, 'Sair'))),
-    h('nav', { class: 'abas' }, aba('instancias', 'Instâncias'), aba('nova', 'Nova instância'), aba('tarefas', 'Tarefas'), aba('auditoria', 'Auditoria'), aba('configuracoes', 'Configurações')),
+    h('nav', { class: 'abas' }, aba('instancias', 'Instâncias'), aba('nova', 'Nova instância'), aba('tarefas', 'Tarefas'), aba('auditoria', 'Auditoria'), aba('backups', 'Backups'), aba('mensagens', 'Mensagens'), aba('configuracoes', 'Configurações')),
     area)
   try {
     if (tela === 'nova') telaNova(area)
@@ -505,6 +663,9 @@ async function desenhar() {
     else if (tela === 'tarefas') await telaTarefas(area)
     else if (tela === 'auditoria') await telaAuditoria(area)
     else if (tela === 'configuracoes') await telaConfiguracoes(area)
+    else if (tela === 'backups') await telaBackups(area)
+    else if (tela === 'restaurar' && restaurarAlvo) telaRestaurar(area)
+    else if (tela === 'mensagens') await telaMensagens(area)
     else await telaInstancias(area)
   } catch (e) {
     if (usuario) area.append(h('div', { class: 'alerta erro' }, e.message + (tela === 'tarefas' ? ' — tentando de novo…' : '')))

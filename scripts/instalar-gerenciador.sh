@@ -27,6 +27,8 @@ erro() { echo "✗ $*" >&2; exit 1; }
 [ "$(id -u)" = 0 ] || erro "Rode como administrador (sudo)."
 command -v docker >/dev/null || erro "Docker não encontrado."
 command -v jq >/dev/null || { DEBIAN_FRONTEND=noninteractive apt-get install -y -qq jq >/dev/null; }
+# age: cifra os backups enviados para a nuvem (só a chave pública fica no servidor)
+command -v age >/dev/null || { DEBIAN_FRONTEND=noninteractive apt-get install -y -qq age >/dev/null 2>&1 || echo "⚠ Não consegui instalar o age (backup na nuvem). O painel tenta de novo quando for usar."; }
 TEM_TTY=0; { : </dev/tty; } 2>/dev/null && TEM_TTY=1
 
 # Redes permitidas: padrão = só o próprio servidor; se a VPN FortiClient estiver configurada, inclui as redes dela
