@@ -276,8 +276,19 @@ dl { margin: 0; }
 .marca-painel span { color: var(--texto-suave); font-size: 0.85rem; }
 .painel-usuario small { color: var(--texto-suave); }
 .painel-usuario .link { margin: 0; }
-.menu { display: flex; gap: 4px; overflow-x: auto; border-bottom: 2px solid var(--borda); margin-bottom: 20px; }
-.menu .aba { font-size: 0.98rem; }
+/* menu na lateral esquerda, um item embaixo do outro (no celular volta a ser uma faixa no topo) */
+.painel-corpo { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 24px; align-items: start; margin-top: 12px; }
+.painel-conteudo { min-width: 0; }
+.menu { display: flex; flex-direction: column; gap: 2px; position: sticky; top: 12px; padding: 6px 10px 6px 0; border-right: 2px solid var(--borda); }
+.menu .aba { font-size: 0.98rem; text-align: left; width: 100%; white-space: normal; border-bottom: 0; border-left: 3px solid transparent; border-radius: 0 8px 8px 0; padding: 10px 12px; }
+.menu .aba:hover { background: var(--cor-clara); }
+.menu .aba.ativa { border-left-color: var(--cor); background: var(--cor-clara); font-weight: 700; }
+@media (max-width: 860px) {
+  .painel-corpo { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  .menu { flex-direction: row; overflow-x: auto; position: static; padding: 0; border-right: 0; border-bottom: 2px solid var(--borda); margin-bottom: 20px; gap: 4px; }
+  .menu .aba { width: auto; white-space: nowrap; border-left: 0; border-bottom: 3px solid transparent; border-radius: 0; }
+  .menu .aba.ativa { border-bottom-color: var(--cor); background: none; }
+}
 .titulo-secao { margin-bottom: 14px; }
 .titulo-secao h1 { margin: 0; color: var(--cor); font-size: 1.5rem; }
 .titulo-secao.com-acoes { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap; }
