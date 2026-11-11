@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 2.21.1 — correção urgente: o sistema não iniciava (instalações novas e atualizações)
+
+- Na 2.20.0 o servidor lia a tabela de modalidades **antes** de rodar as migrações que a criam, e caía ao iniciar (`relation "modalidades" does not exist`), ficando reiniciando em loop. Afetava **instância nova** (o instalador ficava "Aguardando o sistema iniciar…") e **atualização** de instâncias existentes.
+- Agora a lista é carregada **depois** das migrações (e os comandos de terminal também). Novo teste de partida a frio: sobe um servidor de verdade contra um banco vazio.
+- Quem já atualizou para a 2.20/2.21 e ficou com o app caindo: atualize para a 2.21.1 (`./scripts/atualizar.sh` na pasta da instância, ou "Atualizar" no painel central).
+
 ## 2.21.0 — painel central: trocar o link e apagar instância
 
 - **Trocar o link de acesso** (Instâncias → "Trocar link"): muda o endereço de um acampamento (outro subdomínio da Cloudflare ou domínio próprio, ou de um para o outro) **sem apagar e criar de novo**. O endereço novo é publicado e **conferido antes** de o antigo sair; se não responder, tudo volta como estava. O sistema, o banco e os usuários não mudam. Lembra de trocar o URI de redirecionamento no Entra se o login Microsoft estiver ligado.
