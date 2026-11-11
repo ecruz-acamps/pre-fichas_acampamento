@@ -119,7 +119,9 @@ export async function construirApp({ pool, config, logger = true, chavesLicenca 
   await app.register(rotasPublicas)
   if (fetchSso) app.decorate('fetchSso', fetchSso)
   app.decorate('entra', {})   // preenchido pelas rotas do login Microsoft (apagar grupo ao excluir núcleo)
-  await carregarModalidades(pool)   // modalidades cadastráveis: a lista do banco vale para todo o servidor
+  // Modalidades cadastráveis: a lista do banco vale para todo o servidor. Na partida a tabela pode ainda não existir
+  // (as migrações rodam DEPOIS de construir o app em server/index.js, que recarrega a lista logo após migrar).
+  try { await carregarModalidades(pool) } catch (e) { if (e.code !== '42P01') throw e }
   await app.register(rotasAuth)
   await app.register(rotasModalidades)
   await app.register(rotasSso)

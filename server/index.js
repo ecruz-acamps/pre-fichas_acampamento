@@ -3,12 +3,14 @@ import { criarPool, migrar } from './db.js'
 import { construirApp } from './app.js'
 import { limparSessoesExpiradas } from './sessao.js'
 import { aplicarMarcaInicial } from './marca.js'
+import { carregarModalidades } from './modalidades.js'
 
 const config = lerConfig()
 const pool = criarPool(config.databaseUrl)
 const app = await construirApp({ pool, config })
 
 await migrar(pool, app.log)
+await carregarModalidades(pool)   // só agora a tabela de modalidades existe (instalação nova ou atualização)
 await aplicarMarcaInicial(pool, config.marcaInicial, app.log, config.nomeInicial)
 
 const limpeza = setInterval(() => limparSessoesExpiradas(pool).catch((e) => app.log.error(e)), 60 * 60 * 1000)

@@ -12,6 +12,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { extname, resolve, dirname } from 'node:path'
 import { lerConfig } from './config.js'
 import { criarPool, migrar } from './db.js'
+import { carregarModalidades } from './modalidades.js'
 import { gerarHash, gerarSenhaTemporaria } from './senha.js'
 import { carregarMarca, conferirImagem, salvarLogo, salvarMarca } from './marca.js'
 import { ativarLicenca, gerarHashChave, situacaoLicenca } from './licenca.js'
@@ -78,6 +79,7 @@ const silencioso = { info: () => {} }
 
 try {
   await migrar(pool, silencioso)
+  await carregarModalidades(pool)   // modalidades cadastradas valem também nos comandos (ex.: importar fichas)
   switch (comando) {
     case 'criar-admin':
     case 'criar-equipe':
