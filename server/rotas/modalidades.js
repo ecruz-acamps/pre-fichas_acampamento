@@ -21,20 +21,22 @@ function validar(c, atual = null) {
   if (!inteiro(max, 0, 200)) e.max = 'Idade máxima de 0 a 200.'
   if (!e.min && !e.max && min > max) e.max = 'A idade máxima não pode ser menor que a mínima.'
   const casado = regra === 'casais' ? true : regra === 'senior' ? false : c?.casado === true
-  return { e, v: { rotulo, min, max, casado, regra } }
+  if (c?.sexo && !['masculino', 'feminino'].includes(c.sexo)) e.sexo = 'Escolha todos, só homens ou só mulheres.'
+  const sexo = regra === 'idade' && (c?.sexo === 'masculino' || c?.sexo === 'feminino') ? c.sexo : null   // Sênior e Casais não restringem por sexo
+  return { e, v: { rotulo, min, max, casado, regra, sexo } }
 }
 
 export default async function rotasModalidades(app) {
   const { pool } = app
   const soAdmin = () => ({ onRequest: [app.exigirLogin, app.exigirAdmin] })
-  const publica = () => MODALIDADES.map((m) => ({ valor: m.valor, rotulo: m.rotulo, regra: m.regra, min: m.min, max: m.max, casado: m.casado, ativa: m.ativa, faixa: m.faixa }))
+  const publica = () => MODALIDADES.map((m) => ({ valor: m.valor, rotulo: m.rotulo, regra: m.regra, min: m.min, max: m.max, casado: m.casado, sexo: m.sexo, ativa: m.ativa, faixa: m.faixa }))
 
   // Lista pública (o formulário precisa dela antes do login)
   app.get('/api/modalidades', async () => publica())
 
   app.get('/api/admin/modalidades', soAdmin(), async () => {
     const { rows } = await pool.query(
-      `select m.valor, m.rotulo, m.regra, m.idade_min as min, m.idade_max as max, m.casado, m.ordem, m.ativa,
+      `select m.valor, m.rotulo, m.regra, m.idade_min as min, m.idade_max as max, m.casado, m.sexo, m.ordem, m.ativa,
               (select count(*)::int from pre_fichas p where p.modalidade = m.valor) as fichas,
               (select count(*)::int from acampamentos a where a.modalidade = m.valor) as edicoes
          from modalidades m order by m.ordem, m.valor`)
@@ -48,8 +50,8 @@ export default async function rotasModalidades(app) {
     if (!/^[a-z][a-z0-9_]{1,19}$/.test(valor)) return reply.code(400).send({ mensagem: 'Confira os campos.', erros: { rotulo: 'Use um nome com letras ou números.' } })
     try {
       await pool.query(
-        `insert into modalidades (valor, rotulo, regra, idade_min, idade_max, casado, ordem)
-         values ($1, $2, 'idade', $3, $4, $5, coalesce((select max(ordem) from modalidades), 0) + 1)`, [valor, v.rotulo, v.min, v.max, v.casado])
+        `insert into modalidades (valor, rotulo, regra, idade_min, idade_max, casado, sexo, ordem)
+         values ($1, $2, 'idade', $3, $4, $5, $6, coalesce((select max(ordem) from modalidades), 0) + 1)`, [valor, v.rotulo, v.min, v.max, v.casado, v.sexo])
     } catch (err) {
       if (err.code === '23505') return reply.code(409).send({ mensagem: 'Já existe uma modalidade com este nome.', erros: { rotulo: 'Já existe uma modalidade com este nome.' } })
       throw err
@@ -83,7 +85,7 @@ export default async function rotasModalidades(app) {
       if (n === 0) return reply.code(400).send({ mensagem: 'Deixe pelo menos uma modalidade ativa.' })
     }
     try {
-      await pool.query('update modalidades set rotulo = $2, idade_min = $3, idade_max = $4, casado = $5, ativa = $6 where valor = $1', [valor, v.rotulo, v.min, v.max, v.casado, ativa])
+      await pool.query('update modalidades set rotulo = $2, idade_min = $3, idade_max = $4, casado = $5, sexo = $7, ativa = $6 where valor = $1', [valor, v.rotulo, v.min, v.max, v.casado, ativa, v.sexo])
     } catch (err) {
       if (err.code === '23505') return reply.code(409).send({ mensagem: 'Já existe uma modalidade com este nome.', erros: { rotulo: 'Já existe uma modalidade com este nome.' } })
       throw err
