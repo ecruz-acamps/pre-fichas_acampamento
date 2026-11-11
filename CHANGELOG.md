@@ -1,5 +1,13 @@
 # Histórico de versões
 
+## 2.20.0 — modalidades cadastráveis
+
+- Novo menu **Modalidades** (administrador): **criar** modalidades novas (nome, idade mínima e máxima, só casado(a) opcional), **editar** as existentes, **reordenar**, **desativar/ativar** e **excluir** as que ninguém usa. As cinco de sempre (Mirim, FAC, Juvenil, Sênior, Casais) continuam como padrão.
+- A lista cadastrada vale em todo o sistema: formulário (só as ativas e compatíveis com a idade e o estado civil), edições dos acampamentos, preferências, filas por modalidade, filtros, resumos, importação e revisão de modalidade.
+- **Sênior e Casais** têm regras próprias (casado(a) 18+ / cônjuge já campista): neles se edita nome, idade mínima e ordem; não se excluem (só se desativam).
+- **Desativada:** some das novas inscrições e edições; fichas e edições antigas continuam e podem ser editadas. **Excluir** só sem nenhuma ficha, edição ou preferência.
+- Mudar a faixa de idade não altera fichas já existentes. O banco só aceita modalidades cadastradas (chave estrangeira no lugar da lista fixa). Migração `021`.
+
 ## 2.19.1 — núcleo pelo grupo do Entra: mais casos e mais pistas
 
 - **Coordenador que já existia** (cadastrado à mão ou que estava aguardando liberação) e que agora está em algum grupo de núcleo passa a **acompanhar o Entra**: o núcleo vem do grupo. Sem nenhum grupo de núcleo ele continua como estava (núcleos definidos à mão). Administradores e equipe nunca são alterados.

@@ -2129,6 +2129,94 @@ describe('API', { skip: pular }, () => {
     })
   })
 
+  describe('modalidades cadastráveis', () => {
+    const lista = async () => (await app.inject({ method: 'GET', url: '/api/modalidades' })).json()
+    const por = async (v) => (await lista()).find((m) => m.valor === v)
+    after(async () => { await req('admin', 'DELETE', '/api/admin/modalidades/servos'); await req('admin', 'DELETE', '/api/admin/modalidades/pre_juvenil') })
+
+    test('lista pública com as 5 padrão; só o administrador cadastra e edita', async () => {
+      const l = await lista()
+      assert.deepEqual(l.map((m) => m.valor), ['mirim', 'fac', 'juvenil', 'senior', 'casais'])
+      assert.equal(l[0].faixa, '7 a 13 anos')
+      assert.equal((await app.inject({ method: 'GET', url: '/api/admin/modalidades' })).statusCode, 401)
+      for (const quem of ['equipe', 'coord']) {
+        assert.equal((await req(quem, 'POST', '/api/admin/modalidades', { rotulo: 'Servos', min: 16, max: 99 })).statusCode, 403, quem)
+        assert.equal((await req(quem, 'PUT', '/api/admin/modalidades/fac', { rotulo: 'FAC', min: 13, max: 18 })).statusCode, 403, quem)
+        assert.equal((await req(quem, 'DELETE', '/api/admin/modalidades/fac')).statusCode, 403, quem)
+      }
+    })
+
+    test('criar: valida idades e nome, gera o código, não repete', async () => {
+      for (const ruim of [{ rotulo: '', min: 1, max: 2 }, { rotulo: 'X', min: 30, max: 20 }, { rotulo: 'X', min: -1, max: 20 }, { rotulo: 'X', min: 1, max: 999 }, { rotulo: 'a'.repeat(41), min: 1, max: 2 }, { rotulo: 'X', min: 'abc', max: 2 }]) {
+        assert.equal((await req('admin', 'POST', '/api/admin/modalidades', ruim)).statusCode, 400, JSON.stringify(ruim))
+      }
+      assert.equal((await req('admin', 'POST', '/api/admin/modalidades', { rotulo: 'Servos', min: 16, max: 99 })).statusCode, 201)
+      const s = await por('servos'); assert.deepEqual([s.rotulo, s.min, s.max, s.casado, s.ativa, s.faixa], ['Servos', 16, 99, false, true, '16 a 99 anos'])
+      assert.equal((await req('admin', 'POST', '/api/admin/modalidades', { rotulo: 'servos', min: 1, max: 2 })).statusCode, 409, 'mesmo código')
+      const acento = await req('admin', 'POST', '/api/admin/modalidades', { rotulo: 'Pré-Juvenil', min: 14, max: 17, casado: false })
+      assert.equal(acento.json().valor, 'pre_juvenil')
+    })
+
+    test('a nova modalidade vale no formulário (idade e estado civil), nas edições e nas preferências', async () => {
+      const base = { nome_completo: 'Pessoa Servos', data_nascimento: '1985-03-04', telefone: '(48) 97777-1212', email: 'servos@x.com', modalidade: 'servos' }
+      const ok = await enviar(base); assert.equal(ok.statusCode, 201, ok.body)
+      const nova = await enviar({ ...base, nome_completo: 'Muito Nova Servos', data_nascimento: '2015-03-04', telefone: '(48) 97777-1213', email: 'nova.servos@x.com', responsavel_nome: 'Resp', responsavel_telefone: '(48) 97777-0000' })
+      assert.equal(nova.statusCode, 400, 'menor de 16 não cabe em Servos')
+      assert.deepEqual(modalidadesCompativeis(40, 'solteiro').includes('servos'), true)
+      const ed = await req('equipe', 'POST', '/api/admin/acampamentos', { numero: 1, modalidade: 'servos' })
+      assert.equal(ed.statusCode, 201, ed.body)
+      // a fila é por modalidade
+      const f = (await req('admin', 'GET', '/api/admin/pre-fichas')).json().find((x) => x.nome_completo === 'Pessoa Servos')
+      assert.equal(f.modalidade, 'servos')
+    })
+
+    test('editar: nome e faixa mudam para todos; Sênior e Casais mantêm a regra própria; não dá para excluir as especiais', async () => {
+      assert.equal((await req('admin', 'PUT', '/api/admin/modalidades/servos', { rotulo: 'Servos e Equipe', min: 18, max: 70, casado: true, ativa: true })).statusCode, 200)
+      const s = await por('servos'); assert.deepEqual([s.rotulo, s.faixa, s.casado], ['Servos e Equipe', 'casado(a), 18 a 70 anos', true])
+      assert.equal(modalidadesCompativeis(40, 'solteiro').includes('servos'), false, 'agora só casado(a)'); assert.equal(modalidadesCompativeis(40, 'casado').includes('servos'), true)
+      await req('admin', 'PUT', '/api/admin/modalidades/servos', { rotulo: 'Servos', min: 16, max: 99, casado: false, ativa: true })
+      // sênior: só nome e idade a partir da qual; "casado" e "máximo" não mudam a natureza da regra
+      assert.equal((await req('admin', 'PUT', '/api/admin/modalidades/senior', { rotulo: 'Sênior', min: 35, max: 40, casado: true, ativa: true })).statusCode, 200)
+      const sen = await por('senior'); assert.deepEqual([sen.min, sen.max, sen.casado], [35, 200, false])
+      assert.equal(modalidadesCompativeis(32, 'solteiro').includes('senior'), false); assert.equal(modalidadesCompativeis(32, 'casado').includes('senior'), true, 'casado(a) 18+ continua valendo')
+      await req('admin', 'PUT', '/api/admin/modalidades/senior', { rotulo: 'Sênior', min: 30, max: 200, ativa: true })
+      for (const v of ['senior', 'casais']) assert.equal((await req('admin', 'DELETE', `/api/admin/modalidades/${v}`)).statusCode, 400, v)
+      assert.equal((await req('admin', 'PUT', '/api/admin/modalidades/nao-existe', { rotulo: 'X', min: 1, max: 2 })).statusCode, 404)
+    })
+
+    test('em uso: não exclui (pede para desativar); desativada some das novas inscrições e edições, mas o que existe continua', async () => {
+      const ex = await req('admin', 'DELETE', '/api/admin/modalidades/servos'); assert.equal(ex.statusCode, 409); assert.match(ex.json().mensagem, /Desative/)
+      assert.equal((await req('admin', 'PUT', '/api/admin/modalidades/servos', { rotulo: 'Servos', min: 16, max: 99, ativa: false })).statusCode, 200)
+      assert.equal((await por('servos')).ativa, false)
+      const nova = await enviar({ nome_completo: 'Outra Servos', data_nascimento: '1985-03-04', telefone: '(48) 97777-1299', email: 'outra.servos@x.com', modalidade: 'servos' })
+      assert.equal(nova.statusCode, 400, 'desativada não aceita inscrição nova')
+      assert.equal((await req('equipe', 'POST', '/api/admin/acampamentos', { numero: 2, modalidade: 'servos' })).statusCode, 400, 'nem edição nova')
+      const f = (await req('admin', 'GET', '/api/admin/pre-fichas')).json().find((x) => x.nome_completo === 'Pessoa Servos')
+      assert.equal(f.modalidade, 'servos', 'a ficha antiga continua')
+      assert.equal(modalidadesCompativeis(40, 'solteiro').includes('servos'), false)
+      await req('admin', 'PUT', '/api/admin/modalidades/servos', { rotulo: 'Servos', min: 16, max: 99, ativa: true })
+      // não deixa desativar todas
+      const todas = (await req('admin', 'GET', '/api/admin/modalidades')).json()
+      for (const m of todas.slice(0, -1)) await req('admin', 'PUT', `/api/admin/modalidades/${m.valor}`, { rotulo: m.rotulo, min: m.min, max: m.max, casado: m.casado, ativa: false })
+      const ultima = todas.at(-1)
+      const bloq = await req('admin', 'PUT', `/api/admin/modalidades/${ultima.valor}`, { rotulo: ultima.rotulo, min: ultima.min, max: ultima.max, casado: ultima.casado, ativa: false })
+      assert.equal(bloq.statusCode, 400)
+      for (const m of todas) await req('admin', 'PUT', `/api/admin/modalidades/${m.valor}`, { rotulo: m.rotulo, min: m.min, max: m.max, casado: m.casado, ativa: true })
+      assert.equal((await lista()).every((m) => m.ativa), true)
+    })
+
+    test('o banco só aceita modalidade cadastrada; ordem e exclusão da que ninguém usa', async () => {
+      await assert.rejects(pool.query(`update pre_fichas set modalidade = 'inexistente' where nome_completo = 'Pessoa Servos'`), /violates foreign key/)
+      const o = (await req('admin', 'GET', '/api/admin/modalidades')).json().map((m) => m.valor)
+      assert.equal((await req('admin', 'PUT', '/api/admin/modalidades/ordem', { valores: [...o].reverse() })).statusCode, 200)
+      assert.deepEqual((await lista()).map((m) => m.valor), [...o].reverse())
+      assert.equal((await req('admin', 'PUT', '/api/admin/modalidades/ordem', { valores: o.slice(1) })).statusCode, 400, 'lista incompleta')
+      await req('admin', 'PUT', '/api/admin/modalidades/ordem', { valores: o })
+      const del = await req('admin', 'DELETE', '/api/admin/modalidades/pre_juvenil'); assert.equal(del.statusCode, 200)
+      assert.equal(await por('pre_juvenil'), undefined)
+    })
+  })
+
   describe('importação de fichas', () => {
     const HOJE = new Date('2026-11-09T12:00:00Z')
     const CAB = ['Nome', 'CPF', 'Idade', 'Data de Nascimento', 'Sexo', 'Estado Civil', 'Nome do Cônjuge', 'CPF do Cônjuge', 'Data de Casamento', 'Casado no Religioso',

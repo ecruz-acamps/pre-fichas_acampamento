@@ -1,4 +1,5 @@
 import FotoPerfil from './FotoPerfil.jsx'
+import { carregarModalidades } from '../lib/modalidades.js'
 import { StrictMode, useCallback, useEffect, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import FormularioPreFicha from './FormularioPreFicha.jsx'
@@ -299,4 +300,4 @@ function Pagina() {
   )
 }
 
-createRoot(document.getElementById('root')).render(<StrictMode><Pagina /></StrictMode>)
+carregarModalidades().finally(() => createRoot(document.getElementById('root')).render(<StrictMode><Pagina /></StrictMode>))

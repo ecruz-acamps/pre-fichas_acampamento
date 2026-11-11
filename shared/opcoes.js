@@ -24,13 +24,36 @@ export const COMO_CONHECEU = [
   'Outro',
 ]
 
+// Lista de modalidades. É cadastrável (tela Modalidades do administrador): estes são os valores padrão e a lista é
+// ATUALIZADA NO LUGAR por definirModalidades() quando o site/servidor carrega a lista cadastrada (por isso todos os
+// `import { MODALIDADES }` continuam enxergando a lista atual).
+//   regra: 'idade' (min a max, e opcionalmente só casado(a)), 'senior' (casado(a) 18+ ou idade mínima) ou 'casais' (cônjuge já campista).
 export const MODALIDADES = [
-  { valor: 'mirim', rotulo: 'Mirim', faixa: '7 a 13 anos', min: 7, max: 13 },
-  { valor: 'fac', rotulo: 'FAC', faixa: '13 a 18 anos', min: 13, max: 18 },
-  { valor: 'juvenil', rotulo: 'Juvenil', faixa: '18 a 30 anos', min: 18, max: 30 },
-  { valor: 'senior', rotulo: 'Sênior', faixa: 'casado(a) ou 30 anos em diante', min: 30, max: 200 },
-  { valor: 'casais', rotulo: 'Casais', faixa: 'casal casado(a), com o cônjuge já campista', min: 18, max: 200 },
+  { valor: 'mirim', rotulo: 'Mirim', faixa: '7 a 13 anos', min: 7, max: 13, regra: 'idade', casado: false, ativa: true },
+  { valor: 'fac', rotulo: 'FAC', faixa: '13 a 18 anos', min: 13, max: 18, regra: 'idade', casado: false, ativa: true },
+  { valor: 'juvenil', rotulo: 'Juvenil', faixa: '18 a 30 anos', min: 18, max: 30, regra: 'idade', casado: false, ativa: true },
+  { valor: 'senior', rotulo: 'Sênior', faixa: 'casado(a) ou 30 anos em diante', min: 30, max: 200, regra: 'senior', casado: false, ativa: true },
+  { valor: 'casais', rotulo: 'Casais', faixa: 'casal casado(a), com o cônjuge já campista', min: 18, max: 200, regra: 'casais', casado: true, ativa: true },
 ]
+
+/** Texto da faixa mostrado no formulário e no painel. */
+export function faixaDe(m) {
+  if (m.regra === 'senior') return `casado(a) ou ${m.min} anos em diante`
+  if (m.regra === 'casais') return 'casal casado(a), com o cônjuge já campista'
+  const idades = m.max >= 200 ? `${m.min} anos em diante` : `${m.min} a ${m.max} anos`
+  return m.casado ? `casado(a), ${idades}` : idades
+}
+
+/** Troca o conteúdo de MODALIDADES (no lugar) pela lista cadastrada: [{ valor, rotulo, regra, min, max, casado, ativa }]. */
+export function definirModalidades(lista) {
+  if (!Array.isArray(lista) || !lista.length) return
+  const novas = lista.map((m) => ({ valor: m.valor, rotulo: m.rotulo, regra: m.regra ?? 'idade', min: m.min ?? m.idade_min, max: m.max ?? m.idade_max, casado: m.casado === true, ativa: m.ativa !== false }))
+    .map((m) => ({ ...m, faixa: faixaDe(m) }))
+  MODALIDADES.splice(0, MODALIDADES.length, ...novas)
+}
+
+/** Modalidades que aceitam novas inscrições e edições. */
+export const modalidadesAtivas = () => MODALIDADES.filter((m) => m.ativa !== false)
 
 export const STATUS = [
   { valor: 'aguardando', rotulo: 'Aguardando', cor: 'amarelo' },

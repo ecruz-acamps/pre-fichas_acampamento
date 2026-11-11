@@ -454,3 +454,13 @@ Em **Núcleos**:
 - apagar grupos (e ler): `Group.ReadWrite.All`.
 
 Atenção: `Group.ReadWrite.All` permite alterar e apagar **qualquer grupo** do diretório. O sistema só apaga os que criou e que começam com "Pré-fichas", mas o segredo do aplicativo (no `.env` do servidor) passa a ter esse poder. Guarde-o bem e troque-o se houver suspeita de vazamento. Se não quiser dar esse poder, mantenha só `Group.Create` e apague os grupos à mão no Entra.
+
+## Modalidades (criar e editar)
+
+No menu **Modalidades** (só administrador):
+- **+ Nova modalidade:** nome, idade mínima e máxima e, se quiser, "só casado(a)/união estável". A modalidade passa a aparecer no formulário (para quem tem a idade e o estado civil compatíveis), ao criar edições e nas filas.
+- **Editar:** muda o nome e a faixa de idade. Isso vale para novas inscrições; as fichas já existentes não são alteradas.
+- **↑ ↓:** muda a ordem em que as modalidades aparecem.
+- **Desativar:** a modalidade deixa de aceitar novas inscrições e novas edições, mas o que já existe continua. Dá para ativar de novo.
+- **Excluir:** só se a modalidade não tem nenhuma ficha, edição ou preferência.
+- **Sênior e Casais** têm regras próprias do sistema (Sênior: casado(a) com 18+ ou a idade mínima; Casais: o cônjuge precisa já ser campista): você edita o nome e a idade mínima, mas elas não podem ser excluídas.

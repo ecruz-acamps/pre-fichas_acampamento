@@ -100,10 +100,16 @@ const cortar = (s, max) => (s.length > max ? `${s.slice(0, max - 1)}…` : s)
 /** "16º Sênior - São Padre Pio (Vermelha)" → { numero, modalidade, tribo }. null se não seguir o padrão. */
 export function lerEdicao(texto) {
   const t = limpar(texto)
-  const m = /^(\d+)\s*[º°o]?\s*(?:acampamento\s+(?:de\s+)?)?(s[eê]nior|fac(?:\s*ii)?|mirim|juvenil|casais)\b[\s\-–:]*(.*?)\s*(?:\(([^()]*)\))?\s*$/i.exec(t)
+  // nomes das modalidades cadastradas (as padrão e as criadas pelo administrador), do maior para o menor para não cortar nomes compostos;
+  // cada letra aceita as variações com acento ("Sênior" ou "senior")
+  const variantes = { a: 'aáàâãä', e: 'eéèêë', i: 'iíìîï', o: 'oóòôõö', u: 'uúùûü', c: 'cç' }
+  const nomes = [...new Set([...MODALIDADES.map((x) => x.rotulo), 'FAC II'])].sort((a, b) => b.length - a.length)
+    .map((n) => [...semAcento(n)].map((ch) => (ch === ' ' ? '\\s*' : variantes[ch] ? `[${variantes[ch]}]` : ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))).join('')).join('|')
+  const m = new RegExp(`^(\\d+)\\s*[º°o]?\\s*(?:acampamento\\s+(?:de\\s+)?)?(${nomes})\\b[\\s\\-–:]*(.*?)\\s*(?:\\(([^()]*)\\))?\\s*$`, 'i').exec(t)
   if (!m) return null
   const mod = semAcento(m[2]).replace(/\s+/g, ' ')
-  return { numero: +m[1], modalidade: mod === 'fac ii' ? 'fac' : mod, tribo: limpar(m[4] ?? ''), original: t }
+  const cadastrada = MODALIDADES.find((x) => semAcento(x.rotulo).replace(/\s+/g, ' ') === mod)
+  return { numero: +m[1], modalidade: mod === 'fac ii' ? 'fac' : (cadastrada?.valor ?? mod), tribo: limpar(m[4] ?? ''), original: t }
 }
 
 const TRIBO_CANONICA = { amarela: ['Amarelo', '#f2c200'], amarelo: ['Amarelo', '#f2c200'], azul: ['Azul', '#1e5bd6'], laranja: ['Laranja', '#ef7d1a'],
@@ -162,7 +168,7 @@ export function mapearLinha(registro, { hoje = new Date(), tribos = [] } = {}) {
   const pre = tipo === 'fila' ? dataBR(pegar(v, 'data da pre-ficha')) : null
   // modalidade: a que a pessoa espera (fila) ou a do acampamento que fez (campista; se fez vários, o último da lista)
   const modRaw = tipo === 'fila' ? semAcento(pegar(v, 'aguardando acampamento')) : edicoesLidas.at(-1).modalidade
-  const mod = MODALIDADE[modRaw]
+  const mod = MODALIDADE[modRaw] ?? (() => { const m = MODALIDADES.find((x) => semAcento(x.rotulo) === modRaw || x.valor === modRaw); return m ? [m.valor] : undefined })()
   if (!mod) return q(`Modalidade desconhecida: "${pegar(v, 'aguardando acampamento')}".`)
   if (!nasc) return q(`Data de nascimento ilegível: "${pegar(v, 'data de nascimento')}".`)
   if (nasc.a < 1900) return q(`Data de nascimento impossível: ${pegar(v, 'data de nascimento')}.`)
