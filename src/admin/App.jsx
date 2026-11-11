@@ -136,6 +136,7 @@ export default function App() {
         </div>
       </header>
 
+      <div className="painel-corpo">
       <nav className="menu" aria-label="Seções do painel">
         {telas.map((t) => (
           <button key={t.id} className={`aba ${atual === t.id ? 'ativa' : ''}`} onClick={() => setTela(t.id)}>
@@ -144,21 +145,23 @@ export default function App() {
         ))}
       </nav>
 
-
-      {atual === 'fila' && <Fila {...props} />}
-      {atual === 'campistas' && <Nomes key="campistas" {...props} tipoFixo="campistas" />}
-      {atual === 'todos' && <Nomes key="todos" {...props} tipoFixo="todos" />}
-      {atual === 'resumo' && <Resumo {...props} />}
-      {atual === 'revisar' && <Revisar />}
-      <Suspense fallback={<p className="carregando">Carregando…</p>}>
-      {atual === 'acampamentos' && <Acampamentos {...props} />}
-      {atual === 'auditoria' && <Auditoria {...props} />}
-      {atual === 'modalidades' && <ModalidadesAdmin />}
-      {atual === 'nucleos' && <Nucleos {...props} onAlterar={recarregarNucleos} />}
-      {atual === 'usuarios' && <Usuarios {...props} usuarioAtual={usuario} />}
-      {atual === 'configuracoes' && <Configuracoes {...props} onSalvar={(m) => setMarca(m)} />}
-      </Suspense>
-      {atual === 'senha' && <AlterarSenha usuario={usuario} onUsuario={setUsuario} onConcluir={() => setTela('fila')} />}
+      <div className="painel-conteudo">
+        {atual === 'fila' && <Fila {...props} />}
+        {atual === 'campistas' && <Nomes key="campistas" {...props} tipoFixo="campistas" />}
+        {atual === 'todos' && <Nomes key="todos" {...props} tipoFixo="todos" />}
+        {atual === 'resumo' && <Resumo {...props} />}
+        {atual === 'revisar' && <Revisar />}
+        <Suspense fallback={<p className="carregando">Carregando…</p>}>
+        {atual === 'acampamentos' && <Acampamentos {...props} />}
+        {atual === 'auditoria' && <Auditoria {...props} />}
+        {atual === 'modalidades' && <ModalidadesAdmin />}
+        {atual === 'nucleos' && <Nucleos {...props} onAlterar={recarregarNucleos} />}
+        {atual === 'usuarios' && <Usuarios {...props} usuarioAtual={usuario} />}
+        {atual === 'configuracoes' && <Configuracoes {...props} onSalvar={(m) => setMarca(m)} />}
+        </Suspense>
+        {atual === 'senha' && <AlterarSenha usuario={usuario} onUsuario={setUsuario} onConcluir={() => setTela('fila')} />}
+      </div>
+    </div>
 
       <footer className="rodape-painel">
         {marca?.nome} · Sistema de pré-fichas{atualizacao?.instalada?.versao ? ` · versão ${atualizacao.instalada.versao}` : ''}

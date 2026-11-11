@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 2.22.0 — menu na lateral esquerda
+
+- O menu do painel passa a ficar **na lateral esquerda, um item embaixo do outro** (fixo ao rolar a página), em vez de uma faixa comprida no topo. O item atual fica destacado. Em telas estreitas (celular) o menu volta a ser uma faixa rolável no topo.
+
 ## 2.21.2 — Acampamentos: a modalidade ativa não era usada
 
 - Ao cadastrar um acampamento (edição), a tela vinha com a modalidade **Juvenil** fixa por baixo: se Juvenil estivesse desativada (por exemplo, só "Homens" ativa), a lista mostrava "Homens" mas o pedido saía como Juvenil e dava "Esta modalidade está desativada". Agora a modalidade inicial é a **primeira ativa** e a lista sempre reflete o valor enviado (uma edição antiga de modalidade desativada aparece como "(desativada)").
