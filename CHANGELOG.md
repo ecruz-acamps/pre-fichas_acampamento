@@ -1,5 +1,19 @@
 # Histórico de versões
 
+## 2.20.0 — modalidades cadastráveis
+
+- Novo menu **Modalidades** (administrador): **criar** modalidades novas (nome, idade mínima e máxima, só casado(a) opcional), **editar** as existentes, **reordenar**, **desativar/ativar** e **excluir** as que ninguém usa. As cinco de sempre (Mirim, FAC, Juvenil, Sênior, Casais) continuam como padrão.
+- A lista cadastrada vale em todo o sistema: formulário (só as ativas e compatíveis com a idade e o estado civil), edições dos acampamentos, preferências, filas por modalidade, filtros, resumos, importação e revisão de modalidade.
+- **Sênior e Casais** têm regras próprias (casado(a) 18+ / cônjuge já campista): neles se edita nome, idade mínima e ordem; não se excluem (só se desativam).
+- **Desativada:** some das novas inscrições e edições; fichas e edições antigas continuam e podem ser editadas. **Excluir** só sem nenhuma ficha, edição ou preferência.
+- Mudar a faixa de idade não altera fichas já existentes. O banco só aceita modalidades cadastradas (chave estrangeira no lugar da lista fixa). Migração `021`.
+
+## 2.19.1 — núcleo pelo grupo do Entra: mais casos e mais pistas
+
+- **Coordenador que já existia** (cadastrado à mão ou que estava aguardando liberação) e que agora está em algum grupo de núcleo passa a **acompanhar o Entra**: o núcleo vem do grupo. Sem nenhum grupo de núcleo ele continua como estava (núcleos definidos à mão). Administradores e equipe nunca são alterados.
+- **Buscar grupo por nome** (Núcleos): para grupos criados à mão **sem** o prefixo "Pré-fichas" (por exemplo "Santo Amaro da Imperatriz"). O grupo com o nome do núcleo, com ou sem o prefixo, é ligado sozinho.
+- O log de cada entrada pela Microsoft agora diz quantos grupos vieram no token e quantos casaram com núcleos (e por que os grupos não foram aplicados, quando é o caso).
+
 ## 2.19.0 — ler os grupos do Entra e apagar o grupo junto com o núcleo
 
 - **Ler grupos do Entra** (Núcleos): encontra os grupos cujo nome começa com "Pré-fichas" (inclusive os criados à mão). O grupo com o mesmo nome do núcleo ("Pré-fichas – NÚCLEO", sem diferenciar maiúsculas/acentos) é **ligado sozinho**; os demais aparecem em **"Grupos do Entra sem núcleo"** para você escolher o núcleo. Também acusa quando um grupo **não existe mais** no Entra.

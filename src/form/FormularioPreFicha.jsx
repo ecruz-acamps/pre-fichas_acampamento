@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../lib/api.js'
 import { buscarCep } from '../lib/cep.js'
 import {
-  COMO_CONHECEU, ESTADOS_CIVIS, MODALIDADES, RELIGIOES, SEXOS, UFS,
+  COMO_CONHECEU, ESTADOS_CIVIS, MODALIDADES, RELIGIOES, SEXOS, UFS, modalidadesAtivas,
 } from '../../shared/opcoes.js'
 import {
   calcularIdade, cpfValido, mascaraCep, mascaraCpf, mascaraTelefone, modalidadesCompativeis, somenteDigitos,
@@ -149,7 +149,7 @@ export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = 
   async function enviar(ev) {
     ev.preventDefault()
     setErroEnvio('')
-    const e = validar(f, editar ? 0 : marca.termos.length)
+    const e = validar(f, editar ? 0 : marca.termos.length, { modalidadeAtual: editar ? f.modalidade : null })
     if (cadastro) {
       if (!cpfValido(conta.cpf)) e.cpf = 'CPF inválido.'
       if (conta.senha.length < 8) e.senha = 'A senha deve ter pelo menos 8 caracteres.'
@@ -430,7 +430,7 @@ export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = 
         <fieldset className={`campo ${erros.modalidade ? 'com-erro' : ''}`} id="modalidade" tabIndex={-1}>
           <legend>Qual modalidade deseja fazer?<span className="obrigatorio" aria-hidden="true"> *</span></legend>
           <div className="modalidades">
-            {MODALIDADES.map((m) => {
+            {(editar ? MODALIDADES.filter((x) => x.ativa !== false || x.valor === f.modalidade) : modalidadesAtivas()).map((m) => {
               const jaFez = feitas.includes(m.valor)
               // Casais só pela conta (o servidor confere o CPF do cônjuge) e, se o acampamento exigir, só para quem fez o Sênior
               const motivoCasais = m.valor !== 'casais' ? '' : cadastro ? 'depois do cadastro, pela sua área' : modo !== 'nova' ? 'entre na sua conta'

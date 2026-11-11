@@ -14,6 +14,8 @@ import rotasAtualizacao from './rotas/atualizacao.js'
 import { criarVerificador, lerVersaoInstalada } from './versao.js'
 import rotasPublicas from './rotas/publico.js'
 import rotasAuth from './rotas/auth.js'
+import rotasModalidades from './rotas/modalidades.js'
+import { carregarModalidades } from './modalidades.js'
 import rotasSso from './rotas/sso.js'
 import rotasFila from './rotas/fila.js'
 import rotasUsuarios from './rotas/usuarios.js'
@@ -117,7 +119,9 @@ export async function construirApp({ pool, config, logger = true, chavesLicenca 
   await app.register(rotasPublicas)
   if (fetchSso) app.decorate('fetchSso', fetchSso)
   app.decorate('entra', {})   // preenchido pelas rotas do login Microsoft (apagar grupo ao excluir núcleo)
+  await carregarModalidades(pool)   // modalidades cadastráveis: a lista do banco vale para todo o servidor
   await app.register(rotasAuth)
+  await app.register(rotasModalidades)
   await app.register(rotasSso)
   await app.register(rotasFila)
   await app.register(rotasUsuarios)

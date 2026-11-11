@@ -149,9 +149,9 @@ export default function Nucleos({ nucleos, onAlterar }) {
     }
   }
 
-  async function lerEntra() {
+  async function lerEntra(termo = '') {
     setErro(''); setLeitura(null); setLendo(true)
-    try { setLeitura(await api.post('/api/admin/nucleos/ler-entra', {})); onAlterar(); carregarEntra() } catch (err) { setErro(err.dados?.mensagem || 'Não foi possível ler o Entra.') } finally { setLendo(false) }
+    try { setLeitura(await api.post('/api/admin/nucleos/ler-entra', termo ? { termo } : {})); onAlterar(); carregarEntra() } catch (err) { setErro(err.dados?.mensagem || 'Não foi possível ler o Entra.') } finally { setLendo(false) }
   }
 
   async function vincular(grupo, nucleoId) {
@@ -186,7 +186,8 @@ export default function Nucleos({ nucleos, onAlterar }) {
           <p className="subtitulo">Cada núcleo reúne cidades e bairros. O coordenador de núcleo só vê as pré-fichas da sua área (associe em Usuários).</p>
         </div>
         <div className="acoes-linha">
-          <button className="botao-secundario" onClick={lerEntra} disabled={lendo}>{lendo ? 'Lendo…' : 'Ler grupos do Entra'}</button>
+          <button className="botao-secundario" onClick={() => lerEntra()} disabled={lendo}>{lendo ? 'Lendo…' : 'Ler grupos do Entra'}</button>
+          <button className="botao-secundario" disabled={lendo} onClick={() => { const t = window.prompt('Início do nome do grupo no Entra (ex.: Santo Amaro). Use para grupos que não começam com "Pré-fichas":'); if (t && t.trim()) lerEntra(t.trim()) }}>Buscar grupo por nome</button>
           <button className="botao-secundario" onClick={criarGrupos} disabled={criando}>{criando ? 'Criando…' : 'Criar grupos no Entra'}</button>
           <button className="botao-secundario" onClick={() => setDividindo(true)}>Dividir cidade por bairros</button>
           <button className="botao-principal pequeno" onClick={() => setEditando({})}>+ Novo núcleo</button>
@@ -227,7 +228,7 @@ export default function Nucleos({ nucleos, onAlterar }) {
       {livres.length > 0 && (
         <div className="cartao">
           <h3>Grupos do Entra sem núcleo</h3>
-          <p className="dica">Encontrados na última leitura (nome começando por "Pré-fichas"). Escolha o núcleo de cada um para ligar.</p>
+          <p className="dica">Encontrados na última leitura (nome começando por "Pré-fichas" ou pelo termo buscado). Escolha o núcleo de cada um para ligar.</p>
           {livres.map((g) => (
             <div key={g.id} className="linha-form" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
               <strong>{g.nome}</strong>

@@ -1,7 +1,7 @@
 // Regras da pré-ficha, usadas no navegador (orientar quem preenche)
 // e no servidor (quem realmente garante). Mantenha em um só lugar.
 import {
-  COMO_CONHECEU, ESTADOS_CIVIS, MODALIDADES, RELIGIOES, SEXOS, UFS,
+  COMO_CONHECEU, ESTADOS_CIVIS, RELIGIOES, SEXOS, UFS, modalidadesAtivas,
 } from './opcoes.js'
 import { calcularIdade, cpfValido, modalidadesCompativeis, somenteDigitos } from './util.js'
 
@@ -61,7 +61,7 @@ const valores = (lista) => lista.map((o) => (typeof o === 'string' ? o : o.valor
  * Valida a pré-ficha. `quantidadeTermos` é o número de declarações da marca
  * (todas precisam ser aceitas).
  */
-export function validar(f, quantidadeTermos = 0) {
+export function validar(f, quantidadeTermos = 0, { modalidadeAtual = null } = {}) {   // modalidadeAtual: na edição da própria ficha a modalidade não muda (vale mesmo se foi desativada)
   const e = {}
   const idade = DATA_ISO.test(f.data_nascimento) ? calcularIdade(f.data_nascimento) : null
   const vazio = (v) => v === null || v === undefined || (typeof v === 'string' && !v.trim())
@@ -118,8 +118,9 @@ export function validar(f, quantidadeTermos = 0) {
   obrig('como_conheceu'); umDe('como_conheceu', COMO_CONHECEU)
   if (f.como_conheceu === 'Outro') obrig('como_conheceu_outro', 'Conte como conheceu.')
   obrig('motivo')
-  obrig('modalidade', 'Escolha a modalidade.'); umDe('modalidade', MODALIDADES)
-  if (!e.modalidade && idade != null && !modalidadesCompativeis(idade, f.estado_civil).includes(f.modalidade))
+  const mantida = modalidadeAtual && f.modalidade === modalidadeAtual
+  obrig('modalidade', 'Escolha a modalidade.'); if (!mantida) umDe('modalidade', modalidadesAtivas())
+  if (!mantida && !e.modalidade && idade != null && !modalidadesCompativeis(idade, f.estado_civil).includes(f.modalidade))
     e.modalidade = 'Esta modalidade não corresponde à sua idade / estado civil.'
   if (f.modalidade === 'casais') {
     obrig('conjuge_cpf', 'Informe o CPF do cônjuge.')

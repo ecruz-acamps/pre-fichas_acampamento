@@ -13,6 +13,7 @@ const Usuarios = lazy(() => import('./Usuarios.jsx')) // carregada só quando ab
 const Configuracoes = lazy(() => import('./Configuracoes.jsx')) // carregada só quando abrir a tela
 const Auditoria = lazy(() => import('./Auditoria.jsx')) // carregada só quando abrir a tela
 import Nomes from './Nomes.jsx'
+import ModalidadesAdmin from './ModalidadesAdmin.jsx'
 import AlterarSenha from './AlterarSenha.jsx'
 import Ativacao from './Ativacao.jsx'
 import { limparCacheFichas } from './Fila.jsx'
@@ -28,6 +29,7 @@ const TELAS = [
   { id: 'acampamentos', rotulo: 'Acampamentos', papeis: ['admin', 'equipe'] },
   { id: 'auditoria', rotulo: 'Auditoria', papeis: ['admin', 'equipe', 'coordenador'] },
   { id: 'nucleos', rotulo: 'Núcleos', papeis: ['admin'] },
+  { id: 'modalidades', rotulo: 'Modalidades', papeis: ['admin'] },
   { id: 'usuarios', rotulo: 'Usuários', papeis: ['admin'] },
   { id: 'configuracoes', rotulo: 'Configurações', papeis: ['admin'] },
 ]
@@ -151,6 +153,7 @@ export default function App() {
       <Suspense fallback={<p className="carregando">Carregando…</p>}>
       {atual === 'acampamentos' && <Acampamentos {...props} />}
       {atual === 'auditoria' && <Auditoria {...props} />}
+      {atual === 'modalidades' && <ModalidadesAdmin />}
       {atual === 'nucleos' && <Nucleos {...props} onAlterar={recarregarNucleos} />}
       {atual === 'usuarios' && <Usuarios {...props} usuarioAtual={usuario} />}
       {atual === 'configuracoes' && <Configuracoes {...props} onSalvar={(m) => setMarca(m)} />}

@@ -311,7 +311,7 @@ export default async function rotasConta(app) {
     const f = normalizarEntrada(req.body)
     const atual = await fichaAtiva(id)
     if (atual) { f.modalidade = atual.modalidade; f.conjuge_cpf = atual.conjuge_cpf ?? '' } // não mudam por aqui
-    const erros = validar(f, 0)
+    const erros = validar(f, 0, { modalidadeAtual: atual?.modalidade })
     if (Object.keys(erros).length) return reply.code(400).send({ mensagem: 'Dados inválidos.', erros })
     const registro = montarRegistro(f, [])
     const client = await pool.connect()

@@ -6,10 +6,11 @@ import { preferenciaPorParticipacao, revogarPorParticipacaoRemovida } from '../p
 
 const DATA = /^\d{4}-\d{2}-\d{2}$/
 
-function validarAcampamento(c) {
+function validarAcampamento(c, { novo = false } = {}) {
   const numero = Number(c?.numero)
   if (!Number.isInteger(numero) || numero < 1 || numero > 100000) return { erro: 'Número do acampamento inválido.' }
-  if (!MODALIDADES.some((m) => m.valor === c?.modalidade)) return { erro: 'Modalidade inválida.' }
+  const modalidade = MODALIDADES.find((m) => m.valor === c?.modalidade)
+  if (!modalidade || (novo && modalidade.ativa === false)) return { erro: modalidade ? 'Esta modalidade está desativada.' : 'Modalidade inválida.' }
   const data = (v) => (v && DATA.test(v) ? v : null)
   const inicio = data(c.data_inicio)
   const fim = data(c.data_fim)
@@ -40,7 +41,7 @@ export default async function rotasAcampamentos(app) {
   })
 
   app.post('/api/admin/acampamentos', gestao(), async (req, reply) => {
-    const v = validarAcampamento(req.body)
+    const v = validarAcampamento(req.body, { novo: true })
     if (v.erro) return reply.code(400).send({ mensagem: v.erro })
     try {
       const { rows: [a] } = await pool.query(

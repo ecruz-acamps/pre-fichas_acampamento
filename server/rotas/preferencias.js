@@ -87,7 +87,7 @@ export default async function rotasPreferencias(app) {
     const c = req.body ?? {}
     const numero = Number(c.acampamento_numero)
     if (!Number.isInteger(numero) || numero < 1 || numero > 100000) return reply.code(400).send({ mensagem: 'Informe o número do acampamento que o cônjuge fez.' })
-    if (!MODALIDADES.some((m) => m.valor === c.modalidade)) return reply.code(400).send({ mensagem: 'Modalidade inválida.' })
+    if (!MODALIDADES.some((m) => m.valor === c.modalidade && m.ativa !== false)) return reply.code(400).send({ mensagem: 'Modalidade inválida ou desativada.' })
     const conjugeFichaId = c.conjuge_ficha_id ? Number(c.conjuge_ficha_id) : null
     const conjugeNome = typeof c.conjuge_nome === 'string' ? c.conjuge_nome.trim().slice(0, 150) : ''
     if (!conjugeFichaId && !conjugeNome) return reply.code(400).send({ mensagem: 'Informe o nome do cônjuge.' })

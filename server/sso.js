@@ -117,9 +117,10 @@ const erroGraph = async (r, nome) => {
 }
 export const PREFIXO_GRUPO = 'Pré-fichas'
 
-/** Grupos cujo nome começa com "Pré-fichas" (até 20 páginas de 100). */
-export async function lerGruposPrefixo(fetchFn, token) {
-  let proxima = `${GRAPH}/groups?$filter=${encodeURIComponent(`startswith(displayName,'${PREFIXO_GRUPO}')`)}&$select=id,displayName&$top=100`
+/** Grupos cujo nome começa com o termo (padrão "Pré-fichas"), até 20 páginas de 100. */
+export async function lerGruposPrefixo(fetchFn, token, termo = PREFIXO_GRUPO) {
+  const t = String(termo).replace(/'/g, "''")   // aspas simples do OData dobradas (o termo ainda é validado antes, na rota)
+  let proxima = `${GRAPH}/groups?$filter=${encodeURIComponent(`startswith(displayName,'${t}')`)}&$select=id,displayName&$top=100`
   const grupos = []
   for (let pagina = 0; proxima && pagina < 20; pagina++) {
     const r = await fetchFn(proxima, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) })

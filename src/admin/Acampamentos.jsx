@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { api } from '../lib/api.js'
 import { CorTribo } from '../lib/marca.jsx'
-import { MODALIDADES, STATUS, rotuloDe } from '../../shared/opcoes.js'
+import { MODALIDADES, STATUS, modalidadesAtivas, rotuloDe } from '../../shared/opcoes.js'
 import { calcularIdade, formatarData } from '../../shared/util.js'
 import { calcularPosicoes, useFichas } from './Fila.jsx'
 import { SeloPreferencia, preferenciaAtiva } from './Preferencia.jsx'
@@ -42,7 +42,7 @@ function FormAcampamento({ inicial, onSalvar, onCancelar }) {
         <div className="campo">
           <label htmlFor="ac-modalidade">Modalidade</label>
           <select id="ac-modalidade" value={a.modalidade} onChange={(e) => setA({ ...a, modalidade: e.target.value })}>
-            {MODALIDADES.map((m) => <option key={m.valor} value={m.valor}>{m.rotulo}</option>)}
+            {modalidadesAtivas().map((m) => <option key={m.valor} value={m.valor}>{m.rotulo}</option>)}
           </select>
         </div>
         <div className="campo">

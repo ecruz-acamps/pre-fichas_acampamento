@@ -1,4 +1,4 @@
-import { MODALIDADES } from './opcoes.js'
+import { modalidadesAtivas } from './opcoes.js'
 
 export const somenteDigitos = (v = '') => String(v).replace(/\D/g, '')
 
@@ -28,11 +28,13 @@ export function calcularIdade(dataNascimento, referencia = new Date()) {
 
 /** Modalidades compatíveis com a idade/estado civil informados. */
 export function modalidadesCompativeis(idade, estadoCivil) {
-  if (idade == null) return MODALIDADES.map((m) => m.valor)
+  const ativas = modalidadesAtivas()
+  if (idade == null) return ativas.map((m) => m.valor)
   const casado = estadoCivil === 'casado' || estadoCivil === 'uniao_estavel'
-  return MODALIDADES.filter((m) => {
-    if (m.valor === 'senior') return idade >= 30 || (casado && idade >= 18)
-    if (m.valor === 'casais') return casado && idade >= 18 // casal: casado(a) ou em união estável
+  return ativas.filter((m) => {
+    if (m.regra === 'senior') return idade >= m.min || (casado && idade >= 18)
+    if (m.regra === 'casais') return casado && idade >= m.min // casal: casado(a) ou em união estável
+    if (m.casado && !casado) return false
     return idade >= m.min && idade <= m.max
   }).map((m) => m.valor)
 }
