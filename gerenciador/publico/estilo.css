@@ -38,3 +38,5 @@ pre.log { background: #10151f; color: #d8e1f0; padding: 12px; border-radius: 8px
 .carregando { color: var(--suave); }
 @media (max-width: 640px) { .linha-2 { grid-template-columns: 1fr; } }
 [hidden] { display: none !important; }
+button.perigo { background: #b3261e; color: #fff; border: 0; border-radius: 8px; padding: 6px 12px; font: inherit; cursor: pointer; }
+button.perigo:hover { background: #8c1d18; }

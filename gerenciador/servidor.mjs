@@ -188,6 +188,22 @@ function validarPedido(c) {
     if (Object.keys(e).length) return { erros: e }
     return { pedido: { acao, instancia: c.instancia, habilitar, ...(habilitar ? { tenant_id: tenant, client_id: cliente } : {}), ...(segredo ? { segredo } : {}) } }
   }
+  if (acao === 'apagar' || acao === 'trocar-link') {
+    if (!RE.instancia.test(c.instancia ?? '') || ['prefichas-gerenciador', 'prefichas-proxy'].includes(c.instancia)) return { erros: { instancia: 'Instância inválida.' } }
+    const existe = (lerJson(join(ESTADO, 'instancias.json'), { instancias: [] }).instancias ?? []).some((i) => i.pasta === c.instancia)
+    if (!existe) return { erros: { instancia: 'Instância não encontrada.' } }
+    if (acao === 'apagar') {
+      // a pessoa digita o nome da pasta para confirmar (evita apagar a instância errada)
+      if (c.confirmar !== c.instancia) return { erros: { confirmar: `Digite exatamente ${c.instancia} para confirmar.` } }
+      return { pedido: { acao, instancia: c.instancia, confirmar: c.confirmar, sem_backup: c.sem_backup === true } }
+    }
+    const e = {}
+    if (!['cloudflare', 'direta'].includes(c.publicacao)) e.publicacao = 'Escolha Cloudflare ou domínio próprio.'
+    if (c.publicacao === 'cloudflare' && !RE.sub.test(c.subdominio ?? '')) e.subdominio = 'Endereço inválido (letras minúsculas, números e hífen).'
+    if (c.publicacao === 'direta' && !RE.dominio.test(String(c.dominio ?? '').toLowerCase())) e.dominio = 'Domínio inválido.'
+    if (Object.keys(e).length) return { erros: e }
+    return { pedido: { acao, instancia: c.instancia, publicacao: c.publicacao, subdominio: c.publicacao === 'cloudflare' ? c.subdominio : '', dominio: c.publicacao === 'direta' ? String(c.dominio).toLowerCase() : '' } }
+  }
   if (acao === 'atualizar-todas' || acao === 'atualizar-painel') return { pedido: { acao } }
   if (acao === 'cloudflare') {
     const e = {}

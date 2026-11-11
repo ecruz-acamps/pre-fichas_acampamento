@@ -13,6 +13,8 @@ CODIGO="$(cd "$(dirname "$0")/.." && pwd)"     # clone do repositório do painel
 REPO="$(git -C "$CODIGO" remote get-url origin 2>/dev/null || echo https://github.com/ecruz-acamps/pre-fichas_acampamento.git)"
 umask 022
 mkdir -p "$TAREFAS"
+OPT="${PREFICHAS_OPT:-/opt}"                # onde ficam as instâncias (os testes usam outra pasta)
+SCRIPTS_COMP="${PREFICHAS_SCRIPTS:-$CODIGO/scripts}"   # túnel e proxy compartilhados
 ETC="${PREFICHAS_ETC:-/etc/prefichas}"      # configurações do servidor (token, e-mails…), só root lê
 CF_API="${CF_API_URL:-https://api.cloudflare.com/client/v4}"
 
@@ -35,8 +37,8 @@ estado_tarefa() { # id acao alvo situacao mensagem por inicio
     "$1" "$2" "$(json_str "$3")" "$4" "$(json_str "$5")" "$(json_str "$6")" "$7" \
     "$([ "$4" = executando ] && echo null || echo "\"$(date -Iseconds)\"")" > "$f.tmp" && mv -f "$f.tmp" "$f"
 }
-instancias() { for f in /opt/prefichas-*/.env; do [ -f "$f" ] && basename "$(dirname "$f")"; done | grep -vx 'prefichas-gerenciador\|prefichas-proxy' || true; }
-valor_env() { { grep -E "^$2=" "/opt/$1/.env" 2>/dev/null || true; } | tail -1 | cut -d= -f2-; }
+instancias() { for f in "$OPT"/prefichas-*/.env; do [ -f "$f" ] && basename "$(dirname "$f")"; done | grep -vx 'prefichas-gerenciador\|prefichas-proxy' || true; }
+valor_env() { { grep -E "^$2=" "$OPT/$1/.env" 2>/dev/null || true; } | tail -1 | cut -d= -f2-; }
 
 # ---------------------------------------------------------------- ações
 acao_nova() { # arquivo
@@ -253,6 +255,133 @@ acao_microsoft() { # arquivo do pedido
   (cd "/opt/$i" && timeout 300 docker compose up -d >/dev/null 2>&1) || { echo "✗ Gravado, mas falhou ao reiniciar $i."; return 1; }
   if [ "$hab" = true ]; then echo "✓ Login Microsoft ligado em $i."; else echo "✓ Login Microsoft desligado em $i."; fi
 }
+# ---------------------------------------------------------------- Apagar instância e trocar o link de acesso
+# Grava/atualiza uma variável no .env da instância (arquivo novo + mv, sem perder as permissões)
+env_definir() { # instancia CHAVE valor
+  local f="$OPT/$1/.env" tmp; tmp="$(mktemp "$OPT/$1/.env.XXXXXX")"
+  { grep -vE "^$2=" "$f" || true; printf '%s=%s\n' "$2" "$3"; } > "$tmp" && chmod --reference="$f" "$tmp" && mv -f "$tmp" "$f"
+}
+# endereço público (sem https://) da instância
+host_da_instancia() { local u; u="$(valor_env "$1" URL_PUBLICA)"; u="${u#https://}"; u="${u#http://}"; printf '%s' "${u%%/*}"; }
+despublicar() { # tipo host   (falha só avisa: o endereço some de qualquer forma quando o sistema sai do ar)
+  case "$1" in
+    cloudflare) "$SCRIPTS_COMP/tunel-compartilhado.sh" remover "$2" 2>&1 || echo "⚠ Não consegui tirar $2 do túnel da Cloudflare (confira o token). Apague o registro DNS dele no painel da Cloudflare, se sobrar." ;;
+    direta) "$SCRIPTS_COMP/proxy-compartilhado.sh" remover "$2" 2>&1 || echo "⚠ Não consegui tirar $2 do proxy compartilhado." ;;
+  esac
+}
+
+# Apaga uma instância: backup do banco (guardado fora da pasta), tira o endereço do túnel/proxy, para os containers e os dados
+# e MOVE a pasta para a lixeira (recuperável por 30 dias; depois é limpa sozinha). Nada é apagado com "rm -rf" aqui.
+# Pedido: {instancia, confirmar (= nome da pasta), sem_backup?}
+LIXEIRA="${PREFICHAS_LIXEIRA:-/var/lib/prefichas-gerenciador/lixeira}"
+acao_apagar() { # arquivo do pedido
+  local p="$1" i conf sem pub host dir real dest unidade proj lixo
+  i="$(jq -r '.instancia // empty' "$p")"; conf="$(jq -r '.confirmar // empty' "$p")"; sem="$(jq -r '.sem_backup // false' "$p")"
+  dir="$OPT/$i"
+  casa "$i" "$RE_INST" && [ "$i" != prefichas-gerenciador ] && [ "$i" != prefichas-proxy ] && [ -d "$dir" ] && [ ! -L "$dir" ] && [ -f "$dir/.env" ] || { echo "✗ Instância inválida: $i"; return 1; }
+  [ "$conf" = "$i" ] || { echo "✗ Confirmação não confere: digite exatamente o nome da pasta ($i)."; return 1; }
+  real="$(readlink -f "$dir")"; [ "$real" = "$OPT/$i" ] || { echo "✗ Pasta fora do lugar esperado."; return 1; }
+  proj="$(valor_env "$i" COMPOSE_PROJECT_NAME)"
+  pub="$(valor_env "$i" PUBLICACAO)"; host="$(host_da_instancia "$i")"
+  [ "$pub" = cloudflare ] && [ -n "$(valor_env "$i" ENDERECO_PUBLICO)" ] && host="$(valor_env "$i" ENDERECO_PUBLICO)"
+
+  dest="${PREFICHAS_BACKUPS_APAGADOS:-/var/backups/prefichas-apagados}/${i}-$(date +%Y%m%d-%H%M%S)"
+  if [ "$sem" = true ]; then
+    echo "⚠ Apagando SEM backup (pedido explícito)."
+  else
+    echo "→ Backup do banco de $i antes de apagar…"
+    mkdir -p "$dest" && chmod 700 "$dest"
+    if ! (cd "$dir" && PASTA_BACKUP="$dest" MANTER_DIAS=36500 ./scripts/backup.sh) || ! ls "$dest"/*.dump >/dev/null 2>&1 || [ ! -s "$(ls "$dest"/*.dump | head -1)" ]; then
+      echo "✗ Não consegui fazer o backup, então NÃO apaguei nada. Se o sistema está quebrado e você quer apagar mesmo assim, marque \"apagar mesmo sem backup\"."
+      return 1
+    fi
+    printf 'Instância: %s\nNome: %s\nEndereço: %s\nApagada em: %s\nRestauração: docker compose exec -T db pg_restore -U prefichas -d prefichas --clean < arquivo.dump\n' \
+      "$i" "$(valor_env "$i" NOME_ACAMPAMENTO)" "${host:-—}" "$(date -Iseconds)" > "$dest/LEIA-ME.txt"
+    echo "✓ Backup guardado em $dest"
+  fi
+
+  if [ -n "$host" ] && { [ "$pub" = cloudflare ] || [ "$pub" = direta ]; }; then echo "→ Tirando $host do ar…"; despublicar "$pub" "$host"; fi
+  unidade="prefichas-atualizador-${proj}"
+  if [ -n "$proj" ] && command -v systemctl >/dev/null 2>&1 && [ -f "/etc/systemd/system/${unidade}.path" ]; then
+    systemctl disable --now "${unidade}.path" "${unidade}.service" >/dev/null 2>&1 || true
+    mv -f "/etc/systemd/system/${unidade}.path" "/etc/systemd/system/${unidade}.service" "$LIXEIRA/" 2>/dev/null || true
+    systemctl daemon-reload >/dev/null 2>&1 || true
+  fi
+  echo "→ Parando e removendo containers e dados…"
+  (cd "$dir" && timeout 300 docker compose down -v --remove-orphans >/dev/null 2>&1) || { echo "✗ Falhou ao parar os containers: a pasta foi mantida para você conferir."; return 1; }
+  case ",$(valor_env "$i" COMPOSE_PROFILES)," in *,tunel,*) echo "⚠ Esta instância tinha túnel próprio da Cloudflare (versão antiga): apague esse túnel no painel da Cloudflare." ;; esac
+  mkdir -p "$LIXEIRA" && chmod 700 "$LIXEIRA"
+  lixo="$LIXEIRA/${i}-$(date +%Y%m%d-%H%M%S)"
+  mv -- "$dir" "$lixo" || { echo "✗ Não consegui mover a pasta para a lixeira."; return 1; }
+  echo "  A pasta (código e configurações, sem o banco) ficou em $lixo por 30 dias, para o caso de arrependimento."
+  # a lixeira se limpa sozinha: o que passou de 30 dias é removido a cada apagamento (caminho fixo, só itens diretos da lixeira)
+  find /var/lib/prefichas-gerenciador/lixeira -mindepth 1 -maxdepth 1 -mtime +30 -exec rm -rf {} + 2>/dev/null || true
+  if [ "$sem" = true ]; then echo "✓ Instância $i apagada (sem backup)."; else echo "✓ Instância $i apagada. Backup do banco em $dest"; fi
+}
+
+# Troca o endereço de acesso sem recriar a instância (Cloudflare ↔ domínio próprio, ou outro subdomínio/domínio).
+# O endereço NOVO é publicado e conferido ANTES de o antigo sair: se não responder, nada muda.
+# Pedido: {instancia, publicacao: cloudflare|direta, subdominio?, dominio?}
+acao_trocar_link() { # arquivo do pedido
+  local p="$1" i pub novo_tipo sub dom base novo antigo porta tentativas ok=0 url o pj
+  i="$(jq -r '.instancia // empty' "$p")"; novo_tipo="$(jq -r '.publicacao // empty' "$p")"
+  sub="$(jq -r '.subdominio // empty' "$p")"; dom="$(jq -r '.dominio // empty' "$p" | tr 'A-Z' 'a-z')"
+  casa "$i" "$RE_INST" && [ "$i" != prefichas-gerenciador ] && [ "$i" != prefichas-proxy ] && [ -f "$OPT/$i/.env" ] && [ ! -L "$OPT/$i/.env" ] || { echo "✗ Instância inválida: $i"; return 1; }
+  pub="$(valor_env "$i" PUBLICACAO)"
+  case "$pub" in cloudflare|direta) ;; *) echo "✗ Só dá para trocar o link de instâncias publicadas pela Cloudflare ou por domínio direto (esta está como: ${pub:-desconhecida})."; return 1 ;; esac
+  antigo="$(host_da_instancia "$i")"; [ "$pub" = cloudflare ] && [ -n "$(valor_env "$i" ENDERECO_PUBLICO)" ] && antigo="$(valor_env "$i" ENDERECO_PUBLICO)"
+  case "$novo_tipo" in
+    cloudflare)
+      casa "$sub" "$RE_SUB" || { echo "✗ Endereço inválido (letras minúsculas, números e hífen)."; return 1; }
+      base="$(valor_painel DOMINIO_BASE)"; casa "$base" "$RE_DOM" || base="$(valor_env "$i" DOMINIO_BASE)"; base="${base:-movimentocampista.com.br}"
+      novo="${sub}.${base}" ;;
+    direta) casa "$dom" "$RE_DOM" || { echo "✗ Domínio inválido."; return 1; }; novo="$dom" ;;
+    *) echo "✗ Publicação inválida."; return 1 ;;
+  esac
+  casa "$novo" "$RE_DOM" || { echo "✗ Endereço inválido."; return 1; }
+  [ "$novo" != "$antigo" ] || { echo "✗ O endereço novo é igual ao atual ($antigo)."; return 1; }
+  for o in $(instancias); do
+    [ "$o" = "$i" ] && continue
+    [ "$(host_da_instancia "$o")" = "$novo" ] && { echo "✗ O endereço $novo já é usado por outra instância ($o)."; return 1; }
+  done
+  porta="$(valor_env "$i" PORTA_LOCAL)"; porta="${porta//[^0-9]/}"; [ -n "$porta" ] || { echo "✗ Porta local da instância não encontrada."; return 1; }
+  curl -fsS -m 3 "http://127.0.0.1:${porta}/api/saude" >/dev/null 2>&1 || { echo "✗ A instância está fora do ar: deixe-a funcionando antes de trocar o link."; return 1; }
+
+  echo "→ Publicando o endereço novo ($novo)…"
+  if [ "$novo_tipo" = cloudflare ]; then
+    "$SCRIPTS_COMP/tunel-compartilhado.sh" verificar "$novo" && "$SCRIPTS_COMP/tunel-compartilhado.sh" adicionar "$novo" "$porta" || { echo "✗ Não consegui publicar $novo na Cloudflare. Nada foi alterado."; return 1; }
+  else
+    "$SCRIPTS_COMP/proxy-compartilhado.sh" adicionar "$novo" "$porta" || { echo "✗ Não consegui publicar $novo no proxy. Nada foi alterado."; return 1; }
+  fi
+  echo "→ Conferindo se $novo responde (o DNS e o certificado podem levar um pouco)…"
+  url="https://${novo}/api/saude"; [ -n "${PREFICHAS_SAUDE_URL:-}" ] && url="${PREFICHAS_SAUDE_URL//\{host\}/$novo}"
+  for tentativas in $(seq 1 "${PREFICHAS_ESPERA_TENTATIVAS:-24}"); do
+    if curl -fsS -m 8 "$url" >/dev/null 2>&1; then ok=1; break; fi
+    sleep "${PREFICHAS_ESPERA_SEGUNDOS:-5}"
+  done
+  if [ "$ok" != 1 ]; then
+    echo "✗ $novo ainda não responde. Desfazendo: o endereço antigo ($antigo) continua valendo e nada foi alterado."
+    [ "$novo_tipo" = direta ] && echo "  Para domínio próprio, confira se o registro DNS (A) já aponta para o IP da VM e se as portas 80/443 chegam nela."
+    despublicar "$novo_tipo" "$novo" >/dev/null 2>&1
+    return 1
+  fi
+
+  echo "→ Atualizando a instância para usar o endereço novo…"
+  cp -p "$OPT/$i/.env" "$OPT/$i/.env.antes-do-link" 2>/dev/null || true
+  env_definir "$i" URL_PUBLICA "https://${novo}"; env_definir "$i" DOMINIO "$novo"; env_definir "$i" PUBLICACAO "$novo_tipo"
+  env_definir "$i" ENDERECO_PUBLICO "$([ "$novo_tipo" = cloudflare ] && echo "$novo")"
+  pj="$OPT/$i/atualizacao/estado/publicacao.json"
+  if [ -f "$pj" ]; then
+    jq -c --arg e "$novo" --argjson a "$([ "$novo_tipo" = cloudflare ] && echo true || echo false)" '.endereco = (if $a then $e else "" end) | .ativo = $a' "$pj" > "$pj.tmp" 2>/dev/null && mv -f "$pj.tmp" "$pj" || true
+  fi
+  (cd "$OPT/$i" && timeout 300 docker compose up -d >/dev/null 2>&1) || { echo "✗ O endereço novo já está publicado, mas falhou ao reiniciar a instância. Confira: docker compose up -d em $OPT/$i."; return 1; }
+
+  echo "→ Tirando o endereço antigo ($antigo)…"
+  despublicar "$pub" "$antigo"
+  echo "✓ Link trocado: $antigo → $novo. Os links antigos deixam de funcionar."
+  echo "  Se o login Microsoft estiver ligado, troque o URI de redirecionamento no Entra para https://${novo}/api/auth/microsoft/callback."
+}
+
 # "Esqueci minha senha" do painel central: manda o link. Só envia para um usuário ATIVO do painel e só com
 # link do formato esperado (o pedido vem de uma página sem login; o painel pode estar comprometido).
 acao_email_redefinicao() { # arquivo do pedido
@@ -338,6 +467,8 @@ processar() { # arquivo do pedido
     email-remover) acao_email_remover >> "$log" 2>&1 && ok=1 ;;
     email-aplicar) acao_email_aplicar >> "$log" 2>&1 && ok=1 ;;
     microsoft) acao_microsoft "$tmp" >> "$log" 2>&1 && ok=1 ;;
+    apagar) acao_apagar "$tmp" >> "$log" 2>&1 && ok=1 ;;
+    trocar-link) acao_trocar_link "$tmp" >> "$log" 2>&1 && ok=1 ;;
     vpn-reconectar) acao_vpn_reconectar >> "$log" 2>&1 && ok=1 ;;
     vpn-credenciais) acao_vpn_credenciais "$tmp" >> "$log" 2>&1 && ok=1 ;;
     atualizar-todas)

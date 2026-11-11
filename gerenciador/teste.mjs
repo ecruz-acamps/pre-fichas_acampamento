@@ -201,3 +201,28 @@ test('login Microsoft por acampamento: valida, não vaza o segredo e só vale pa
   assert.doesNotMatch(JSON.stringify(await (await fetch(`${url}/api/tarefas`, { headers: { cookie: globalThis.cookie } })).json()), /SEGREDO/)
   assert.equal((await fetch(`${url}/api/tarefas`, { method: 'POST', headers: H, body: JSON.stringify(ok) })).status, 401, 'sem login não liga nada')
 })
+
+test('apagar instância e trocar link: validam o pedido (nome digitado, instância que existe, endereço) e protegem o gerenciador e o proxy', async () => {
+  const post = (corpo) => fetch(`${url}/api/tarefas`, { method: 'POST', headers: { ...H, cookie: globalThis.cookie }, body: JSON.stringify(corpo) })
+  const I = 'prefichas-sao-pedro'
+  // apagar: precisa digitar o nome da pasta; instância precisa existir; gerenciador/proxy nunca
+  for (const ruim of [{ confirmar: '' }, { confirmar: 'prefichas-outra' }, { confirmar: 'sao-pedro' }, { instancia: 'prefichas-nao-existe', confirmar: 'prefichas-nao-existe' },
+    { instancia: 'prefichas-gerenciador', confirmar: 'prefichas-gerenciador' }, { instancia: 'prefichas-proxy', confirmar: 'prefichas-proxy' }, { instancia: '../etc', confirmar: '../etc' }]) {
+    assert.equal((await post({ acao: 'apagar', instancia: I, confirmar: I, ...ruim })).status, 400, JSON.stringify(ruim))
+  }
+  const antes = new Set(readdirSync(join(base_, 'pedidos')))
+  assert.equal((await post({ acao: 'apagar', instancia: I, confirmar: I })).status, 201)
+  const novo = readdirSync(join(base_, 'pedidos')).find((f) => !antes.has(f))
+  assert.deepEqual(JSON.parse(readFileSync(join(base_, 'pedidos', novo), 'utf8')).sem_backup, false, 'sem backup só se pedido explicitamente')
+  assert.equal((await post({ acao: 'apagar', instancia: I, confirmar: I, sem_backup: true })).status, 201)
+  // trocar link: Cloudflare (subdomínio) ou domínio próprio, validados
+  for (const ruim of [{ publicacao: 'local' }, { publicacao: 'cloudflare', subdominio: 'Nome Ruim' }, { publicacao: 'cloudflare', subdominio: 'a;id' }, { publicacao: 'cloudflare' },
+    { publicacao: 'direta', dominio: 'sem-ponto' }, { publicacao: 'direta', dominio: 'x$(id).com' }, { publicacao: 'direta' }, { instancia: 'prefichas-nao-existe', publicacao: 'cloudflare', subdominio: 'ok' }]) {
+    assert.equal((await post({ acao: 'trocar-link', instancia: I, ...ruim })).status, 400, JSON.stringify(ruim))
+  }
+  assert.equal((await post({ acao: 'trocar-link', instancia: I, publicacao: 'cloudflare', subdominio: 'novo-nome' })).status, 201)
+  assert.equal((await post({ acao: 'trocar-link', instancia: I, publicacao: 'direta', dominio: 'Prefichas.Exemplo.com.br' })).status, 201)
+  // sem login, nada
+  assert.equal((await fetch(`${url}/api/tarefas`, { method: 'POST', headers: H, body: JSON.stringify({ acao: 'apagar', instancia: I, confirmar: I }) })).status, 401)
+  const aud = readFileSync(join(base_, 'dados', 'auditoria.jsonl'), 'utf8'); assert.match(aud, /pedido-apagar/); assert.match(aud, /pedido-trocar-link/)
+})

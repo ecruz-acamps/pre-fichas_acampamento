@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 2.21.0 — painel central: trocar o link e apagar instância
+
+- **Trocar o link de acesso** (Instâncias → "Trocar link"): muda o endereço de um acampamento (outro subdomínio da Cloudflare ou domínio próprio, ou de um para o outro) **sem apagar e criar de novo**. O endereço novo é publicado e **conferido antes** de o antigo sair; se não responder, tudo volta como estava. O sistema, o banco e os usuários não mudam. Lembra de trocar o URI de redirecionamento no Entra se o login Microsoft estiver ligado.
+- **Apagar instância** (Instâncias → "Apagar"), para o acampamento que deixou de existir: exige **digitar o nome da pasta**; faz **backup do banco** (guardado em `/var/backups/prefichas-apagados/`), tira o endereço do túnel/proxy, remove containers e dados e **move a pasta para uma lixeira por 30 dias** (nada é apagado com `rm -rf`). Se o backup falhar, **nada é apagado** (a menos que se marque "apagar mesmo sem backup"). O gerenciador e o proxy não podem ser apagados.
+
 ## 2.20.0 — modalidades cadastráveis
 
 - Novo menu **Modalidades** (administrador): **criar** modalidades novas (nome, idade mínima e máxima, só casado(a) opcional), **editar** as existentes, **reordenar**, **desativar/ativar** e **excluir** as que ninguém usa. As cinco de sempre (Mirim, FAC, Juvenil, Sênior, Casais) continuam como padrão.
