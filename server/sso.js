@@ -108,3 +108,44 @@ export async function criarGrupoSeguranca(fetchFn, token, { nome, apelido, descr
   }
   return j.id.toLowerCase()
 }
+
+// ---------------------------------------------------------------- ler e apagar grupos (exige Group.ReadWrite.All; ler sozinho exigiria Group.Read.All)
+const GRAPH = 'https://graph.microsoft.com/v1.0'
+const erroGraph = async (r, nome) => {
+  const j = await r.json().catch(() => ({}))
+  const e = new Error(nome); e.status = r.status; e.codigo = String(j.error?.code ?? '').slice(0, 60); e.detalhe = String(j.error?.message ?? '').replace(/\s+/g, ' ').slice(0, 160); return e
+}
+export const PREFIXO_GRUPO = 'Pré-fichas'
+
+/** Grupos cujo nome começa com "Pré-fichas" (até 20 páginas de 100). */
+export async function lerGruposPrefixo(fetchFn, token) {
+  let proxima = `${GRAPH}/groups?$filter=${encodeURIComponent(`startswith(displayName,'${PREFIXO_GRUPO}')`)}&$select=id,displayName&$top=100`
+  const grupos = []
+  for (let pagina = 0; proxima && pagina < 20; pagina++) {
+    const r = await fetchFn(proxima, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) })
+    if (!r.ok) throw await erroGraph(r, 'ler_grupos')
+    const j = await r.json()
+    for (const g of j.value ?? []) if (typeof g.id === 'string' && GUID.test(g.id)) grupos.push({ id: g.id.toLowerCase(), nome: String(g.displayName ?? '').slice(0, 256) })
+    proxima = typeof j['@odata.nextLink'] === 'string' && j['@odata.nextLink'].startsWith(`${GRAPH}/`) ? j['@odata.nextLink'] : null   // só segue links do próprio Graph
+  }
+  return grupos
+}
+
+/** Um grupo pelo ID: { id, nome } ou null se não existe mais. */
+export async function lerGrupo(fetchFn, token, id) {
+  if (!GUID.test(id)) throw new Error('id_invalido')
+  const r = await fetchFn(`${GRAPH}/groups/${id}?$select=id,displayName`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) })
+  if (r.status === 404) return null
+  if (!r.ok) throw await erroGraph(r, 'ler_grupo')
+  const j = await r.json()
+  return { id: String(j.id).toLowerCase(), nome: String(j.displayName ?? '').slice(0, 256) }
+}
+
+/** Apaga um grupo (404 = já não existe = sucesso). */
+export async function apagarGrupo(fetchFn, token, id) {
+  if (!GUID.test(id)) throw new Error('id_invalido')
+  const r = await fetchFn(`${GRAPH}/groups/${id}`, { method: 'DELETE', headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000) })
+  if (r.status === 404) return false
+  if (!r.ok) throw await erroGraph(r, 'apagar_grupo')
+  return true
+}

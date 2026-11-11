@@ -39,7 +39,7 @@ const MS = generateKeyPairSync('rsa', { modulusLength: 2048 })
 const MS_OUTRA = generateKeyPairSync('rsa', { modulusLength: 2048 })
 const TENANT = randomUUID(), CLIENTE = randomUUID()
 let msTokenAtual = null, msTroca = null
-const msGraph = { modo: 'ok', pedidos: [] }
+const msGraph = { modo: 'ok', pedidos: [], grupos: new Map(), apagados: [] }
 const MS_CFG = { habilitado: false, tenantId: TENANT, clientId: CLIENTE, segredo: 'segredo-do-teste' }   // no sistema real vem do .env, gravado pelo painel central
 const msFetch = async (url, opcoes = {}) => {
   const r = (corpo, ok = true) => ({ ok, json: async () => corpo })
@@ -49,10 +49,24 @@ const msFetch = async (url, opcoes = {}) => {
     if (msTroca.grant_type === 'client_credentials') return msGraph.modo === 'token-ruim' ? r({ error: 'invalid_client', error_description: 'AADSTS7000215: segredo errado' }, false) : r({ access_token: 'token-graph-teste' })
     return msTokenAtual ? r({ id_token: msTokenAtual }) : r({ error: 'invalid_grant' }, false)
   }
-  if (String(url) === 'https://graph.microsoft.com/v1.0/groups') {
+  const G = 'https://graph.microsoft.com/v1.0/groups'
+  if (String(url) === G && opcoes.method === 'POST') {
     const corpo = JSON.parse(opcoes.body); msGraph.pedidos.push({ corpo, auth: opcoes.headers.authorization })
-    if (msGraph.modo === 'sem-permissao') return r({ error: { code: 'Authorization_RequestDenied', message: 'Insufficient privileges' } }, false) && { ok: false, status: 403, json: async () => ({ error: { code: 'Authorization_RequestDenied', message: 'Insufficient privileges' } }) }
-    return { ok: true, status: 201, json: async () => ({ id: randomUUID().toUpperCase() }) }
+    if (msGraph.modo === 'sem-permissao') return { ok: false, status: 403, json: async () => ({ error: { code: 'Authorization_RequestDenied', message: 'Insufficient privileges' } }) }
+    const id = randomUUID(); msGraph.grupos.set(id, corpo.displayName)
+    return { ok: true, status: 201, json: async () => ({ id: id.toUpperCase() }) }
+  }
+  if (String(url).startsWith(`${G}?`)) {   // leitura dos grupos "Pré-fichas…"
+    if (msGraph.modo === 'sem-permissao') return { ok: false, status: 403, json: async () => ({ error: { code: 'Authorization_RequestDenied', message: 'x' } }) }
+    return { ok: true, status: 200, json: async () => ({ value: [...msGraph.grupos].filter(([, n]) => n.startsWith('Pré-fichas')).map(([id, displayName]) => ({ id, displayName })) }) }
+  }
+  const um = /^https:\/\/graph\.microsoft\.com\/v1\.0\/groups\/([0-9a-f-]{36})(\?.*)?$/.exec(String(url))
+  if (um) {
+    const id = um[1]
+    if (msGraph.modo === 'sem-permissao') return { ok: false, status: 403, json: async () => ({ error: { code: 'Authorization_RequestDenied', message: 'x' } }) }
+    if (!msGraph.grupos.has(id)) return { ok: false, status: 404, json: async () => ({ error: { code: 'Request_ResourceNotFound' } }) }
+    if (opcoes.method === 'DELETE') { msGraph.grupos.delete(id); msGraph.apagados.push(id); return { ok: true, status: 204, json: async () => ({}) } }
+    return { ok: true, status: 200, json: async () => ({ id, displayName: msGraph.grupos.get(id) }) }
   }
   throw new Error(`url inesperada ${url}`)
 }
@@ -1995,6 +2009,80 @@ describe('API', { skip: pular }, () => {
       // de novo: nada a fazer, nenhum grupo duplicado
       msGraph.pedidos.length = 0
       assert.equal((await req('admin', 'POST', '/api/admin/nucleos/criar-grupos-entra', {})).json().criados.length, 0); assert.equal(msGraph.pedidos.length, 0)
+    })
+
+    test('ler o Entra: liga sozinho o grupo de mesmo nome, lista os sem núcleo, acusa grupo apagado; vincular só os lidos', async () => {
+      assert.equal((await req('coord', 'POST', '/api/admin/nucleos/ler-entra', {})).statusCode, 403)
+      assert.equal((await req('coord', 'GET', '/api/admin/entra/grupos-livres')).statusCode, 403)
+      const novo = async (nome) => (await req('admin', 'POST', '/api/admin/nucleos', { nome, areas: [{ uf: 'RS', cidade: 'Bagé', bairro: null }] })).json().id
+      const nA = await novo('Núcleo Leitura A'), nB = await novo('Núcleo Leitura B'), nC = await novo('Núcleo Leitura C')
+      const gA = randomUUID(), gLivre = randomUUID(), gOutroNome = randomUUID()
+      msGraph.grupos.set(gA, 'Pré-fichas - núcleo leitura a')   // criado à mão (hífen simples, caixa diferente): casa pelo nome
+      msGraph.grupos.set(gLivre, 'Pré-fichas – Alguma Coisa'); msGraph.grupos.set(gOutroNome, 'Financeiro')   // este nem é lido (não começa com Pré-fichas)
+      const r = await req('admin', 'POST', '/api/admin/nucleos/ler-entra', {})
+      assert.equal(r.statusCode, 200, r.body)
+      assert.deepEqual(r.json().vinculados.map((v) => v.nucleo), ['Núcleo Leitura A'])
+      const lista = (await req('admin', 'GET', '/api/admin/nucleos')).json()
+      const a = lista.find((n) => n.id === nA)
+      assert.deepEqual([a.entraGrupoId, a.entraGrupoCriado, a.entraGrupoNome], [gA, false, 'Pré-fichas - núcleo leitura a'])
+      assert.deepEqual((await req('admin', 'GET', '/api/admin/entra/grupos-livres')).json().map((g) => g.id), [gLivre], 'só os "Pré-fichas…" sem núcleo; o de outro nome nunca aparece')
+      // vincular: só o que a leitura trouxe, e uma vez só
+      assert.equal((await req('admin', 'POST', `/api/admin/nucleos/${nB}/vincular-grupo`, { grupo: gOutroNome })).statusCode, 404)
+      assert.equal((await req('coord', 'POST', `/api/admin/nucleos/${nB}/vincular-grupo`, { grupo: gLivre })).statusCode, 403)
+      assert.equal((await req('admin', 'POST', `/api/admin/nucleos/${nB}/vincular-grupo`, { grupo: gLivre })).statusCode, 200)
+      assert.equal((await req('admin', 'POST', `/api/admin/nucleos/${nC}/vincular-grupo`, { grupo: gLivre })).statusCode, 404, 'já foi ligado')
+      assert.deepEqual((await req('admin', 'GET', '/api/admin/entra/grupos-livres')).json(), [])
+      // alguém apaga o grupo no Entra: a próxima leitura acusa
+      msGraph.grupos.delete(gA)
+      assert.equal((await req('admin', 'POST', '/api/admin/nucleos/ler-entra', {})).json().sumiram, r.json().sumiram + 1, 'um grupo a mais sumiu (os de testes anteriores, inventados, já constavam como sumidos)')
+      assert.equal((await req('admin', 'GET', '/api/admin/nucleos')).json().find((n) => n.id === nA).entraGrupoSumiu, true)
+      // sem a permissão de leitura: mensagem clara, nada muda
+      msGraph.modo = 'sem-permissao'
+      const sem = await req('admin', 'POST', '/api/admin/nucleos/ler-entra', {}); assert.equal(sem.statusCode, 403); assert.match(sem.json().mensagem, /Group\.Read\.All/)
+      msGraph.modo = 'ok'
+      // intervalo da leitura automática: só administrador, limitado a 0–90
+      assert.equal((await req('admin', 'PUT', '/api/admin/sso', { leituraDias: 7, provisionar: 'liberacao', criarPendentes: true })).statusCode, 200)
+      assert.equal((await req('admin', 'GET', '/api/admin/sso')).json().leituraDias, 7)
+      await req('admin', 'PUT', '/api/admin/sso', { leituraDias: 9999, provisionar: 'liberacao', criarPendentes: true })
+      assert.equal((await req('admin', 'GET', '/api/admin/sso')).json().leituraDias, 90)
+      await req('admin', 'PUT', '/api/admin/sso', { leituraDias: 0, provisionar: 'liberacao', criarPendentes: true })
+    })
+
+    test('excluir núcleo: com a opção, apaga também o grupo no Entra, mas só o que o sistema criou, com nome "Pré-fichas…" e com permissão', async () => {
+      const novo = async (nome) => (await req('admin', 'POST', '/api/admin/nucleos', { nome, areas: [{ uf: 'RS', cidade: 'Jaguarão', bairro: null }] })).json().id
+      const existe = async (id) => (await pool.query('select 1 from nucleos where id = $1', [id])).rowCount === 1
+      const criar = async () => { await req('admin', 'POST', '/api/admin/nucleos/criar-grupos-entra', {}) }
+      const grupoDe = async (id) => (await pool.query('select entra_grupo_id g, entra_grupo_criado c from nucleos where id = $1', [id])).rows[0]
+      const n1 = await novo('Núcleo Apagar 1'), n2 = await novo('Núcleo Apagar 2'), n3 = await novo('Núcleo Apagar 3'), n4 = await novo('Núcleo Apagar 4')
+      await criar()
+      const g1 = (await grupoDe(n1)).g, g2 = (await grupoDe(n2)).g, g3 = (await grupoDe(n3)).g
+      assert.ok(g1 && (await grupoDe(n1)).c === true, 'criados pelo sistema')
+      msGraph.apagados.length = 0
+      // sem a opção: só o núcleo; o grupo fica no Entra
+      assert.equal((await req('admin', 'DELETE', `/api/admin/nucleos/${n1}`)).statusCode, 200)
+      assert.equal(msGraph.grupos.has(g1), true); assert.deepEqual(msGraph.apagados, [])
+      // só administrador
+      assert.equal((await req('coord', 'DELETE', `/api/admin/nucleos/${n2}?apagarGrupoEntra=1`)).statusCode, 403)
+      // sem permissão para apagar: avisa e NÃO exclui o núcleo
+      msGraph.modo = 'sem-permissao'
+      const sem = await req('admin', 'DELETE', `/api/admin/nucleos/${n2}?apagarGrupoEntra=1`)
+      assert.equal(sem.statusCode, 403); assert.match(sem.json().mensagem, /Group\.ReadWrite\.All/); assert.match(sem.json().mensagem, /NÃO foi excluído/)
+      assert.equal(await existe(n2), true); msGraph.modo = 'ok'
+      // nome do grupo mudou para outra coisa: o sistema se recusa a apagar
+      msGraph.grupos.set(g3, 'Diretoria Geral')
+      const outro = await req('admin', 'DELETE', `/api/admin/nucleos/${n3}?apagarGrupoEntra=1`)
+      assert.equal(outro.statusCode, 409); assert.equal(await existe(n3), true); assert.equal(msGraph.grupos.has(g3), true)
+      // grupo ligado à mão (não criado pelo sistema) nunca é apagado por aqui
+      const gMao = randomUUID(); msGraph.grupos.set(gMao, 'Pré-fichas – Núcleo Apagar 4')
+      await pool.query('update nucleos set entra_grupo_id = $2, entra_grupo_criado = false where id = $1', [n4, gMao])
+      assert.equal((await req('admin', 'DELETE', `/api/admin/nucleos/${n4}?apagarGrupoEntra=1`)).statusCode, 400)
+      assert.equal(await existe(n4), true); assert.equal(msGraph.grupos.has(gMao), true)
+      // o caminho feliz: apaga o grupo e o núcleo
+      assert.equal((await req('admin', 'DELETE', `/api/admin/nucleos/${n2}?apagarGrupoEntra=1`)).statusCode, 200)
+      assert.equal(await existe(n2), false); assert.equal(msGraph.grupos.has(g2), false); assert.deepEqual(msGraph.apagados, [g2])
+      // o grupo já tinha sido apagado no Entra: excluir o núcleo não trava
+      const n5 = await novo('Núcleo Apagar 5'); await criar(); const g5 = (await grupoDe(n5)).g; msGraph.grupos.delete(g5)
+      assert.equal((await req('admin', 'DELETE', `/api/admin/nucleos/${n5}?apagarGrupoEntra=1`)).statusCode, 200)
     })
 
     test('se o painel central desligar, o botão some e a entrada é recusada', async () => {

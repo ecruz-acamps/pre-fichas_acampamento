@@ -36,7 +36,8 @@ export default async function rotasNucleos(app) {
   app.get('/api/admin/nucleos', autenticado(), async (req) => {
     const escopo = await nucleosDoUsuario(pool, req.usuario)
     const { rows } = await pool.query(
-      `select n.id, n.nome, n.entra_grupo_id as "entraGrupoId",
+      `select n.id, n.nome, n.entra_grupo_id as "entraGrupoId", n.entra_grupo_nome as "entraGrupoNome", n.entra_grupo_criado as "entraGrupoCriado",
+         n.entra_grupo_sumiu as "entraGrupoSumiu", n.entra_grupo_visto as "entraGrupoVisto",
          coalesce((select json_agg(json_build_object('uf', a.uf, 'cidade', a.cidade, 'bairro', a.bairro)
                     order by a.uf, a.cidade, a.bairro nulls first) from nucleo_areas a where a.nucleo_id = n.id), '[]') as areas,
          coalesce((select json_agg(json_build_object('id', u.id, 'nome', u.nome) order by u.nome)
@@ -57,7 +58,11 @@ export default async function rotasNucleos(app) {
       const nucleoId = await transacao(pool, async (db) => {
         let nid = id
         if (nid) {
-          const r = await db.query('update nucleos set nome = $1, entra_grupo_id = $3 where id = $2', [v.nome, nid, v.grupo])
+          const r = await db.query(`update nucleos set nome = $1,
+                    entra_grupo_criado = case when entra_grupo_id is not distinct from $3 then entra_grupo_criado else false end,
+                    entra_grupo_nome   = case when entra_grupo_id is not distinct from $3 then entra_grupo_nome else null end,
+                    entra_grupo_sumiu  = case when entra_grupo_id is not distinct from $3 then entra_grupo_sumiu else false end,
+                    entra_grupo_id = $3 where id = $2`, [v.nome, nid, v.grupo])
           if (!r.rowCount) return null
           await db.query('delete from nucleo_areas where nucleo_id = $1', [nid])
         } else {
@@ -81,8 +86,21 @@ export default async function rotasNucleos(app) {
   app.post('/api/admin/nucleos', soAdmin(), (req, reply) => gravar(req, reply))
   app.put('/api/admin/nucleos/:id', soAdmin(), (req, reply) => gravar(req, reply, Number(req.params.id)))
 
+  // ?apagarGrupoEntra=1 também apaga o grupo no Entra: só se foi o sistema que o criou (grupo ligado à mão nunca é apagado por aqui)
   app.delete('/api/admin/nucleos/:id', soAdmin(), async (req, reply) => {
-    const r = await pool.query('delete from nucleos where id = $1', [Number(req.params.id)])
+    const id = Number(req.params.id)
+    if (req.query?.apagarGrupoEntra === '1') {
+      const { rows: [n] } = await pool.query('select entra_grupo_id, entra_grupo_criado from nucleos where id = $1', [id])
+      if (n?.entra_grupo_id) {
+        if (!n.entra_grupo_criado) return reply.code(400).send({ mensagem: 'Este grupo não foi criado pelo sistema; por segurança ele não é apagado por aqui. Exclua o núcleo sem essa opção e apague o grupo no Entra, se quiser.' })
+        try { await app.entra.apagarGrupo(n.entra_grupo_id) } catch (e) {
+          if (!e.http) throw e
+          return reply.code(e.http).send({ mensagem: `${e.mensagem} O núcleo NÃO foi excluído.` })
+        }
+        req.log.info({ por: req.usuario.email, nucleo: id }, 'Grupo do Entra apagado junto com o núcleo')
+      }
+    }
+    const r = await pool.query('delete from nucleos where id = $1', [id])
     if (!r.rowCount) return reply.code(404).send({ mensagem: 'Núcleo não encontrado.' })
     return { ok: true }
   })

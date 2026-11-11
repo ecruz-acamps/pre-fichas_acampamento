@@ -113,6 +113,15 @@ export default function Nucleos({ nucleos, onAlterar }) {
   const [erro, setErro] = useState('')
   const [grupos, setGrupos] = useState(null)   // resultado de "Criar grupos no Entra"
   const [criando, setCriando] = useState(false)
+  const [lendo, setLendo] = useState(false)
+  const [leitura, setLeitura] = useState(null)        // resultado de "Ler grupos do Entra"
+  const [livres, setLivres] = useState([])           // grupos "Pré-fichas…" do Entra ainda sem núcleo
+  const [config, setConfig] = useState(null)         // { leituraDias, ultimaLeitura, pronto }
+  const carregarEntra = () => {
+    api.get('/api/admin/entra/grupos-livres').then(setLivres).catch(() => {})
+    api.get('/api/admin/sso').then(setConfig).catch(() => {})
+  }
+  useEffect(() => { carregarEntra() }, [])
 
   const carregarLocalidades = () => api.get('/api/admin/localidades').then(setLocalidades).catch(() => {})
   useEffect(() => { carregarLocalidades() }, [])
@@ -127,12 +136,32 @@ export default function Nucleos({ nucleos, onAlterar }) {
 
   async function excluir(n) {
     if (!confirm(`Excluir o ${n.nome}? Os coordenadores dele deixarão de ver essas fichas.`)) return
+    let apagarGrupo = false
+    if (n.entraGrupoId && n.entraGrupoCriado && !n.entraGrupoSumiu) {
+      apagarGrupo = confirm(`Apagar TAMBÉM o grupo "${n.entraGrupoNome || 'Pré-fichas – ' + n.nome}" no Microsoft Entra?\n\nOK = apaga o núcleo e o grupo no Entra.\nCancelar = apaga só o núcleo (o grupo fica no Entra).`)
+    }
+    setErro('')
     try {
-      await api.delete(`/api/admin/nucleos/${n.id}`)
-      onAlterar(); carregarLocalidades()
+      await api.delete(`/api/admin/nucleos/${n.id}${apagarGrupo ? '?apagarGrupoEntra=1' : ''}`)
+      onAlterar(); carregarLocalidades(); carregarEntra()
     } catch (err) {
       setErro(err.dados?.mensagem || 'Não foi possível excluir.')
     }
+  }
+
+  async function lerEntra() {
+    setErro(''); setLeitura(null); setLendo(true)
+    try { setLeitura(await api.post('/api/admin/nucleos/ler-entra', {})); onAlterar(); carregarEntra() } catch (err) { setErro(err.dados?.mensagem || 'Não foi possível ler o Entra.') } finally { setLendo(false) }
+  }
+
+  async function vincular(grupo, nucleoId) {
+    if (!nucleoId) return
+    setErro('')
+    try { await api.post(`/api/admin/nucleos/${nucleoId}/vincular-grupo`, { grupo }); onAlterar(); carregarEntra() } catch (err) { setErro(err.dados?.mensagem || 'Não foi possível vincular.') }
+  }
+
+  async function mudarDias(dias) {
+    try { await api.put('/api/admin/sso', { leituraDias: dias, provisionar: config.provisionar, criarPendentes: config.criarPendentes }); setConfig({ ...config, leituraDias: dias }) } catch { setErro('Não foi possível salvar o intervalo.') }
   }
 
   if (dividindo) {
@@ -157,6 +186,7 @@ export default function Nucleos({ nucleos, onAlterar }) {
           <p className="subtitulo">Cada núcleo reúne cidades e bairros. O coordenador de núcleo só vê as pré-fichas da sua área (associe em Usuários).</p>
         </div>
         <div className="acoes-linha">
+          <button className="botao-secundario" onClick={lerEntra} disabled={lendo}>{lendo ? 'Lendo…' : 'Ler grupos do Entra'}</button>
           <button className="botao-secundario" onClick={criarGrupos} disabled={criando}>{criando ? 'Criando…' : 'Criar grupos no Entra'}</button>
           <button className="botao-secundario" onClick={() => setDividindo(true)}>Dividir cidade por bairros</button>
           <button className="botao-principal pequeno" onClick={() => setEditando({})}>+ Novo núcleo</button>
@@ -177,6 +207,39 @@ export default function Nucleos({ nucleos, onAlterar }) {
         </div>
       )}
 
+      {leitura && (
+        <div className="alerta-ok" role="status">
+          Leitura do Entra concluída: {leitura.atualizados} grupo(s) conferido(s)
+          {leitura.vinculados.length > 0 && <>, {leitura.vinculados.length} ligado(s) automaticamente ({leitura.vinculados.map((v) => `${v.nucleo}`).join(', ')})</>}
+          {leitura.sumiram > 0 && <>, <strong>{leitura.sumiram} não existe(m) mais no Entra</strong></>}
+          {leitura.livres > 0 && <>, {leitura.livres} grupo(s) encontrado(s) sem núcleo (abaixo)</>}.
+        </div>
+      )}
+      {config?.pronto && (
+        <p className="dica">
+          Última leitura do Entra: {config.ultimaLeitura ? new Date(config.ultimaLeitura).toLocaleString('pt-BR') : 'nunca'} ·
+          {' '}ler automaticamente a cada{' '}
+          <select value={config.leituraDias} onChange={(e) => mudarDias(Number(e.target.value))} aria-label="Leitura automática do Entra">
+            <option value={0}>— (só pelo botão)</option><option value={1}>1 dia</option><option value={3}>3 dias</option><option value={7}>7 dias</option><option value={15}>15 dias</option><option value={30}>30 dias</option>
+          </select>
+        </p>
+      )}
+      {livres.length > 0 && (
+        <div className="cartao">
+          <h3>Grupos do Entra sem núcleo</h3>
+          <p className="dica">Encontrados na última leitura (nome começando por "Pré-fichas"). Escolha o núcleo de cada um para ligar.</p>
+          {livres.map((g) => (
+            <div key={g.id} className="linha-form" style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <strong>{g.nome}</strong>
+              <select defaultValue="" onChange={(e) => vincular(g.id, e.target.value)} aria-label={`Núcleo do grupo ${g.nome}`}>
+                <option value="">Ligar a qual núcleo?</option>
+                {nucleos.filter((n) => !n.entraGrupoId).map((n) => <option key={n.id} value={n.id}>{n.nome}</option>)}
+              </select>
+            </div>
+          ))}
+        </div>
+      )}
+
       <div className="grade-nucleos">
         {nucleos.map((n) => (
           <div key={n.id} className="cartao cartao-nucleo">
@@ -185,6 +248,12 @@ export default function Nucleos({ nucleos, onAlterar }) {
               <span className="contador grande" title="Pessoas na fila">{n.na_fila} na fila</span>
             </div>
             <p className="dica">Coordenação: {n.coordenadores.length ? n.coordenadores.map((c) => c.nome).join(', ') : 'ninguém associado'}</p>
+            {n.entraGrupoId && (
+              <p className="dica" title={n.entraGrupoId}>
+                Grupo do Entra: <strong>{n.entraGrupoNome || n.entraGrupoId}</strong>{' '}
+                {n.entraGrupoSumiu ? <span className="selo alerta">não existe mais no Entra</span> : <span className="selo">{n.entraGrupoCriado ? 'criado pelo sistema' : 'ligado'}</span>}
+              </p>
+            )}
             <div className="chips">
               {n.areas.map((a, i) => <span key={i} className="chip">{a.cidade}/{a.uf}{a.bairro ? ` · ${a.bairro}` : ' (toda)'}</span>)}
               {!n.areas.length && <span className="dica">Nenhuma cidade definida.</span>}

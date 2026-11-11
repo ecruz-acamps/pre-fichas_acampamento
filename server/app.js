@@ -116,6 +116,7 @@ export async function construirApp({ pool, config, logger = true, chavesLicenca 
 
   await app.register(rotasPublicas)
   if (fetchSso) app.decorate('fetchSso', fetchSso)
+  app.decorate('entra', {})   // preenchido pelas rotas do login Microsoft (apagar grupo ao excluir núcleo)
   await app.register(rotasAuth)
   await app.register(rotasSso)
   await app.register(rotasFila)
