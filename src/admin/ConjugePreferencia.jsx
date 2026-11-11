@@ -1,6 +1,6 @@
 import { useDeferredValue, useMemo, useState } from 'react'
 import { api } from '../lib/api.js'
-import { MODALIDADES, modalidadesAtivas, rotuloDe } from '../../shared/opcoes.js'
+import { MODALIDADES, rotuloDe } from '../../shared/opcoes.js'
 import { formatarDataHora, mascaraTelefone } from '../../shared/util.js'
 import { SITUACOES_PREFERENCIA, edicoesCobertas, sugerirConjuges } from './Preferencia.jsx'
 
@@ -156,7 +156,7 @@ export default function ConjugePreferencia({ ficha: f, todas, marca, podeGerir, 
             <div className="campo">
               <label htmlFor="pref-modalidade">Modalidade</label>
               <select id="pref-modalidade" value={form.modalidade} onChange={(e) => setForm({ ...form, modalidade: e.target.value })}>
-                {modalidadesAtivas().map((m) => <option key={m.valor} value={m.valor}>{m.rotulo}</option>)}
+                {MODALIDADES.filter((m) => m.ativa !== false || m.valor === form.modalidade).map((m) => <option key={m.valor} value={m.valor}>{m.rotulo}{m.ativa === false ? ' (desativada)' : ''}</option>)}
               </select>
             </div>
             <div className="campo">

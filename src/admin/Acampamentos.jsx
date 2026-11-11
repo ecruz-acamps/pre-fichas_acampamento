@@ -14,7 +14,7 @@ const periodo = (a) => (a.data_inicio
 const normalizar = (s) => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
 
 function FormAcampamento({ inicial, onSalvar, onCancelar }) {
-  const [a, setA] = useState(inicial ?? { numero: '', modalidade: 'juvenil', data_inicio: '', data_fim: '', observacao: '' })
+  const [a, setA] = useState(inicial ?? { numero: '', modalidade: modalidadesAtivas()[0]?.valor ?? '', data_inicio: '', data_fim: '', observacao: '' })   // primeira ATIVA (não fixa em 'juvenil')
   const [erro, setErro] = useState('')
   const [salvando, setSalvando] = useState(false)
 
@@ -42,7 +42,7 @@ function FormAcampamento({ inicial, onSalvar, onCancelar }) {
         <div className="campo">
           <label htmlFor="ac-modalidade">Modalidade</label>
           <select id="ac-modalidade" value={a.modalidade} onChange={(e) => setA({ ...a, modalidade: e.target.value })}>
-            {modalidadesAtivas().map((m) => <option key={m.valor} value={m.valor}>{m.rotulo}</option>)}
+            {MODALIDADES.filter((m) => m.ativa !== false || m.valor === a.modalidade).map((m) => <option key={m.valor} value={m.valor}>{m.rotulo}{m.ativa === false ? ' (desativada)' : ''}</option>)}
           </select>
         </div>
         <div className="campo">

@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 2.21.2 — Acampamentos: a modalidade ativa não era usada
+
+- Ao cadastrar um acampamento (edição), a tela vinha com a modalidade **Juvenil** fixa por baixo: se Juvenil estivesse desativada (por exemplo, só "Homens" ativa), a lista mostrava "Homens" mas o pedido saía como Juvenil e dava "Esta modalidade está desativada". Agora a modalidade inicial é a **primeira ativa** e a lista sempre reflete o valor enviado (uma edição antiga de modalidade desativada aparece como "(desativada)").
+- Mesmo cuidado na tela de preferência do cônjuge.
+
 ## 2.21.1 — correção urgente: o sistema não iniciava (instalações novas e atualizações)
 
 - Na 2.20.0 o servidor lia a tabela de modalidades **antes** de rodar as migrações que a criam, e caía ao iniciar (`relation "modalidades" does not exist`), ficando reiniciando em loop. Afetava **instância nova** (o instalador ficava "Aguardando o sistema iniciar…") e **atualização** de instâncias existentes.
