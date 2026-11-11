@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { api } from '../lib/api.js'
 import { carregarModalidades } from '../lib/modalidades.js'
 
-const VAZIO = { rotulo: '', min: 18, max: 30, casado: false }
+const VAZIO = { rotulo: '', min: 18, max: 30, casado: false, sexo: '' }
 
 function Formulario({ inicial, onSalvar, onCancelar, titulo }) {
   const [m, setM] = useState({ ...inicial })
@@ -36,6 +36,18 @@ function Formulario({ inicial, onSalvar, onCancelar, titulo }) {
           </div>
         )}
       </div>
+      {!especial && (
+        <div className="campo">
+          <label htmlFor="mod-sexo">Quem pode se inscrever</label>
+          <select id="mod-sexo" value={m.sexo ?? ''} onChange={(e) => setM({ ...m, sexo: e.target.value })}>
+            <option value="">Homens e mulheres</option>
+            <option value="masculino">Só homens</option>
+            <option value="feminino">Só mulheres</option>
+          </select>
+          {erros.sexo && <small className="erro">{erros.sexo}</small>}
+          <small className="dica">Vale para novas inscrições, conforme o sexo informado no formulário. Fichas já existentes não mudam.</small>
+        </div>
+      )}
       {!especial && (
         <label className="check"><input type="checkbox" checked={m.casado === true} onChange={(e) => setM({ ...m, casado: e.target.checked })} /> <span>Só para casado(a) ou em união estável</span></label>
       )}
@@ -94,7 +106,7 @@ export default function ModalidadesAdmin() {
                 <td>{m.ativa ? <span className="selo">ativa</span> : <span className="selo alerta">desativada</span>}</td>
                 <td className="nowrap">
                   <button className="botao-secundario" onClick={() => setEditando(m)}>Editar</button>{' '}
-                  <button className="link" onClick={() => rodar(() => api.put(`/api/admin/modalidades/${m.valor}`, { rotulo: m.rotulo, min: m.min, max: m.max, casado: m.casado, ativa: !m.ativa }))}>{m.ativa ? 'desativar' : 'ativar'}</button>
+                  <button className="link" onClick={() => rodar(() => api.put(`/api/admin/modalidades/${m.valor}`, { rotulo: m.rotulo, min: m.min, max: m.max, casado: m.casado, sexo: m.sexo ?? '', ativa: !m.ativa }))}>{m.ativa ? 'desativar' : 'ativar'}</button>
                   {m.regra === 'idade' && !m.fichas && !m.edicoes && <> <button className="link perigo" onClick={() => confirm(`Excluir a modalidade ${m.rotulo}?`) && rodar(() => api.delete(`/api/admin/modalidades/${m.valor}`))}>excluir</button></>}
                 </td>
               </tr>

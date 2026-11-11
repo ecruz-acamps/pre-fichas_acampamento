@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 2.23.0 — modalidade só para homens ou só para mulheres
+
+- Na tela **Modalidades**, cada modalidade tem **"Quem pode se inscrever"**: Homens e mulheres (padrão), **Só homens** ou **Só mulheres**. O formulário só oferece a modalidade a quem informou o sexo correspondente e o servidor recusa a inscrição fora da regra ("Esta modalidade é só para homens."). Vale também na troca de modalidade pela revisão e na importação (avisa em "revisar").
+- Vale para **novas** inscrições; fichas existentes não mudam. Sênior e Casais não restringem por sexo. Migração `022`.
+
 ## 2.22.0 — menu na lateral esquerda
 
 - O menu do painel passa a ficar **na lateral esquerda, um item embaixo do outro** (fixo ao rolar a página), em vez de uma faixa comprida no topo. O item atual fica destacado. Em telas estreitas (celular) o menu volta a ser uma faixa rolável no topo.

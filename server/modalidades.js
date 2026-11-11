@@ -2,7 +2,7 @@
 import { definirModalidades } from '../shared/opcoes.js'
 
 export async function carregarModalidades(pool) {
-  const { rows } = await pool.query('select valor, rotulo, regra, idade_min as min, idade_max as max, casado, ordem, ativa from modalidades order by ordem, valor')
+  const { rows } = await pool.query('select valor, rotulo, regra, idade_min as min, idade_max as max, casado, sexo, ordem, ativa from modalidades order by ordem, valor')
   definirModalidades(rows)
   return rows
 }

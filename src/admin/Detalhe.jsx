@@ -306,7 +306,7 @@ export default function Detalhe({ ficha: resumo, marca, usuario, todas = [], pos
               {rotuloDe(MODALIDADES, f.modalidade)}
               {!somenteLeitura && ['admin', 'coordenador'].includes(usuario?.papel) && (
                 <ModalidadeFicha ficha={{ ...f, revisar: /revisar/i.test(f.observacoes_internas ?? '') }}
-                  compativeis={modalidadesCompativeis(calcularIdade(f.data_nascimento), f.estado_civil).filter((m) => m !== 'casais')}
+                  compativeis={modalidadesCompativeis(calcularIdade(f.data_nascimento), f.estado_civil, f.sexo).filter((m) => m !== 'casais')}
                   onConcluir={(r) => onFichaAtualizada?.(r)} />
               )}
             </Item>

@@ -145,7 +145,7 @@ export default async function rotasFila(app) {
     return rows.map((f) => ({
       id: f.id, nome_completo: f.nome_completo, data_nascimento: f.data_nascimento, estado_civil: f.estado_civil, modalidade: f.modalidade,
       status: f.status, cidade: f.cidade, uf: f.uf, entrada_fila_em: f.entrada_fila_em, observacoes_internas: f.observacoes_internas,
-      compativeis: modalidadesCompativeis(calcularIdade(f.data_nascimento), f.estado_civil).filter((m) => m !== 'casais'),
+      compativeis: modalidadesCompativeis(calcularIdade(f.data_nascimento), f.estado_civil, f.sexo).filter((m) => m !== 'casais'),
     }))
   })
 
@@ -156,13 +156,13 @@ export default async function rotasFila(app) {
     if (!Number.isInteger(id) || !MODALIDADES.some((m) => m.valor === nova)) return reply.code(400).send({ mensagem: 'Modalidade inválida.' })
     if (!(await podeVerFicha(pool, req.usuario, id))) return reply.code(404).send({ mensagem: 'Pré-ficha não encontrada.' })
     const r = await transacao(pool, async (db) => {
-      const { rows: [f] } = await db.query('select status, modalidade, data_nascimento, estado_civil, observacoes_internas from pre_fichas where id = $1 for update', [id])
+      const { rows: [f] } = await db.query('select status, modalidade, data_nascimento, estado_civil, sexo, observacoes_internas from pre_fichas where id = $1 for update', [id])
       if (!f) return { codigo: 404, mensagem: 'Pré-ficha não encontrada.' }
       const mudou = nova !== f.modalidade
       if (mudou) {
         if (nova === 'casais') return { codigo: 400, mensagem: 'Para Casais é preciso conferir o cônjuge: a pessoa se inscreve pela área da conta.' }
-        if (!modalidadesCompativeis(calcularIdade(f.data_nascimento), f.estado_civil).includes(nova)) {
-          return { codigo: 400, mensagem: 'Esta modalidade não é compatível com a idade e o estado civil da pessoa.' }
+        if (!modalidadesCompativeis(calcularIdade(f.data_nascimento), f.estado_civil, f.sexo).includes(nova)) {
+          return { codigo: 400, mensagem: 'Esta modalidade não é compatível com a idade, o estado civil e o sexo da pessoa.' }
         }
       }
       const hoje = new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' })
