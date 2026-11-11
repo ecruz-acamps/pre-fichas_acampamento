@@ -448,7 +448,7 @@ processar() { # arquivo do pedido
   fi
   local tmp; tmp="$(mktemp)"; cp "$arq" "$tmp"; rm -f "$arq"   # trabalha numa cópia do root
   acao="$(jq -r '.acao // empty' "$tmp")"; por="$(jq -r '.por // empty' "$tmp" | head -c 200)"
-  alvo="$(jq -r '.instancia // .nome // (if (.acao|startswith("cloudflare")) then "Cloudflare" elif (.acao|startswith("vpn")) then "VPN" elif (.acao|startswith("email")) then "E-mail" elif (.acao|startswith("tunel")) then "Túnel da Cloudflare" else "todas" end)' "$tmp" | head -c 120)"
+  alvo="$(jq -r '.instancia // .nome // (if (.acao|startswith("cloudflare")) then "Cloudflare" elif (.acao|startswith("vpn")) then "VPN" elif (.acao|startswith("email")) then "E-mail" elif (.acao|startswith("tunel")) then "Túnel da Cloudflare" elif (.acao|startswith("backup-")) then "Backup na nuvem" elif (.acao|startswith("sms")) then "Mensagens" else "todas" end)' "$tmp" | head -c 120)"
   # "Esqueci minha senha" é pedido por uma página sem login: não vira tarefa (não enche a lista) e o link nunca é registrado
   if [ "$acao" = email-redefinicao ]; then acao_email_redefinicao "$tmp" 2>&1 | head -c 300; rm -f "$tmp"; return; fi
   inicio="$(date -Iseconds)"; log="$TAREFAS/$id.log"; : > "$log"
@@ -468,6 +468,18 @@ processar() { # arquivo do pedido
     email-aplicar) acao_email_aplicar >> "$log" 2>&1 && ok=1 ;;
     microsoft) acao_microsoft "$tmp" >> "$log" 2>&1 && ok=1 ;;
     apagar) acao_apagar "$tmp" >> "$log" 2>&1 && ok=1 ;;
+    backup-config) acao_backup_config "$tmp" >> "$log" 2>&1 && ok=1 ;;
+    backup-conectar) acao_backup_conectar >> "$log" 2>&1 && ok=1 ;;
+    backup-desconectar) acao_backup_desconectar >> "$log" 2>&1 && ok=1 ;;
+    backup-chave-gerar) acao_backup_chave_gerar "$tmp" >> "$log" 2>&1 && ok=1 ;;
+    backup-chave-guardada) acao_backup_chave_guardada >> "$log" 2>&1 && ok=1 ;;
+    backup-nuvem) acao_backup_nuvem "$tmp" >> "$log" 2>&1 && ok=1 ;;
+    backup-listar) acao_backup_listar >> "$log" 2>&1 && ok=1 ;;
+    backup-restaurar) acao_backup_restaurar "$tmp" >> "$log" 2>&1 && ok=1 ;;
+    sms-config) acao_sms_config "$tmp" >> "$log" 2>&1 && ok=1 ;;
+    sms-enviar) acao_sms_enviar "$tmp" >> "$log" 2>&1 && ok=1 ;;
+    sms-teste) acao_sms_teste "$tmp" >> "$log" 2>&1 && ok=1 ;;
+    sms-bloqueio) acao_sms_bloqueio "$tmp" >> "$log" 2>&1 && ok=1 ;;
     trocar-link) acao_trocar_link "$tmp" >> "$log" 2>&1 && ok=1 ;;
     vpn-reconectar) acao_vpn_reconectar >> "$log" 2>&1 && ok=1 ;;
     vpn-credenciais) acao_vpn_credenciais "$tmp" >> "$log" 2>&1 && ok=1 ;;
@@ -535,8 +547,15 @@ coletar() {
     "$( [ -f "$ETC/cloudflare.env" ] && json_str "$(date -r "$ETC/cloudflare.env" -Iseconds)" || echo null )" \
     | jq -c --argjson e "$ej" --argjson t "$tj" '. + {email:$e, tunel:$t}' > "$ESTADO/configuracoes.json.tmp" \
     && mv -f "$ESTADO/configuracoes.json.tmp" "$ESTADO/configuracoes.json"
+  # backup na nuvem e mensagens (sem segredos)
+  local rot; rot="$(estado_rotinas_json 2>/dev/null || echo '{}')"
+  jq -c --argjson r "$rot" '. + $r' "$ESTADO/configuracoes.json" > "$ESTADO/configuracoes.json.tmp" 2>/dev/null && mv -f "$ESTADO/configuracoes.json.tmp" "$ESTADO/configuracoes.json"
   chmod 644 "$ESTADO/instancias.json" "$ESTADO/servidor.json" "$ESTADO/configuracoes.json"
 }
+
+# backup na nuvem e mensagens de aniversário
+# shellcheck source=gerenciador-rotinas.sh
+. "$CODIGO/scripts/gerenciador-rotinas.sh"
 
 case "${1:-pedidos}" in
   pedidos)
@@ -546,6 +565,6 @@ case "${1:-pedidos}" in
       [ -n "$prox" ] || break
       processar "$prox"
     done ;;
-  coletar) coletar ;;
+  coletar) coletar; rotina_diaria ;;
   *) echo "Uso: $0 pedidos|coletar"; exit 1 ;;
 esac

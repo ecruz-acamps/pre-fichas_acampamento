@@ -1,5 +1,24 @@
 # Histórico de versões
 
+## 2.24.0 — backup diário no OneDrive e mensagens de aniversário (painel da VM)
+
+Tudo gerido **só pelo painel da VM** (os administradores dos acampamentos não veem nada disso).
+
+### Backup na nuvem (aba **Backups**)
+- Todo dia, no horário escolhido, um backup **por acampamento** vai para o **OneDrive** (pasta `PreFichas-Backups`, uma subpasta por acampamento).
+- **Cifrado antes de sair do servidor** (age). No servidor fica só a chave **pública**; a **chave de recuperação** aparece **uma vez** no painel para ser guardada fora do servidor. Sem ela nenhum backup abre — nem quem tiver acesso ao OneDrive consegue ler os dados.
+- Nenhum dump em claro é gravado em disco (o banco vai direto para a cifragem e para o envio).
+- Conexão ao OneDrive por **código de login Microsoft** (sem colar senha); guarda só o token de atualização (arquivo 600).
+- **Retenção**: N backups diários + 1 por mês por M meses (padrão 14 + 6); o resto é apagado do OneDrive.
+- **Restaurar** pela lista de backups de cada acampamento: cola-se a chave de recuperação (usada só naquele momento, não fica gravada), confirma-se o nome; o sistema confere se a chave abre o arquivo **antes** de mexer no banco, faz um backup de segurança local, restaura numa transação única (se falhar, nada muda) e religa o sistema. Para a VM nova: crie a instância com o mesmo nome e restaure nela.
+
+### Mensagens de aniversário (aba **Mensagens**, SMS pelo textbee.dev)
+- Todo dia, no horário escolhido, o painel lê os bancos de **todos os acampamentos** e envia parabéns aos **campistas**: aniversário de vida e aniversário de acampamento ("hoje faz X anos que você viveu o 16º Sênior").
+- Mensagens editáveis com `{nome}`, `{anos}`, `{acampamento}`, `{comunidade}`; mensagens padrão de teor católico.
+- A mesma pessoa em mais de um acampamento recebe **uma** vez; ninguém recebe duas vezes no mesmo dia; **limite diário**; para se o textbee recusar por limite do plano.
+- **"Para não receber, responda SAIR."** (ligado por padrão): respostas SAIR entram na lista de bloqueio automaticamente; também dá para bloquear/desbloquear um número no painel.
+- **Prévia** de hoje (sem enviar), **mensagem de teste** e histórico do dia; telefones sempre mascarados no painel e na auditoria. A chave da API do textbee fica só no servidor.
+
 ## 2.23.1 — correção urgente: atualização de instâncias existentes não iniciava
 
 - Na 2.23.0 o servidor lia a coluna `sexo` das modalidades **antes** de rodar a migração `022` que a cria. Instâncias que já tinham a tabela de modalidades (2.20 em diante) caíam ao iniciar (`column "sexo" does not exist`) e ficavam reiniciando em loop (o atualizador ficava em "Aguardando a aplicação voltar…").
