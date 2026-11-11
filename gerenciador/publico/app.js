@@ -5,6 +5,7 @@ let tela = 'instancias'
 let usuario = null
 let tarefaAberta = null
 let instanciaMs = null   // instância aberta na tela "Login Microsoft"
+let instanciaAlvo = null // instância aberta nas telas "Trocar link" e "Apagar"
 let atualizador = null
 
 function h(tag, attrs = {}, ...filhos) {
@@ -133,7 +134,9 @@ async function telaInstancias(area) {
     h('td', {}, h('span', { class: `selo ${i.microsoft?.habilitado ? 'ok' : 'neutro'}` }, i.microsoft?.habilitado ? 'ligado' : 'desligado'), ' ',
       h('button', { class: 'link', onclick: () => { instanciaMs = i; tela = 'microsoft'; desenhar() } }, 'configurar')),
     h('td', {}, h('button', { class: 'secundario', onclick: () => pedir({ acao: 'atualizar', instancia: i.pasta }, `Atualizar ${i.nome || i.pasta}? Faz backup antes.`) }, 'Atualizar'), ' ',
-      h('button', { class: 'secundario', onclick: () => pedir({ acao: 'backup', instancia: i.pasta }, `Fazer backup de ${i.nome || i.pasta} agora?`) }, 'Backup'))))
+      h('button', { class: 'secundario', onclick: () => pedir({ acao: 'backup', instancia: i.pasta }, `Fazer backup de ${i.nome || i.pasta} agora?`) }, 'Backup'), ' ',
+      ['cloudflare', 'direta'].includes(i.publicacao) && h('button', { class: 'secundario', onclick: () => { instanciaAlvo = i; tela = 'trocar-link'; desenhar() } }, 'Trocar link'), ' ',
+      h('button', { class: 'perigo', onclick: () => { instanciaAlvo = i; tela = 'apagar'; desenhar() } }, 'Apagar'))))
   area.append(h('section', { class: 'cartao' },
     h('div', { class: 'topo' }, h('h2', {}, `Instâncias (${(d.instancias ?? []).length})`),
       h('div', {}, h('button', { class: 'secundario', onclick: () => pedir({ acao: 'atualizar-todas' }, 'Atualizar TODAS as instâncias, uma de cada vez (com backup)?') }, 'Atualizar todas'), ' ',
@@ -178,6 +181,70 @@ function telaMicrosoft(area) {
     'O segredo fica só no servidor e nunca é mostrado de novo.'),
   aviso,
   h('button', { class: 'principal', type: 'submit' }, 'Salvar e reiniciar o acampamento'), ' ',
+  h('button', { class: 'link', type: 'button', onclick: () => { tela = 'instancias'; desenhar() } }, 'cancelar'))
+  area.append(form)
+}
+
+
+// ------------------------------------------------------------------ trocar o link de acesso de uma instância
+function telaTrocarLink(area) {
+  const i = instanciaAlvo
+  const erros = {}
+  const campo = (nome, rotulo, input, dica) => h('div', { class: 'campo' }, h('label', { for: nome }, rotulo), input, dica && h('span', { class: 'dica' }, dica), erros[nome] = h('span', { class: 'erro-campo' }))
+  const aviso = h('div')
+  const atual = i.url ? i.url.replace(/^https?:\/\//, '') : '—'
+  const pub = h('select', { id: 'publicacao', name: 'publicacao' },
+    h('option', { value: 'cloudflare' }, 'Cloudflare — NOME.movimentocampista.com.br (sem abrir portas)'),
+    h('option', { value: 'direta' }, 'Domínio próprio — apontando para o IP da VM (HTTPS automático)'))
+  pub.value = i.publicacao === 'direta' ? 'direta' : 'cloudflare'
+  const blocoCf = campo('subdominio', 'Novo endereço na Cloudflare', h('div', { class: 'sufixo' }, h('input', { id: 'subdominio', name: 'subdominio', maxlength: '63' }), h('span', {}, '.movimentocampista.com.br')))
+  const blocoDir = campo('dominio', 'Novo domínio', h('input', { id: 'dominio', name: 'dominio', placeholder: 'prefichas.seuacampamento.com.br' }), 'Crie antes um registro A apontando para o IP público da VM.')
+  const mostrar = () => { blocoCf.hidden = pub.value !== 'cloudflare'; blocoDir.hidden = pub.value !== 'direta' }
+  pub.addEventListener('change', mostrar)
+  const form = h('form', { class: 'cartao', onsubmit: async (e) => {
+    e.preventDefault(); aviso.replaceChildren(); Object.values(erros).forEach((el) => el.replaceChildren())
+    const d = Object.fromEntries(new FormData(form))
+    if (!confirm(`Trocar o link de ${i.nome || i.pasta}?\n\nO endereço novo é publicado e conferido antes de o antigo sair. Se não responder, nada muda. Depois, os links antigos (${atual}) deixam de funcionar.`)) return
+    try { const r = await api('POST', '/api/tarefas', { acao: 'trocar-link', instancia: i.pasta, publicacao: d.publicacao, subdominio: d.subdominio, dominio: d.dominio }); tarefaAberta = r.id; tela = 'tarefas'; desenhar() } catch (err) {
+      aviso.append(h('div', { class: 'alerta erro' }, err.message))
+      for (const [k, v] of Object.entries(err.dados?.erros ?? {})) erros[k]?.append(v)
+    }
+  } },
+  h('h2', {}, `Trocar o link de acesso · ${i.nome || i.pasta}`),
+  h('p', {}, 'Endereço atual: ', h('strong', {}, atual)),
+  h('p', { class: 'dica' }, 'O sistema, o banco e os usuários continuam os mesmos: só muda o endereço. Quem usa o login Microsoft precisará trocar o URI de redirecionamento no Entra.'),
+  campo('publicacao', 'Como publicar', pub), blocoCf, blocoDir,
+  aviso,
+  h('button', { class: 'principal', type: 'submit' }, 'Trocar o link'), ' ',
+  h('button', { class: 'link', type: 'button', onclick: () => { tela = 'instancias'; desenhar() } }, 'cancelar'))
+  mostrar()
+  area.append(form)
+}
+
+// ------------------------------------------------------------------ apagar uma instância
+function telaApagar(area) {
+  const i = instanciaAlvo
+  const aviso = h('div'), erroConf = h('span', { class: 'erro-campo' })
+  const sem = h('input', { type: 'checkbox', id: 'sem-backup' })
+  const conf = h('input', { id: 'confirmar', autocomplete: 'off', spellcheck: 'false', placeholder: i.pasta })
+  const form = h('form', { class: 'cartao', onsubmit: async (e) => {
+    e.preventDefault(); aviso.replaceChildren(); erroConf.replaceChildren()
+    if (!confirm(`APAGAR ${i.nome || i.pasta}? O banco de dados dele sai do servidor${sem.checked ? ' SEM backup' : ' (com backup antes)'}. Isso não pode ser desfeito pelo painel.`)) return
+    try { const r = await api('POST', '/api/tarefas', { acao: 'apagar', instancia: i.pasta, confirmar: conf.value.trim(), sem_backup: sem.checked }); tarefaAberta = r.id; tela = 'tarefas'; desenhar() } catch (err) {
+      aviso.append(h('div', { class: 'alerta erro' }, err.message))
+      if (err.dados?.erros?.confirmar) erroConf.append(err.dados.erros.confirmar)
+    }
+  } },
+  h('h2', {}, `Apagar a instância · ${i.nome || i.pasta}`),
+  h('div', { class: 'alerta erro' }, 'Atenção: apaga o sistema deste acampamento no servidor, com todas as inscrições.'),
+  h('ul', { class: 'dica' },
+    h('li', {}, 'Antes de apagar, é feito um backup do banco, guardado em /var/backups/prefichas-apagados/ (dá para restaurar depois).'),
+    h('li', {}, 'O endereço é tirado do ar (túnel da Cloudflare ou proxy) e os containers e dados são removidos.'),
+    h('li', {}, 'A pasta (código e configurações) vai para uma lixeira por 30 dias.')),
+  h('div', { class: 'campo' }, h('label', { for: 'confirmar' }, `Para confirmar, digite o nome da pasta: ${i.pasta}`), conf, erroConf),
+  h('label', { class: 'check' }, sem, ' Apagar mesmo sem backup (só se o sistema está quebrado e o backup não funciona)'),
+  aviso,
+  h('button', { class: 'perigo', type: 'submit' }, 'Apagar esta instância'), ' ',
   h('button', { class: 'link', type: 'button', onclick: () => { tela = 'instancias'; desenhar() } }, 'cancelar'))
   area.append(form)
 }
@@ -234,7 +301,7 @@ function telaNova(area) {
 // ------------------------------------------------------------------ tarefas
 async function telaTarefas(area) {
   const d = await api('GET', '/api/tarefas')
-  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas', 'atualizar-painel': 'Atualizar o painel', cloudflare: 'Token da Cloudflare', 'cloudflare-remover': 'Remover token da Cloudflare', 'tunel-unificar': 'Unificar túneis da Cloudflare', 'email': 'Servidor de e-mail', 'email-teste': 'E-mail de teste', 'email-remover': 'Remover servidor de e-mail', 'email-aplicar': 'Aplicar e-mail aos acampamentos', 'microsoft': 'Login Microsoft', 'vpn-reconectar': 'Reconectar a VPN', 'vpn-credenciais': 'Trocar credenciais da VPN' }
+  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas', 'atualizar-painel': 'Atualizar o painel', cloudflare: 'Token da Cloudflare', 'cloudflare-remover': 'Remover token da Cloudflare', 'tunel-unificar': 'Unificar túneis da Cloudflare', 'email': 'Servidor de e-mail', 'email-teste': 'E-mail de teste', 'email-remover': 'Remover servidor de e-mail', 'email-aplicar': 'Aplicar e-mail aos acampamentos', 'microsoft': 'Login Microsoft', 'apagar': 'Apagar instância', 'trocar-link': 'Trocar link de acesso', 'vpn-reconectar': 'Reconectar a VPN', 'vpn-credenciais': 'Trocar credenciais da VPN' }
   const linha = (t) => h('tr', { style: 'cursor:pointer', onclick: () => { tarefaAberta = t.id; desenhar() } },
     h('td', {}, dataHora(t.inicio || t.pedido_em)), h('td', {}, nomeAcao[t.acao] ?? t.acao), h('td', {}, t.alvo || t.nome || t.instancia || '—'),
     h('td', {}, h('span', { class: `selo ${t.situacao === 'concluida' ? 'ok' : t.situacao === 'erro' ? 'erro' : 'neutro'}` }, t.situacao)), h('td', {}, t.por || '—'))
@@ -433,6 +500,8 @@ async function desenhar() {
   try {
     if (tela === 'nova') telaNova(area)
     else if (tela === 'microsoft' && instanciaMs) telaMicrosoft(area)
+    else if (tela === 'trocar-link' && instanciaAlvo) telaTrocarLink(area)
+    else if (tela === 'apagar' && instanciaAlvo) telaApagar(area)
     else if (tela === 'tarefas') await telaTarefas(area)
     else if (tela === 'auditoria') await telaAuditoria(area)
     else if (tela === 'configuracoes') await telaConfiguracoes(area)

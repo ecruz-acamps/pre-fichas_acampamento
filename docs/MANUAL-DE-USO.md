@@ -464,3 +464,9 @@ No menu **Modalidades** (só administrador):
 - **Desativar:** a modalidade deixa de aceitar novas inscrições e novas edições, mas o que já existe continua. Dá para ativar de novo.
 - **Excluir:** só se a modalidade não tem nenhuma ficha, edição ou preferência.
 - **Sênior e Casais** têm regras próprias do sistema (Sênior: casado(a) com 18+ ou a idade mínima; Casais: o cônjuge precisa já ser campista): você edita o nome e a idade mínima, mas elas não podem ser excluídas.
+
+## Painel da VM: trocar o link e apagar uma instância
+
+Em **Instâncias** (painel central):
+- **Trocar link:** escolha Cloudflare (novo subdomínio) ou domínio próprio e confirme. O sistema publica e **confere** o endereço novo antes de tirar o antigo; se ele não responder (por exemplo, o registro DNS ainda não aponta para a VM), nada muda. O banco, as fichas e os usuários continuam os mesmos. Os links antigos deixam de funcionar. Se usa o login Microsoft, troque o URI de redirecionamento no Entra (a tarefa lembra disso).
+- **Apagar:** para acampamentos que deixaram de existir. Digite o nome da pasta para confirmar. Antes de apagar, é feito um backup do banco em `/var/backups/prefichas-apagados/NOME-DATA/` (com instruções de restauração). O endereço sai do ar, os containers e dados são removidos e a pasta vai para `/var/lib/prefichas-gerenciador/lixeira/` por 30 dias. Se o backup falhar, nada é apagado; só marque "apagar mesmo sem backup" se o sistema estiver quebrado.
