@@ -68,6 +68,7 @@ export default async function rotasSso(app) {
       if (eu.excedeu) { req.log.warn({ email: eu.email }, 'Login Microsoft: pessoa em grupos demais (o token não traz a lista)'); return voltar(reply, 'grupos') }
       nucleosDosGrupos = eu.grupos.length ? (await pool.query('select id from nucleos where lower(entra_grupo_id) = any($1::text[])', [eu.grupos])).rows.map((x) => x.id) : []
     }
+    req.log.info({ email: eu.email, modo: c.provisionar, gruposNoToken: eu.grupos.length, nucleosCasados: nucleosDosGrupos.length }, 'Login Microsoft: grupos lidos do token')
     const entrar = async (usuarioId) => {
       await pool.query('update usuarios set sso_oid = $2, ultimo_login = now() where id = $1', [usuarioId, eu.oid])
       reply.setCookie(COOKIE, await criarSessao(pool, usuarioId, config.sessaoHoras),
@@ -126,6 +127,14 @@ export default async function rotasSso(app) {
     if (u.pendente) return voltar(reply, 'pendente')
     if (!u.ativo) return voltar(reply, 'negado')
 
+    // Coordenador cadastrado antes (à mão ou aguardando liberação) que agora está em algum grupo de núcleo: passa a acompanhar o Entra.
+    // Sem nenhum grupo de núcleo ele continua como estava (núcleos definidos à mão), para não tirar o acesso de quem já usava.
+    if (porGrupo && !u.sso_gerenciado && u.papel === 'coordenador' && nucleosDosGrupos.length) {
+      await pool.query('update usuarios set sso_gerenciado = true where id = $1', [u.id]); u.sso_gerenciado = true
+      req.log.info({ usuario: u.id }, 'Login Microsoft: coordenador existente passou a acompanhar os grupos do Entra')
+    } else if (porGrupo && !u.sso_gerenciado) {
+      req.log.info({ usuario: u.id, papel: u.papel }, 'Login Microsoft: usuário cadastrado à mão; os grupos do Entra não foram aplicados (papel diferente de coordenador ou sem grupo de núcleo)')
+    }
     // quem foi criado pelos grupos acompanha o Entra: núcleos sincronizados a cada entrada; saiu de todos os grupos = sem acesso
     if (porGrupo && u.sso_gerenciado && u.papel === 'coordenador') {
       await transacao(pool, (db) => gravarNucleos(db, u.id))
@@ -178,13 +187,13 @@ export default async function rotasSso(app) {
     }
   }
   const semPermissao = (err) => err.status === 403 || err.status === 401
-  async function lerEntra() {
+  async function lerEntra(termo = null) {
     if (lendo) { const e = new Error('ocupado'); e.http = 409; e.mensagem = 'Já há uma leitura em andamento.'; throw e }
     lendo = true
     try {
       const token = await tokenDoGraph()
       let achados
-      try { achados = await lerGruposPrefixo(fetchFn, token) } catch (err) {
+      try { achados = await lerGruposPrefixo(fetchFn, token, termo ?? PREFIXO_GRUPO) } catch (err) {
         const e = new Error('ler'); e.http = semPermissao(err) ? 403 : 502
         e.mensagem = semPermissao(err) ? 'Sem permissão para ler os grupos: dê ao aplicativo a permissão Group.Read.All (ou Group.ReadWrite.All) com consentimento do administrador.' : `Não consegui ler os grupos (${err.detalhe || err.status || 'erro'}).`
         throw e
@@ -200,14 +209,16 @@ export default async function rotasSso(app) {
         if (!g) { await pool.query('update nucleos set entra_grupo_sumiu = true where id = $1', [n.id]); r.sumiram++; continue }
         await pool.query('update nucleos set entra_grupo_nome = $2, entra_grupo_visto = now(), entra_grupo_sumiu = false where id = $1', [n.id, g.nome]); r.atualizados++
       }
-      const semGrupo = new Map(nucleos.filter((x) => !x.entra_grupo_id).map((n) => [norm(`${PREFIXO_GRUPO} - ${n.nome}`), n]))
+      // casa pelo nome do núcleo, com ou sem o prefixo ("Santo Amaro" ou "Pré-fichas – Santo Amaro")
+      const semGrupo = new Map()
+      for (const n of nucleos.filter((x) => !x.entra_grupo_id)) { semGrupo.set(norm(`${PREFIXO_GRUPO} - ${n.nome}`), n); semGrupo.set(norm(n.nome), n) }
       const livres = []
       for (const g of achados) {
         if (ligados.has(g.id)) continue
         const n = semGrupo.get(norm(g.nome))
         if (n) {   // mesmo nome "Pré-fichas – NÚCLEO": liga sozinho (o grupo não foi criado pelo sistema, então o sistema nunca o apaga)
           await pool.query('update nucleos set entra_grupo_id = $2, entra_grupo_criado = false, entra_grupo_nome = $3, entra_grupo_visto = now(), entra_grupo_sumiu = false where id = $1 and entra_grupo_id is null', [n.id, g.id, g.nome])
-          semGrupo.delete(norm(g.nome)); r.vinculados.push({ nucleo: n.nome, grupo: g.nome })
+          semGrupo.delete(norm(`${PREFIXO_GRUPO} - ${n.nome}`)); semGrupo.delete(norm(n.nome)); r.vinculados.push({ nucleo: n.nome, grupo: g.nome })
         } else livres.push(g)
       }
       await transacao(pool, async (db) => {
@@ -222,9 +233,11 @@ export default async function rotasSso(app) {
   const responderErro = (reply, e) => (e.http ? reply.code(e.http).send({ mensagem: e.mensagem }) : (() => { throw e })())
 
   app.post('/api/admin/nucleos/ler-entra', { ...soAdmin, config: { rateLimit: { max: Math.max(10, config.limiteLoginPorMinuto), timeWindow: '1 hour' } } }, async (req, reply) => {
+    const termo = typeof req.body?.termo === 'string' ? req.body.termo.trim() : ''
+    if (termo && !/^[\p{L}\p{N} .,()–—-]{2,60}$/u.test(termo)) return reply.code(400).send({ mensagem: 'Termo de busca inválido (2 a 60 letras, números e espaços).' })
     try {
-      const r = await lerEntra()
-      req.log.info({ por: req.usuario.email, ...r, vinculados: r.vinculados.length }, 'Leitura dos grupos do Entra')
+      const r = await lerEntra(termo || null)
+      req.log.info({ por: req.usuario.email, termo: termo || undefined, ...r, vinculados: r.vinculados.length }, 'Leitura dos grupos do Entra')
       return r
     } catch (e) { return responderErro(reply, e) }
   })

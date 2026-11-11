@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 2.19.1 — núcleo pelo grupo do Entra: mais casos e mais pistas
+
+- **Coordenador que já existia** (cadastrado à mão ou que estava aguardando liberação) e que agora está em algum grupo de núcleo passa a **acompanhar o Entra**: o núcleo vem do grupo. Sem nenhum grupo de núcleo ele continua como estava (núcleos definidos à mão). Administradores e equipe nunca são alterados.
+- **Buscar grupo por nome** (Núcleos): para grupos criados à mão **sem** o prefixo "Pré-fichas" (por exemplo "Santo Amaro da Imperatriz"). O grupo com o nome do núcleo, com ou sem o prefixo, é ligado sozinho.
+- O log de cada entrada pela Microsoft agora diz quantos grupos vieram no token e quantos casaram com núcleos (e por que os grupos não foram aplicados, quando é o caso).
+
 ## 2.19.0 — ler os grupos do Entra e apagar o grupo junto com o núcleo
 
 - **Ler grupos do Entra** (Núcleos): encontra os grupos cujo nome começa com "Pré-fichas" (inclusive os criados à mão). O grupo com o mesmo nome do núcleo ("Pré-fichas – NÚCLEO", sem diferenciar maiúsculas/acentos) é **ligado sozinho**; os demais aparecem em **"Grupos do Entra sem núcleo"** para você escolher o núcleo. Também acusa quando um grupo **não existe mais** no Entra.

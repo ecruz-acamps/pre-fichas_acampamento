@@ -58,7 +58,8 @@ const msFetch = async (url, opcoes = {}) => {
   }
   if (String(url).startsWith(`${G}?`)) {   // leitura dos grupos "Pré-fichas…"
     if (msGraph.modo === 'sem-permissao') return { ok: false, status: 403, json: async () => ({ error: { code: 'Authorization_RequestDenied', message: 'x' } }) }
-    return { ok: true, status: 200, json: async () => ({ value: [...msGraph.grupos].filter(([, n]) => n.startsWith('Pré-fichas')).map(([id, displayName]) => ({ id, displayName })) }) }
+    const termo = /startswith\(displayName,'((?:[^']|'')*)'\)/i.exec(decodeURIComponent(String(url)))?.[1]?.replace(/''/g, "'") ?? ''
+    return { ok: true, status: 200, json: async () => ({ value: [...msGraph.grupos].filter(([, n]) => n.startsWith(termo)).map(([id, displayName]) => ({ id, displayName })) }) }
   }
   const um = /^https:\/\/graph\.microsoft\.com\/v1\.0\/groups\/([0-9a-f-]{36})(\?.*)?$/.exec(String(url))
   if (um) {
@@ -2046,6 +2047,40 @@ describe('API', { skip: pular }, () => {
       await req('admin', 'PUT', '/api/admin/sso', { leituraDias: 9999, provisionar: 'liberacao', criarPendentes: true })
       assert.equal((await req('admin', 'GET', '/api/admin/sso')).json().leituraDias, 90)
       await req('admin', 'PUT', '/api/admin/sso', { leituraDias: 0, provisionar: 'liberacao', criarPendentes: true })
+    })
+
+    test('buscar grupo por nome (grupo criado à mão sem o prefixo "Pré-fichas") liga ao núcleo de mesmo nome; termo é validado', async () => {
+      const n = (await req('admin', 'POST', '/api/admin/nucleos', { nome: 'Santo Amaro Teste', areas: [{ uf: 'SC', cidade: 'Santo Amaro da Imperatriz', bairro: null }] })).json().id
+      const g = randomUUID(); msGraph.grupos.set(g, 'Santo Amaro Teste')
+      const grupoDe = async () => (await pool.query('select entra_grupo_id g, entra_grupo_criado c from nucleos where id = $1', [n])).rows[0]
+      await req('admin', 'POST', '/api/admin/nucleos/ler-entra', {})
+      assert.equal((await grupoDe()).g, null, 'a leitura normal só enxerga "Pré-fichas…"')
+      assert.equal((await req('admin', 'POST', '/api/admin/nucleos/ler-entra', { termo: "x'; drop" })).statusCode, 400)
+      assert.equal((await req('admin', 'POST', '/api/admin/nucleos/ler-entra', { termo: 'a' })).statusCode, 400)
+      assert.equal((await req('coord', 'POST', '/api/admin/nucleos/ler-entra', { termo: 'Santo Amaro' })).statusCode, 403)
+      const r = await req('admin', 'POST', '/api/admin/nucleos/ler-entra', { termo: 'Santo Amaro' })
+      assert.equal(r.statusCode, 200, r.body); assert.deepEqual(r.json().vinculados.map((v) => v.nucleo), ['Santo Amaro Teste'])
+      assert.deepEqual(await grupoDe(), { g, c: false })
+    })
+
+    test('coordenador que já existia e agora está em um grupo de núcleo passa a acompanhar o Entra; sem grupo, continua como estava', async () => {
+      const gNovo = randomUUID()
+      const nManual = (await req('admin', 'POST', '/api/admin/nucleos', { nome: 'Núcleo Manual Adoção', areas: [{ uf: 'RS', cidade: 'Canoas', bairro: null }] })).json().id
+      const nGrupo = (await req('admin', 'POST', '/api/admin/nucleos', { nome: 'Núcleo Grupo Adoção', entraGrupoId: gNovo, areas: [{ uf: 'RS', cidade: 'Canoas', bairro: 'Centro' }] })).json().id
+      const mk = async (email) => { const { rows: [u] } = await pool.query(`insert into usuarios (email, nome, papel, senha_hash, trocar_senha) values ($1, 'Coord Existente', 'coordenador', 'x', false) returning id`, [email]); await pool.query('insert into usuario_nucleos (usuario_id, nucleo_id) values ($1, $2)', [u.id, nManual]); return u.id }
+      const com = await mk('coord.com.grupo@empresa.teste'), sem = await mk('coord.sem.grupo@empresa.teste')
+      await req('admin', 'PUT', '/api/admin/sso', { provisionar: 'grupos', criarPendentes: true })
+      const nucleosDe = async (id) => (await pool.query('select array_agg(nucleo_id order by nucleo_id) n from usuario_nucleos where usuario_id = $1', [id])).rows[0].n
+      try {
+        // sem grupo de núcleo: entra como antes, com o núcleo definido à mão
+        const rs = await entrarMs({ oid: randomUUID(), preferred_username: 'coord.sem.grupo@empresa.teste', groups: [randomUUID()] })
+        assert.equal(rs.destino, '/admin/'); assert.deepEqual(await nucleosDe(sem), [nManual])
+        assert.equal((await pool.query('select sso_gerenciado s from usuarios where id = $1', [sem])).rows[0].s, false)
+        // com grupo de núcleo: passa a acompanhar o Entra (o núcleo vem do grupo)
+        const rc = await entrarMs({ oid: randomUUID(), preferred_username: 'coord.com.grupo@empresa.teste', groups: [gNovo] })
+        assert.equal(rc.destino, '/admin/'); assert.deepEqual(await nucleosDe(com), [nGrupo])
+        assert.equal((await pool.query('select sso_gerenciado s from usuarios where id = $1', [com])).rows[0].s, true)
+      } finally { await req('admin', 'PUT', '/api/admin/sso', { provisionar: 'liberacao', criarPendentes: true }) }
     })
 
     test('excluir núcleo: com a opção, apaga também o grupo no Entra, mas só o que o sistema criou, com nome "Pré-fichas…" e com permissão', async () => {
