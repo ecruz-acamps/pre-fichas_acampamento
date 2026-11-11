@@ -2132,7 +2132,7 @@ describe('API', { skip: pular }, () => {
   describe('modalidades cadastráveis', () => {
     const lista = async () => (await app.inject({ method: 'GET', url: '/api/modalidades' })).json()
     const por = async (v) => (await lista()).find((m) => m.valor === v)
-    after(async () => { await req('admin', 'DELETE', '/api/admin/modalidades/servos'); await req('admin', 'DELETE', '/api/admin/modalidades/pre_juvenil') })
+    after(async () => { for (const v of ['servos', 'pre_juvenil', 'homens']) await req('admin', 'DELETE', `/api/admin/modalidades/${v}`) })
 
     test('lista pública com as 5 padrão; só o administrador cadastra e edita', async () => {
       const l = await lista()
@@ -2203,6 +2203,30 @@ describe('API', { skip: pular }, () => {
       assert.equal(bloq.statusCode, 400)
       for (const m of todas) await req('admin', 'PUT', `/api/admin/modalidades/${m.valor}`, { rotulo: m.rotulo, min: m.min, max: m.max, casado: m.casado, ativa: true })
       assert.equal((await lista()).every((m) => m.ativa), true)
+    })
+
+    test('modalidade só para um sexo (ex.: Homens): o formulário e a troca de modalidade respeitam; Sênior e Casais não restringem', async () => {
+      assert.equal((await req('admin', 'POST', '/api/admin/modalidades', { rotulo: 'Homens', min: 18, max: 90, sexo: 'outro' })).statusCode, 400)
+      const ok = await req('admin', 'POST', '/api/admin/modalidades', { rotulo: 'Homens', min: 18, max: 90, sexo: 'masculino' }); assert.equal(ok.statusCode, 201, ok.body)
+      const h = await por('homens'); assert.deepEqual([h.sexo, h.faixa], ['masculino', 'só homens, 18 a 90 anos'])
+      assert.deepEqual([modalidadesCompativeis(40, 'solteiro', 'masculino').includes('homens'), modalidadesCompativeis(40, 'solteiro', 'feminino').includes('homens'), modalidadesCompativeis(40, 'solteiro', '').includes('homens')], [true, false, true], 'sem sexo informado ainda, não filtra')
+      const base = { data_nascimento: '1985-03-04', modalidade: 'homens' }
+      const homem = await enviar({ ...base, nome_completo: 'Joao Homens', sexo: 'masculino', telefone: '(48) 96666-1111', email: 'joao.homens@x.com' })
+      assert.equal(homem.statusCode, 201, homem.body)
+      const mulher = await enviar({ ...base, nome_completo: 'Maria Homens', sexo: 'feminino', telefone: '(48) 96666-2222', email: 'maria.homens@x.com' })
+      assert.equal(mulher.statusCode, 400); assert.match(mulher.json().erros.modalidade, /só para homens/)
+      // revisão: não dá para trocar uma mulher para a modalidade dos homens
+      const idMaria = (await pool.query(`select id from pre_fichas where nome_completo = 'Maria Silva' limit 1`)).rows[0].id
+      const troca = await req('admin', 'POST', `/api/admin/pre-fichas/${idMaria}/modalidade`, { modalidade: 'homens' }); assert.equal(troca.statusCode, 400)
+      // editar para "só mulheres" muda a regra para as novas inscrições
+      assert.equal((await req('admin', 'PUT', '/api/admin/modalidades/homens', { rotulo: 'Homens', min: 18, max: 90, sexo: 'feminino', ativa: true })).statusCode, 200)
+      assert.equal(modalidadesCompativeis(40, 'solteiro', 'masculino').includes('homens'), false)
+      // Sênior/Casais: o sexo é ignorado
+      await req('admin', 'PUT', '/api/admin/modalidades/senior', { rotulo: 'Sênior', min: 30, sexo: 'masculino', ativa: true })
+      assert.equal((await por('senior')).sexo, null); assert.equal(modalidadesCompativeis(40, 'solteiro', 'feminino').includes('senior'), true)
+      // sem restrição de novo
+      await req('admin', 'PUT', '/api/admin/modalidades/homens', { rotulo: 'Homens', min: 18, max: 90, sexo: '', ativa: true })
+      assert.equal((await por('homens')).sexo, null)
     })
 
     test('o banco só aceita modalidade cadastrada; ordem e exclusão da que ninguém usa', async () => {

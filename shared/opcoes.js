@@ -41,13 +41,14 @@ export function faixaDe(m) {
   if (m.regra === 'senior') return `casado(a) ou ${m.min} anos em diante`
   if (m.regra === 'casais') return 'casal casado(a), com o cônjuge já campista'
   const idades = m.max >= 200 ? `${m.min} anos em diante` : `${m.min} a ${m.max} anos`
-  return m.casado ? `casado(a), ${idades}` : idades
+  const so = m.sexo === 'masculino' ? 'só homens, ' : m.sexo === 'feminino' ? 'só mulheres, ' : ''
+  return `${so}${m.casado ? `casado(a), ${idades}` : idades}`
 }
 
 /** Troca o conteúdo de MODALIDADES (no lugar) pela lista cadastrada: [{ valor, rotulo, regra, min, max, casado, ativa }]. */
 export function definirModalidades(lista) {
   if (!Array.isArray(lista) || !lista.length) return
-  const novas = lista.map((m) => ({ valor: m.valor, rotulo: m.rotulo, regra: m.regra ?? 'idade', min: m.min ?? m.idade_min, max: m.max ?? m.idade_max, casado: m.casado === true, ativa: m.ativa !== false }))
+  const novas = lista.map((m) => ({ valor: m.valor, rotulo: m.rotulo, regra: m.regra ?? 'idade', min: m.min ?? m.idade_min, max: m.max ?? m.idade_max, casado: m.casado === true, ativa: m.ativa !== false, sexo: m.sexo === 'masculino' || m.sexo === 'feminino' ? m.sexo : null }))
     .map((m) => ({ ...m, faixa: faixaDe(m) }))
   MODALIDADES.splice(0, MODALIDADES.length, ...novas)
 }

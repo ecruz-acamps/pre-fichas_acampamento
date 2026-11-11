@@ -104,8 +104,8 @@ export default function FormularioPreFicha({ marca, modo = 'anonimo', inicial = 
 
   const idade = useMemo(() => calcularIdade(f.data_nascimento), [f.data_nascimento])
   const feitas = modo === 'nova' ? jaFeitas : []
-  const compativeis = useMemo(() => modalidadesCompativeis(idade, f.estado_civil).filter((m) => !feitas.includes(m)),
-    [idade, f.estado_civil, feitas.join()]) // eslint-disable-line react-hooks/exhaustive-deps
+  const compativeis = useMemo(() => modalidadesCompativeis(idade, f.estado_civil, f.sexo).filter((m) => !feitas.includes(m)),
+    [idade, f.estado_civil, f.sexo, feitas.join()]) // eslint-disable-line react-hooks/exhaustive-deps
   const menor = idade != null && idade < 18
 
   const set = (campo) => (valorOuEvento) => {

@@ -27,11 +27,12 @@ export function calcularIdade(dataNascimento, referencia = new Date()) {
 }
 
 /** Modalidades compatíveis com a idade/estado civil informados. */
-export function modalidadesCompativeis(idade, estadoCivil) {
+export function modalidadesCompativeis(idade, estadoCivil, sexo = '') {
   const ativas = modalidadesAtivas()
   if (idade == null) return ativas.map((m) => m.valor)
   const casado = estadoCivil === 'casado' || estadoCivil === 'uniao_estavel'
   return ativas.filter((m) => {
+    if (m.sexo && sexo && m.sexo !== sexo) return false   // modalidade só para um sexo (sem sexo informado ainda, não filtra)
     if (m.regra === 'senior') return idade >= m.min || (casado && idade >= 18)
     if (m.regra === 'casais') return casado && idade >= m.min // casal: casado(a) ou em união estável
     if (m.casado && !casado) return false

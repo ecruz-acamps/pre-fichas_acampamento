@@ -252,7 +252,7 @@ export function mapearLinha(registro, { hoje = new Date(), tribos = [] } = {}) {
   const retiros = limitar('Retiros frequentados', limpar(pegar(v, 'retiros frequentados')), 1000)
 
   // a modalidade que a pessoa esperava é mantida (a ordem da fila não muda); se não bate com a regra do sistema, vira aviso
-  const compat = modalidadesCompativeis(idade, ec[0])
+  const compat = modalidadesCompativeis(idade, ec[0], sexo)
   if (tipo === 'fila' && !compat.includes(mod[0])) {
     const t = `REVISAR MODALIDADE: aguarda ${rotuloDe(MODALIDADES, mod[0])}, mas pela regra do sistema (${idade} anos, ${rotuloDe(ESTADOS_CIVIS, ec[0])}) cabem: ${compat.map((x) => rotuloDe(MODALIDADES, x)).join(', ') || 'nenhuma'}.`
     notas.unshift(t); alertas.unshift(t)

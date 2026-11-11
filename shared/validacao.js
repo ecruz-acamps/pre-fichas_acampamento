@@ -120,8 +120,10 @@ export function validar(f, quantidadeTermos = 0, { modalidadeAtual = null } = {}
   obrig('motivo')
   const mantida = modalidadeAtual && f.modalidade === modalidadeAtual
   obrig('modalidade', 'Escolha a modalidade.'); if (!mantida) umDe('modalidade', modalidadesAtivas())
-  if (!mantida && !e.modalidade && idade != null && !modalidadesCompativeis(idade, f.estado_civil).includes(f.modalidade))
-    e.modalidade = 'Esta modalidade não corresponde à sua idade / estado civil.'
+  if (!mantida && !e.modalidade && idade != null && !modalidadesCompativeis(idade, f.estado_civil, f.sexo).includes(f.modalidade)) {
+    const m = modalidadesAtivas().find((x) => x.valor === f.modalidade)
+    e.modalidade = m?.sexo && f.sexo && m.sexo !== f.sexo ? `Esta modalidade é só para ${m.sexo === 'masculino' ? 'homens' : 'mulheres'}.` : 'Esta modalidade não corresponde à sua idade / estado civil.'
+  }
   if (f.modalidade === 'casais') {
     obrig('conjuge_cpf', 'Informe o CPF do cônjuge.')
     if (!e.conjuge_cpf && !cpfValido(f.conjuge_cpf)) e.conjuge_cpf = 'CPF do cônjuge inválido.'
