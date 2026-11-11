@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 2.23.1 — correção urgente: atualização de instâncias existentes não iniciava
+
+- Na 2.23.0 o servidor lia a coluna `sexo` das modalidades **antes** de rodar a migração `022` que a cria. Instâncias que já tinham a tabela de modalidades (2.20 em diante) caíam ao iniciar (`column "sexo" does not exist`) e ficavam reiniciando em loop (o atualizador ficava em "Aguardando a aplicação voltar…").
+- Agora o servidor só lê a lista de modalidades depois das migrações, e tolera tabela/coluna ainda inexistentes na partida (erros 42xxx).
+- Novos testes de partida: sobem o servidor contra um banco **vazio** e contra bancos **parados em cada um dos últimos 6 estados do esquema** (atualização). Confirmado que falham sem a correção.
+- Quem ficou com o app reiniciando: atualize de novo (`./scripts/atualizar.sh`, ou "Atualizar" no painel central).
+
 ## 2.23.0 — modalidade só para homens ou só para mulheres
 
 - Na tela **Modalidades**, cada modalidade tem **"Quem pode se inscrever"**: Homens e mulheres (padrão), **Só homens** ou **Só mulheres**. O formulário só oferece a modalidade a quem informou o sexo correspondente e o servidor recusa a inscrição fora da regra ("Esta modalidade é só para homens."). Vale também na troca de modalidade pela revisão e na importação (avisa em "revisar").

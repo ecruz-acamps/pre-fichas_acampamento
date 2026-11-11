@@ -1,7 +1,7 @@
 {
   "name": "pre-fichas-acampamento",
   "private": true,
-  "version": "2.23.0",
+  "version": "2.23.1",
   "type": "module",
   "engines": {
     "node": ">=22"
