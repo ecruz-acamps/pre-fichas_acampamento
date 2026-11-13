@@ -160,7 +160,7 @@ chave_expirar() { local f="$ESTADO/backup-chave.json" e; [ -s "$f" ] || return 0
 # --- fazer o backup de uma instância: banco → pg_dump → age (só chave pública) → OneDrive. Nada em claro no disco.
 backup_nuvem_instancia() { # instância
   local i="$1" nome arq tam
-  casa "$i" "$RE_INST" && [ -f "$OPT/$i/.env" ] || { echo "✗ $i: instância inválida."; return 1; }
+  casa "$i" "$RE_INST" && ! reservada "$i" && [ -f "$OPT/$i/.env" ] || { echo "✗ $i: instância inválida."; return 1; }
   db_rodando "$i" || { echo "✗ $i: banco parado; backup não feito."; return 1; }
   mkdir -p "$TMPD" && chmod 700 "$TMPD"; arq="$TMPD/envio.dump.age"
   if ! (cd "$OPT/$i" && nice -n 10 docker compose exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc') | age -R "$CHAVE_PUB" > "$arq"; then
@@ -219,7 +219,7 @@ acao_backup_listar() { atualizar_lista_nuvem || { echo "✗ Não consegui ler o 
 acao_backup_restaurar() { # {instancia, arquivo (id), nome, chave, confirmar}
   local p="$1" i id nome conf arq porta ok=0
   i="$(jq -r '.instancia // empty' "$p")"; id="$(jq -r '.arquivo // empty' "$p")"; nome="$(jq -r '.nome // empty' "$p")"; conf="$(jq -r '.confirmar // empty' "$p")"
-  casa "$i" "$RE_INST" && [ -f "$OPT/$i/.env" ] && [ ! -L "$OPT/$i" ] || { echo "✗ Instância inválida (crie a instância antes de restaurar nela)."; return 1; }
+  casa "$i" "$RE_INST" && ! reservada "$i" && [ -f "$OPT/$i/.env" ] && [ ! -L "$OPT/$i" ] || { echo "✗ Instância inválida (crie a instância antes de restaurar nela)."; return 1; }
   [ "$conf" = "$i" ] || { echo "✗ Confirmação não confere: digite o nome da pasta ($i)."; return 1; }
   casa "$id" '^[A-Za-z0-9!_.-]{4,200}$' && casa "$nome" "$RE_ARQ_NUVEM" || { echo "✗ Backup inválido."; return 1; }
   casa "$(jq -r '.chave // empty' "$p")" "$RE_AGE_SEC" || { echo "✗ Chave de recuperação inválida (começa com AGE-SECRET-KEY-1)."; return 1; }

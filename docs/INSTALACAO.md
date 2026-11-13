@@ -667,6 +667,7 @@ baixe as listas de quarentena/conferência se quiser e confirme. Abaixo ficam as
 - **Acampamentos antigos, com túnel próprio:** painel central → Configurações → "Túnel único da Cloudflare" → **Unificar túneis** (ou `sudo ./scripts/tunel-compartilhado.sh unificar`).
   Cada um é publicado no túnel único, o site é conferido e só depois o túnel antigo é desligado e apagado; se o site não responder, o DNS volta ao túnel antigo.
 - Se o `cloudflared` único parar, **todos** os acampamentos publicados pela Cloudflare saem do ar juntos (ele reinicia sozinho: `restart: unless-stopped`). Ver: `docker logs --tail 30 prefichas-tunel`.
+- O túnel é parte do sistema, **não é um acampamento**: fica em `/var/lib/prefichas-tunel` (instalações antigas em `/opt/prefichas-tunel` são movidas sozinhas), não aparece em Instâncias e não entra no backup. Se o container for apagado ou parar, use **Configurações → Túnel único da Cloudflare → Religar o túnel** (ou `sudo ./scripts/tunel-compartilhado.sh religar`): sobe de novo no mesmo túnel, com os mesmos endereços.
 
 **Servidor de e-mail pelo painel central (aba Configurações → "Servidor de e-mail"):**
 - Informe servidor (ex.: `smtp.gmail.com`), porta (465 SSL ou 587 STARTTLS), usuário, senha e remetente. No Gmail, use uma **senha de app**

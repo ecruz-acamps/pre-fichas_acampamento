@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 2.26.0 — Túnel da Cloudflare como parte do sistema
+
+- O túnel único não é mais tratado como acampamento: a pasta saiu de `/opt/prefichas-tunel` para `/var/lib/prefichas-tunel` (a antiga é movida sozinha) e o nome `prefichas-tunel` é reservado. Ele não aparece em Instâncias, não entra no backup (acabou o erro de backup dele) e não pode ser atualizado nem apagado como instância.
+- **Religar o túnel:** quando o túnel está parado ou o container foi apagado, o cartão "Túnel único da Cloudflare" mostra o botão **Religar o túnel**, que sobe o cloudflared de novo no mesmo túnel, com os mesmos endereços. Também pelo terminal: `tunel-compartilhado.sh religar`.
+
 ## 2.25.0 — VPN só com FortiClient
 
 - **strongSwan removido:** o script `vpn-ipsec-strongswan.sh`, a detecção dele no painel e a troca de chave/senha que só funcionava com ele saíram do sistema. A VPN do servidor passa a ser só o **FortiClient**.
