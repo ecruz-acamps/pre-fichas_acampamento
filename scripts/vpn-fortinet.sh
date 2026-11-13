@@ -172,7 +172,31 @@ resposta_cert() {
 }
 conectar_salva() { # reconexão com a senha salva; responde a pergunta do certificado só se a impressão digital confere
   local y; y="$(resposta_cert 2>/dev/null)" || { logger -t prefichas-vpn "Certificado do FortiGate não confere com a impressão digital registrada: não reconectei" 2>/dev/null || true; return 0; }
-  { [ -n "$y" ] && printf '%s\n' "$y"; sleep "${VPN_ESPERA_PTY:-40}"; } 2>/dev/null | FC_PTY=1 FC_TIMEOUT=90 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "${VPN_USUARIO:-}") --always-up >/dev/null 2>&1 || true
+  FC_TIMEOUT=90 fc_dialogo "" "$y" -- vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "${VPN_USUARIO:-}") >/dev/null 2>&1 || true
+}
+# Conversa com o FortiClient: lê o que ele escreve e só responde quando a pergunta aparece
+# ("Password:" → $1; "Confirm (y/n)" do certificado → $2, ou "n" se vazio). Termina junto com ele.
+fc_dialogo() { # SENHA RESPOSTA_CERT -- argumentos do forticlient
+  local senha="$1" y="$2" c buf="" foi_senha=0 foi_cert=0 entrada saida
+  shift 3
+  local d pid
+  d="$(mktemp -d)"; mkfifo -m 600 "$d/entrada" "$d/saida"
+  ( FC_PTY=1 fc "$@" <"$d/entrada" >"$d/saida" 2>&1 ) & pid=$!
+  exec {entrada}>"$d/entrada" {saida}<"$d/saida"
+  rm -rf "$d"
+  while IFS= read -r -n 1 -t "${VPN_ESPERA_RESPOSTA:-90}" c <&"$saida"; do
+    [ -n "$c" ] || c=$'\n'
+    buf+="$c"
+    if [ "$c" = $'\n' ]; then printf '%s' "$buf"; buf=""; continue; fi
+    case "$buf" in
+      *[Pp]assword*:) [ "$foi_senha" = 0 ] && [ -n "$senha" ] && { printf '%s\n' "$senha" >&"$entrada"; foi_senha=1; }; printf '%s\n' "$buf"; buf="" ;;
+      *"Confirm (y/n)"*:) [ "$foi_cert" = 0 ] && { printf '%s\n' "${y:-n}" >&"$entrada"; foi_cert=1; }; printf '%s\n' "$buf"; buf="" ;;
+    esac
+  done 2>/dev/null
+  [ -z "$buf" ] || printf '%s\n' "$buf"
+  senha=""
+  exec {entrada}>&- {saida}<&- 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
 }
 mascarar() { # nunca deixa a senha (em $SENHA) passar para o log, mesmo se o terminal a ecoar
   local l
@@ -182,7 +206,7 @@ conectar_com_senha() { # senha em $SENHA; digitada no prompt do FortiClient por 
   ( FC_TIMEOUT=30 fc vpn disconnect ) >/dev/null 2>&1 || true
   sleep 2
   local y; y="$(resposta_cert)" || { SENHA=""; return 1; }
-  { printf '%s\n' "$SENHA"; [ -n "$y" ] && printf '%s\n' "$y"; sleep "${VPN_ESPERA_PTY:-40}"; } 2>/dev/null | FC_PTY=1 FC_TIMEOUT=60 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "$VPN_USUARIO" pedir-senha) --save-password --always-up --auto-connect 2>&1 | mascarar | limpar_saida | tail -15 || true
+  FC_TIMEOUT=60 fc_dialogo "$SENHA" "$y" -- vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "$VPN_USUARIO" pedir-senha) --save-password 2>&1 | mascarar | limpar_saida | tail -15 || true
   SENHA=""
   for _ in $(seq 1 20); do { tunel_ativo || tudo_pela_vpn; } && break; sleep "${VPN_ESPERA_PASSO:-3}"; done
   proteger
@@ -254,7 +278,7 @@ configurar)
   # 3) Conectar: senha salva, sempre ativo e reconexão automática
   echo
   echo "→ Conectando (digite a senha da VPN se for pedida)…"
-  CONECTAR=(fc vpn connect "$PERFIL" --save-password --always-up --auto-connect)
+  CONECTAR=(fc vpn connect "$PERFIL" --save-password)
   mapfile -t U < <(args_usuario "$VPN_USUARIO" pedir-senha); CONECTAR+=("${U[@]}")
   "${CONECTAR[@]}" </dev/tty || true
 

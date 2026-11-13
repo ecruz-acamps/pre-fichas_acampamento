@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 2.31.1 — Reconexão da VPN rápida e respondendo na hora certa
+
+- O "y" para o certificado autoassinado era enviado antes de o FortiClient perguntar e se perdia: a conexão ficava em `Waiting user confirm remote certificate` até o limite de tempo (2–3 minutos). Agora o script lê o que o FortiClient escreve e só responde quando aparece `Password:` ou `Confirm (y/n)`, e termina junto com ele (sem a folga fixa de 40 s).
+- Tiradas as opções `--always-up`/`--auto-connect`, que a edição gratuita ignora ("not supported on free vpn client"); a reconexão é feita pelo vigia.
+
 ## 2.31.0 — VPN: sessão permanente e certificado do FortiGate
 
 Ajustes a partir do teste real na VM (FortiClient VPN 7.4.3 + FortiGate SSL-VPN):
