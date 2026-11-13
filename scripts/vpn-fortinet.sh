@@ -12,7 +12,7 @@
 # Instala o FortiClient VPN (edição GRATUITA, só VPN, sem EMS) baixado da Fortinet (filestore.fortinet.com),
 # conferindo o SHA-256 fixado abaixo. A edição completa do repositório (repo.fortinet.com) se registra num EMS e,
 # sem EMS, recusa o IPsec ("IPsec VPN is disabled while registered to EMS"): se estiver instalada, é trocada. Antes:
-# impressão digital da chave de assinatura. O perfil (IPsec, gateway, PSK…) é preenchido no
+# impressão digital da chave de assinatura. O perfil SSL-VPN (gateway, porta, usuário) é preenchido no
 # assistente do próprio FortiClient (`fc vpn edit`). Um vigia (systemd) reconecta se cair.
 #
 # Variáveis: FORTICLIENT_VERSAO (7.4 padrão), VPN_PERFIL (prefichas), VPN_USUARIO,
@@ -159,7 +159,7 @@ UNIT
 case "${1:-configurar}" in
 configurar)
   echo "FortiClient VPN — o servidor vai conectar no túnel do FortiGate da sua empresa."
-  echo "Tenha em mãos os dados que o analista passou (gateway, IPsec/PSK, usuário…)."
+  echo "Tenha em mãos os dados do SSL-VPN do FortiGate (gateway, porta, usuário)."
   echo
   perguntar VPN_REDES "Redes internas da empresa que passam pela VPN (ex.: 192.168.10.0/24,10.0.0.0/8)"
   validar_redes
@@ -174,11 +174,11 @@ configurar)
 
   [ "$TEM_TTY" = 1 ] || erro "A criação do perfil é feita no assistente do FortiClient: rode este comando num terminal."
 
-  # 2) Perfil: assistente do próprio FortiClient (tipo IPsec, gateway, PSK, IKE…)
+  # 2) Perfil: assistente do próprio FortiClient (SSL-VPN: gateway, porta, usuário)
   echo
   echo "→ Abrindo o assistente do FortiClient para o perfil \"$PERFIL\"."
-  echo "  Escolha o tipo IPsec e preencha conforme o analista: gateway, autenticação (PSK),"
-  echo "  versão do IKE e, se houver, usuário. NÃO marque 'todo o tráfego pela VPN'."
+  echo "  SSL-VPN: informe o gateway do FortiGate, a porta do SSL-VPN (a configurada no FortiGate),"
+  echo "  o usuário e, se perguntar, salve a senha. O split tunnel é definido no FortiGate."
   fc vpn edit "$PERFIL" </dev/tty
 
   # 3) Conectar: senha salva, sempre ativo e reconexão automática
