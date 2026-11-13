@@ -582,6 +582,8 @@ sudo ./scripts/vpn-fortinet.sh fechar-ssh   # 22 só a partir das redes da VPN; 
 - A versão Linux não tem todos os recursos das versões Windows/macOS.
 - Em servidor sem interface gráfica, salvar a senha pode depender do `gnome-keyring`.
 
+**Sem root:** o FortiClient 7.4 não aceita comandos como root. O script cria o usuário de sistema `prefichas-vpn` e roda o FortiClient por ele (com `dbus-x11` e `gnome-keyring` para guardar a senha). Para ver a situação à mão: `sudo ./scripts/vpn-fortinet.sh status` (não use `forticlient` direto como root).
+
 **Versão:** use o FortiClient da **mesma linha do FortiOS do FortiGate**. Para FortiOS 7.4.x (ex.: 7.4.13), a linha 7.4 (padrão do script). Para outra linha: `sudo FORTICLIENT_VERSAO=7.2 ./scripts/vpn-fortinet.sh configurar`. O painel mostra a versão instalada e avisa se não for da linha 7.4.
 
 **Emergência** (VPN fora do ar e SSH fechado): use o console da VM no provedor ou hipervisor e rode

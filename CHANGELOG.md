@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 2.27.0 — FortiClient sem root
+
+- O FortiClient 7.4 recusa rodar como root (`please run this command under non-root user`) e precisa de sessão D-Bus e chaveiro para guardar a senha (`dbus-launch: executable file not found`). Agora o `vpn-fortinet.sh` cria o usuário de sistema `prefichas-vpn` (sem login), instala `dbus-x11` e `gnome-keyring` e roda todo comando do FortiClient (criar perfil, conectar, vigia, reconectar, situação) como esse usuário, numa sessão D-Bus com o chaveiro destravado.
+- A senha do chaveiro é aleatória, fica em `/etc/prefichas/vpn-chaveiro` (só root, 600) e é entregue por descritor de arquivo, nunca na linha de comando.
 ## 2.26.0 — Túnel da Cloudflare como parte do sistema
 
 - O túnel único não é mais tratado como acampamento: a pasta saiu de `/opt/prefichas-tunel` para `/var/lib/prefichas-tunel` (a antiga é movida sozinha) e o nome `prefichas-tunel` é reservado. Ele não aparece em Instâncias, não entra no backup (acabou o erro de backup dele) e não pode ser atualizado nem apagado como instância.
