@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 2.30.1 — Respostas certas do assistente do FortiClient
+
+- **Segurança:** a senha da VPN podia aparecer no log da tarefa (o terminal virtual ecoava o que era digitado antes do FortiClient pedir a senha). Agora o eco é desligado (`stty -echo`) antes do FortiClient iniciar e toda saída da conexão passa por uma máscara que troca a senha por `********`. Quem configurou antes desta versão deve trocar a senha do usuário da VPN no FortiGate e zerar os logs das tarefas da VPN.
+- O assistente `vpn edit` do FortiClient VPN 7.4.3 pergunta: gateway, porta, **autenticação** (1 pedir / 2 salvar / 3 desligar) e **tipo de certificado**. Ele não pergunta o usuário (vai no `connect`). O painel agora responde `2` (salvar a senha) e `3` (sem certificado de cliente), e os avisos "Pipe quebrado" sumiram do log.
+
 ## 2.30.0 — VPN configurada toda pelo painel, com proteção contra perder o acesso
 
 - **Configurações → VPN → Configurar e conectar:** gateway, porta, usuário, senha e redes internas. O painel instala o FortiClient VPN (se faltar), responde o assistente do FortiClient (o log da tarefa mostra as perguntas e respostas, sem a senha), conecta e só então liga a reconexão automática. O terminal não é mais necessário para a VPN.

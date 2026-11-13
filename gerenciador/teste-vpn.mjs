@@ -27,14 +27,15 @@ exe('forticlient', `[ -n "$XDG_RUNTIME_DIR" ] && [ -d "$XDG_RUNTIME_DIR" ] || { 
 case "$2" in
   connect) if [ -n "$PTY_FAKE" ]; then IFS= read -r pw; printf '%s' "$pw" > "${T}/senha-recebida"; fi; [ -e "${T}/recusa" ] || touch "${T}/tunel" ;;
   disconnect) rm -f "${T}/tunel" ;;
-  edit) if [ -n "$PTY_FAKE" ]; then echo 'Remote Gateway:'; IFS= read -r g; echo 'Port [default=443]:'; IFS= read -r p; echo 'Username:'; IFS= read -r u; printf '%s|%s|%s' "$g" "$p" "$u" > "${T}/edit-respostas"; echo 'Saved VPN tunnel'; fi ;;
+  edit) if [ -n "$PTY_FAKE" ]; then printf 'Remote Gateway: '; IFS= read -r g; printf 'Port [default=443]: '; IFS= read -r p; printf 'Authentication (1.prompt / 2.save / 3.disable) [default=1]: '; IFS= read -r a; printf 'Certificate Type (1.local (pkcs12) / 2.smartcard (pkcs11) / 3.disable) [current=disable]: '; IFS= read -r c; printf '%s|%s|%s|%s' "$g" "$p" "$a" "$c" > "${T}/edit-respostas"; echo 'DONE.'; fi ;;
 esac
 case "$2" in status) printf 'Status: Connected\\nRemote gateway: vpn.empresa.com.br\\nPassword: segredo-nao-pode-aparecer\\n' ;; list) printf 'prefichas  ipsec  vpn.empresa.com.br\\nPSK: chave-nao-pode-aparecer\\n' ;; esac; exit 0`)
 exe('systemctl', 'exit 0')
 exe('runuser', '[ "$1" = -u ] && [ "$2" = prefichas-vpn ] && [ "$3" = -- ] || exit 9; shift 3; exec "$@"')
 exe('dbus-run-session', '[ "$1" = -- ] && shift; DBUS_FAKE=1 exec "$@"')
 exe('gnome-keyring-daemon', `case "$*" in *--unlock*) s=$(cat); [ \${#s} -ge 32 ] && echo "CHAVEIRO_FAKE=destravado; export CHAVEIRO_FAKE" ;; esac; exit 0`)
-exe('script', '[ "$1" = -qec ] && [ "$3" = /dev/null ] || exit 9; PTY_FAKE=1 exec bash -c "$2"'); exe('dbus-launch', 'exit 0'); exe('id', 'case "$*" in "-u prefichas-vpn"|"-g prefichas-vpn") echo 0 ;; prefichas-vpn) exit 0 ;; *) exec /usr/bin/id "$@" ;; esac'); exe('install', 'shift 7; mkdir -p "$1"'); exe('useradd', 'exit 0'); exe('chown', 'exit 0')
+// como um terminal de verdade, ecoa o que é digitado (o pior caso: antes do FortiClient desligar o eco)
+exe('script', '[ "$1" = -qec ] && [ "$3" = /dev/null ] || exit 9; IFS= read -r l; printf "%s\\n" "$l"; { printf "%s\\n" "$l"; cat; } | PTY_FAKE=1 bash -c "$2"'); exe('dbus-launch', 'exit 0'); exe('id', 'case "$*" in "-u prefichas-vpn"|"-g prefichas-vpn") echo 0 ;; prefichas-vpn) exit 0 ;; *) exec /usr/bin/id "$@" ;; esac'); exe('install', 'shift 7; mkdir -p "$1"'); exe('useradd', 'exit 0'); exe('chown', 'exit 0')
 exe('dpkg-query', "printf '7.4.3.1714'")
 // túnel no ar = arquivo "tunel"; "full" = o FortiGate empurra a rota da internet (split tunnel desligado)
 writeFileSync(join(T, 'tunel'), '')
@@ -149,9 +150,10 @@ test('SSL-VPN pelo painel: responde o assistente (gateway, porta, usuário), con
   writeFileSync(LOG, '')
   const r = pedir(SSL)
   assert.equal(r.tarefa.situacao, 'concluida', r.log)
-  assert.equal(readFileSync(join(T, 'edit-respostas'), 'utf8'), 'ecruz.exemplo.com.br|10443|vpn_acampamento')
+  assert.equal(readFileSync(join(T, 'edit-respostas'), 'utf8'), 'ecruz.exemplo.com.br|10443|2|3')
   assert.equal(readFileSync(join(T, 'senha-recebida'), 'utf8'), SSL.senha)
   assert.match(r.log, /Remote Gateway/, 'o log mostra as perguntas do assistente (para ajustar se a Fortinet mudar)')
+  assert.doesNotMatch(r.log, /Pipe quebrado|Broken pipe/)
   assert.match(r.log, /VPN conectada/)
   const env = spawnSync('bash', ['-c', `. '${join(D.etc, 'vpn-forticlient.env')}'; printf '%s|%s|%s|%s' "$VPN_GATEWAY" "$VPN_PORTA" "$VPN_USUARIO" "$VPN_REDES"`], { encoding: 'utf8' }).stdout
   assert.equal(env, 'ecruz.exemplo.com.br|10443|vpn_acampamento|192.168.1.0/24,192.168.50.0/24')
