@@ -40,8 +40,13 @@ fc() {
   local t=(); [ -n "${FC_TIMEOUT:-}" ] && t=(timeout "$FC_TIMEOUT")
   if [ -z "$SO_USUARIO" ]; then "${t[@]}" forticlient "$@"; return; fi
   [ -r "$CHAVEIRO" ] || erro "Usuário da VPN não preparado: rode sudo ./scripts/vpn-fortinet.sh configurar."
+  # o FortiClient exige a pasta de execução do usuário (XDG_RUNTIME_DIR, /run/user/<uid>), que só existe com
+  # login; o usuário da VPN nunca faz login, então ela é criada aqui (só dele, 700)
+  local uid rt; uid="$(id -u "$SO_USUARIO" 2>/dev/null)" || erro "Usuário $SO_USUARIO não existe: rode sudo ./scripts/vpn-fortinet.sh configurar."
+  rt="${PREFICHAS_VPN_RUNTIME_BASE:-/run/user}/$uid"
+  [ -d "$rt" ] && [ ! -L "$rt" ] || install -d -m 700 -o "$SO_USUARIO" -g "$(id -g "$SO_USUARIO")" "$rt"
   # a senha do chaveiro vai pelo descritor 3 (aberto pelo root); o usuário da VPN não consegue ler o arquivo
-  "${t[@]}" runuser -u "$SO_USUARIO" -- env -i HOME="$SO_HOME" PATH="${PREFICHAS_VPN_PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}" LANG=C.UTF-8 ${TERM:+TERM="$TERM"} FC_PTY="${FC_PTY:-}" \
+  "${t[@]}" runuser -u "$SO_USUARIO" -- env -i HOME="$SO_HOME" PATH="${PREFICHAS_VPN_PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}" LANG=C.UTF-8 XDG_RUNTIME_DIR="$rt" ${TERM:+TERM="$TERM"} FC_PTY="${FC_PTY:-}" \
     dbus-run-session -- bash -c 'eval "$(gnome-keyring-daemon --unlock --components=secrets <&3 2>/dev/null)" >/dev/null; exec 3<&-; gnome-keyring-daemon --start --components=secrets >/dev/null 2>&1 || true; if [ -n "$FC_PTY" ]; then exec script -qec "$(printf "%q " forticlient "$@")" /dev/null; fi; exec forticlient "$@"' fc "$@" 3< "$CHAVEIRO"
 }
 preparar_usuario() { # usuário de sistema sem login + D-Bus + chaveiro

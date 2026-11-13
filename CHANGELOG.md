@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 2.28.1 — FortiClient: pasta de execução do usuário
+
+- Correção de `Error: failed to find runtime user dir`: o FortiClient exige `XDG_RUNTIME_DIR` (`/run/user/<uid>`), que só existe quando alguém faz login. O script cria essa pasta para o usuário `prefichas-vpn` (dono só ele, 700) e a informa a cada comando do FortiClient.
+
 ## 2.28.0 — Senha da VPN pelo painel
 
 - **Correção:** o FortiClient 7.4 usa `--username` (não `--user`/`--password`, que não existem nessa versão); a senha é pedida no prompt. O `configurar` agora conecta com `--username … --save-password --always-up --auto-connect`, e a reconexão automática também informa o usuário.
