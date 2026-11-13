@@ -227,8 +227,10 @@ function validarPedido(c) {
     if (!senha || senha.length > 128 || /[\u0000-\u001f\u007f]/.test(senha)) e.senha = 'Informe a senha da VPN (até 128 caracteres).'
     if (!redes.length || redes.length > 16 || !redes.every((r) => /^(\d{1,3}\.){3}\d{1,3}\/(\d|[12]\d|3[0-2])$/.test(r) && r.split('/')[0].split('.').every((o) => Number(o) <= 255))) e.redes = 'Informe as redes internas no formato 192.168.10.0/24 (separe várias por vírgula).'
     else if (redes.some((r) => r.endsWith('/0'))) e.redes = 'Todo o tráfego pela VPN (/0) derrubaria o site.'
+    const cert = String(c.cert_sha1 ?? '').trim().toUpperCase().replace(/\s+/g, '')
+    if (cert && !/^([0-9A-F]{2}:){19}[0-9A-F]{2}$/.test(cert)) e.cert_sha1 = 'Impressão digital SHA1 no formato AA:BB:CC:… (20 pares).'
     if (Object.keys(e).length) return { erros: e }
-    return { pedido: { acao, perfil, gateway, porta: String(porta), usuario, redes: redes.join(','), senha } }
+    return { pedido: { acao, perfil, gateway, porta: String(porta), usuario, redes: redes.join(','), senha, cert_sha1: cert } }
   }
   if (acao === 'vpn-senha') {
     const senha = typeof c.senha === 'string' ? c.senha : ''

@@ -23,14 +23,21 @@ writeFileSync(CLI_EMS, 'VPN CLI interface\nEndpoint Control CLI interface\nvpn c
 const SO_HOME = join(T, 'home-vpn')
 // como o FortiClient 7.4 de verdade: recusa root. Aqui "não é root" = rodou pelo runuser (HOME do usuário da VPN) numa sessão D-Bus
 exe('forticlient', `[ -n "$XDG_RUNTIME_DIR" ] && [ -d "$XDG_RUNTIME_DIR" ] || { echo "Error: failed to find runtime user dir" >&2; exit 1; }
-[ "$HOME" = "${SO_HOME}" ] && [ -n "$DBUS_FAKE" ] && [ "$CHAVEIRO_FAKE" = destravado ] || { echo 'Error: please run this command under non-root user.' >&2; exit 1; }
+[ "$HOME" = "${SO_HOME}" ] && { [ -n "$DBUS_FAKE" ] || [ -n "$DBUS_SESSION_BUS_ADDRESS" ]; } && [ "$CHAVEIRO_FAKE" = destravado ] || { echo 'Error: please run this command under non-root user.' >&2; exit 1; }
 case "$2" in
-  connect) if [ -n "$PTY_FAKE" ]; then IFS= read -r pw; printf '%s' "$pw" > "${T}/senha-recebida"; fi; [ -e "${T}/recusa" ] || touch "${T}/tunel" ;;
+  connect) if [ -n "$PTY_FAKE" ]; then case "$*" in *--password*) IFS= read -r pw; printf '%s' "$pw" > "${T}/senha-recebida" ;; esac; fi
+    if [ -e "${T}/cert-ruim" ]; then printf 'Reason: X509 verify certificate failed\nConfirm (y/n) [default=n]:'; IFS= read -r y || y=; [ "$y" = y ] || { echo 'Notification: Login canceled'; exit 0; }; fi
+    [ -e "${T}/recusa" ] || touch "${T}/tunel"; echo 'Status: Connected' ;;
   disconnect) rm -f "${T}/tunel" ;;
-  edit) if [ -n "$PTY_FAKE" ]; then printf 'Remote Gateway: '; IFS= read -r g; printf 'Port [default=443]: '; IFS= read -r p; printf 'Authentication (1.prompt / 2.save / 3.disable) [default=1]: '; IFS= read -r a; printf 'Certificate Type (1.local (pkcs12) / 2.smartcard (pkcs11) / 3.disable) [current=disable]: '; IFS= read -r c; printf '%s|%s|%s|%s' "$g" "$p" "$a" "$c" > "${T}/edit-respostas"; echo 'DONE.'; fi ;;
+  edit) if [ -n "$PTY_FAKE" ]; then printf 'Remote Gateway: '; IFS= read -r g; printf 'Port [default=443]: '; IFS= read -r p; printf 'Authentication (1.prompt / 2.save / 3.disable) [default=1]: '; IFS= read -r a; u=-; if [ "$a" = 2 ]; then printf 'Username: '; IFS= read -r u; fi; printf 'Certificate Type (1.local (pkcs12) / 2.smartcard (pkcs11) / 3.disable) [current=disable]: '; IFS= read -r c; printf '%s|%s|%s|%s|%s' "$g" "$p" "$a" "$u" "$c" > "${T}/edit-respostas"; echo 'DONE.'; fi ;;
 esac
 case "$2" in status) printf 'Status: Connected\\nRemote gateway: vpn.empresa.com.br\\nPassword: segredo-nao-pode-aparecer\\n' ;; list) printf 'prefichas  ipsec  vpn.empresa.com.br\\nPSK: chave-nao-pode-aparecer\\n' ;; esac; exit 0`)
-exe('systemctl', 'exit 0')
+exe('systemctl', 'exit 0'); exe('loginctl', 'exit 0'); exe('logger', 'exit 0')
+// certificado do FortiGate: confiável por padrão; com "cert-ruim", autoassinado com a impressão digital de "fp"
+exe('openssl', `case "$1" in
+  s_client) cat >/dev/null; if [ -e "${T}/cert-ruim" ]; then case "$*" in *-verify_return_error*) exit 1 ;; esac; fi; echo CERT ;;
+  x509) cat >/dev/null; echo "sha1 Fingerprint=$(cat "${T}/fp" 2>/dev/null)" ;;
+esac; exit 0`)
 exe('runuser', '[ "$1" = -u ] && [ "$2" = prefichas-vpn ] && [ "$3" = -- ] || exit 9; shift 3; exec "$@"')
 exe('dbus-run-session', '[ "$1" = -- ] && shift; DBUS_FAKE=1 exec "$@"')
 exe('gnome-keyring-daemon', `case "$*" in *--unlock*) s=$(cat); [ \${#s} -ge 32 ] && echo "CHAVEIRO_FAKE=destravado; export CHAVEIRO_FAKE" ;; esac; exit 0`)
@@ -150,7 +157,7 @@ test('SSL-VPN pelo painel: responde o assistente (gateway, porta, usuário), con
   writeFileSync(LOG, '')
   const r = pedir(SSL)
   assert.equal(r.tarefa.situacao, 'concluida', r.log)
-  assert.equal(readFileSync(join(T, 'edit-respostas'), 'utf8'), 'ecruz.exemplo.com.br|10443|2|3')
+  assert.equal(readFileSync(join(T, 'edit-respostas'), 'utf8'), 'ecruz.exemplo.com.br|10443|2|vpn_acampamento|3')
   assert.equal(readFileSync(join(T, 'senha-recebida'), 'utf8'), SSL.senha)
   assert.match(r.log, /Remote Gateway/, 'o log mostra as perguntas do assistente (para ajustar se a Fortinet mudar)')
   assert.doesNotMatch(r.log, /Pipe quebrado|Broken pipe/)
@@ -188,4 +195,31 @@ test('emergência pelo painel: desligar a VPN e liberar o SSH', { skip: !root &&
   exe('ufw', 'exit 0')
   const s2 = pedir({ acao: 'ssh-abrir' })
   assert.equal(s2.tarefa.situacao, 'concluida', s2.log); assert.match(readFileSync(LOG, 'utf8'), /ufw allow 22\/tcp/)
+})
+
+test('certificado autoassinado: sem a impressão digital confirmada não conecta (e mostra a impressão); com ela, responde "y" sozinho', { skip: !root && 'precisa de root' }, () => {
+  const FP = '40:A5:0D:0D:6C:4A:24:F1:F7:A9:2F:2E:3B:8C:4F:35:80:A2:EE:3D'
+  writeFileSync(join(T, 'cert-ruim'), ''); writeFileSync(join(T, 'fp'), FP); spawnSync('rm', ['-f', join(T, 'tunel')])
+  let r = pedir(SSL)
+  assert.equal(r.tarefa.situacao, 'erro', r.log); assert.match(r.log, new RegExp(FP)); assert.match(r.log, /Impressão digital do certificado/)
+  assert.equal(existsSync(join(T, 'tunel')), false)
+  r = pedir({ ...SSL, cert_sha1: '11:22:33:44:55:66:77:88:99:00:AA:BB:CC:DD:EE:FF:00:11:22:33' })
+  assert.equal(r.tarefa.situacao, 'erro', 'impressão diferente (outro servidor no meio): recusa'); assert.equal(existsSync(join(T, 'tunel')), false)
+  r = pedir({ ...SSL, cert_sha1: FP })
+  assert.equal(r.tarefa.situacao, 'concluida', r.log); assert.match(r.log, /VPN conectada/)
+  // a reconexão automática também responde, porque a impressão ficou gravada
+  spawnSync('rm', ['-f', join(T, 'tunel')]); direto(['vigiar'])
+  assert.ok(existsSync(join(T, 'tunel')), 'o vigia reconectou respondendo "y"')
+  // se o certificado mudar, o vigia NÃO reconecta
+  writeFileSync(join(T, 'fp'), '11:22:33:44:55:66:77:88:99:00:AA:BB:CC:DD:EE:FF:00:11:22:33'); spawnSync('rm', ['-f', join(T, 'tunel')]); direto(['vigiar'])
+  assert.equal(existsSync(join(T, 'tunel')), false)
+  spawnSync('rm', ['-f', join(T, 'cert-ruim')])
+})
+
+test('sessão permanente do usuário da VPN: com /run/user/<uid>/bus, o FortiClient usa esse barramento (o serviço de conexão só acha ele)', { skip: !root && 'precisa de root' }, () => {
+  mkdirSync(join(T, 'run-user/0'), { recursive: true }); writeFileSync(join(T, 'run-user/0/bus'), ''); writeFileSync(LOG, '')
+  direto(['status'])
+  const log = readFileSync(LOG, 'utf8')
+  assert.match(log, /DBUS_SESSION_BUS_ADDRESS=unix:path=\S+run-user\/0\/bus/); assert.doesNotMatch(log, /dbus-run-session/)
+  spawnSync('rm', ['-f', join(T, 'run-user/0/bus')])
 })

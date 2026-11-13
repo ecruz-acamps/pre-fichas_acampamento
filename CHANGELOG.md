@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 2.31.0 — VPN: sessão permanente e certificado do FortiGate
+
+Ajustes a partir do teste real na VM (FortiClient VPN 7.4.3 + FortiGate SSL-VPN):
+- **Sessão permanente do usuário da VPN** (`loginctl enable-linger` + `dbus-user-session`): o serviço de conexão do FortiClient procura a sessão D-Bus em `/run/user/<uid>/bus` e falhava com `Get DBUS session bus address was failed` / `Load VPN profile was failed` usando uma sessão temporária.
+- **Respostas do assistente na ordem real:** gateway, porta, `2` (salvar), **usuário** (perguntado só com "salvar") e `3` (sem certificado de cliente).
+- **Certificado autoassinado do FortiGate:** o FortiClient pergunta "Confirm (y/n)" a cada conexão. O painel tem o campo **Impressão digital do certificado (SHA1)**: a resposta "y" só é dada se o certificado apresentado tiver exatamente essa impressão (se mudar, não conecta — proteção contra alguém no meio). Sem a impressão, a tarefa mostra a impressão apresentada para conferir no FortiGate. A reconexão automática usa a mesma regra.
+
 ## 2.30.1 — Respostas certas do assistente do FortiClient
 
 - **Segurança:** a senha da VPN podia aparecer no log da tarefa (o terminal virtual ecoava o que era digitado antes do FortiClient pedir a senha). Agora o eco é desligado (`stty -echo`) antes do FortiClient iniciar e toda saída da conexão passa por uma máscara que troca a senha por `********`. Quem configurou antes desta versão deve trocar a senha do usuário da VPN no FortiGate e zerar os logs das tarefas da VPN.

@@ -51,14 +51,19 @@ fc() {
   rt="${PREFICHAS_VPN_RUNTIME_BASE:-/run/user}/$uid"
   [ -d "$rt" ] && [ ! -L "$rt" ] || install -d -m 700 -o "$SO_USUARIO" -g "$(id -g "$SO_USUARIO")" "$rt"
   # a senha do chaveiro vai pelo descritor 3 (aberto pelo root); o usuário da VPN não consegue ler o arquivo
-  "${t[@]}" runuser -u "$SO_USUARIO" -- env -i HOME="$SO_HOME" PATH="${PREFICHAS_VPN_PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}" LANG=C.UTF-8 XDG_RUNTIME_DIR="$rt" ${TERM:+TERM="$TERM"} FC_PTY="${FC_PTY:-}" \
-    dbus-run-session -- bash -c 'eval "$(gnome-keyring-daemon --unlock --components=secrets <&3 2>/dev/null)" >/dev/null; exec 3<&-; gnome-keyring-daemon --start --components=secrets >/dev/null 2>&1 || true; if [ -n "$FC_PTY" ]; then exec script -qec "stty -echo 2>/dev/null; exec $(printf "%q " forticlient "$@")" /dev/null; fi; exec forticlient "$@"' fc "$@" 3< "$CHAVEIRO"
+  # O serviço de conexão do FortiClient procura a sessão D-Bus do usuário em /run/user/<uid>/bus (sessão permanente
+  # do systemd, ligada com "loginctl enable-linger"); uma sessão temporária (dbus-run-session) ele não acha.
+  local sessao=(dbus-run-session --) barramento=()
+  [ -e "$rt/bus" ] && { sessao=(); barramento=(DBUS_SESSION_BUS_ADDRESS="unix:path=$rt/bus"); }
+  "${t[@]}" runuser -u "$SO_USUARIO" -- env -i HOME="$SO_HOME" PATH="${PREFICHAS_VPN_PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}" LANG=C.UTF-8 XDG_RUNTIME_DIR="$rt" "${barramento[@]}" TERM="${TERM:-xterm}" FC_PTY="${FC_PTY:-}" \
+    "${sessao[@]}" bash -c 'eval "$(gnome-keyring-daemon --unlock --components=secrets <&3 2>/dev/null)" >/dev/null; exec 3<&-; gnome-keyring-daemon --start --components=secrets >/dev/null 2>&1 || true; if [ -n "$FC_PTY" ]; then exec script -qec "stty -echo 2>/dev/null; exec $(printf "%q " forticlient "$@")" /dev/null; fi; exec forticlient "$@"' fc "$@" 3< "$CHAVEIRO"
 }
 preparar_usuario() { # usuário de sistema sem login + D-Bus + chaveiro
   [ -n "$SO_USUARIO" ] || return 0
   local falta=()
   command -v dbus-run-session >/dev/null || falta+=(dbus)
   command -v dbus-launch >/dev/null || falta+=(dbus-x11)
+  [ -e /usr/lib/systemd/user/dbus.socket ] || [ -e /lib/systemd/user/dbus.socket ] || falta+=(dbus-user-session)
   command -v gnome-keyring-daemon >/dev/null || falta+=(gnome-keyring)
   if [ "${#falta[@]}" -gt 0 ]; then
     echo "→ Instalando ${falta[*]} (sessão e chaveiro para o FortiClient sem tela)…"
@@ -68,6 +73,10 @@ preparar_usuario() { # usuário de sistema sem login + D-Bus + chaveiro
   mkdir -p "$SO_HOME"; chown "$SO_USUARIO": "$SO_HOME"; chmod 700 "$SO_HOME"
   mkdir -p "$ETC_PF" && chmod 700 "$ETC_PF"
   [ -s "$CHAVEIRO" ] || ( umask 077; head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$CHAVEIRO" )
+  # sessão permanente do usuário (sem login): cria /run/user/<uid>/bus, que o FortiClient precisa para conectar
+  loginctl enable-linger "$SO_USUARIO" >/dev/null 2>&1 || true
+  local uid; uid="$(id -u "$SO_USUARIO")"
+  for _ in 1 2 3 4 5 6 7 8 9 10; do [ -e "${PREFICHAS_VPN_RUNTIME_BASE:-/run/user}/$uid/bus" ] && break; sleep "${VPN_ESPERA_PASSO:-1}"; done
 }
 # Configuração salva (no "configurar" e no "registrar" vale o que for informado agora)
 case "${1:-configurar}" in configurar|registrar|ssl) ;; *) [ -r "$ESTADO" ] && . "$ESTADO" ;; esac
@@ -140,6 +149,31 @@ proteger() { # depois de conectar: se a internet passou a sair pela VPN, derruba
   erro "O FortiGate mandou TODO o tráfego pela VPN (split tunnel desligado): o site e o SSH ficariam fora do ar. Desconectei e desliguei a reconexão automática. Ligue o split tunnel no portal SSL-VPN do FortiGate (só as redes internas) e configure de novo."
 }
 limpar_saida() { sed -e 's/\x1b\[[0-9;?]*[A-Za-z]//g' -e 's/\r//g' | grep -viE 'pass|senha|secret|key' | grep -v '^[[:space:]]*$' || true; }
+# ---- certificado do FortiGate ---------------------------------------------------------------------------------
+# Com certificado autoassinado o FortiClient pergunta "Confirm (y/n)" a cada conexão. Só respondemos "y" se a
+# impressão digital SHA1 que o servidor apresenta for EXATAMENTE a informada (VPN_CERT_SHA1, conferida no FortiGate).
+cert_sha1() {
+  echo | timeout 15 openssl s_client -connect "$VPN_GATEWAY:$VPN_PORTA" -servername "$VPN_GATEWAY" 2>/dev/null \
+    | openssl x509 -noout -fingerprint -sha1 2>/dev/null | cut -d= -f2 | tr 'a-f' 'A-F'
+}
+cert_confiavel() { echo | timeout 15 openssl s_client -connect "$VPN_GATEWAY:$VPN_PORTA" -servername "$VPN_GATEWAY" -verify_hostname "$VPN_GATEWAY" -verify_return_error >/dev/null 2>&1; }
+# imprime a resposta para a pergunta do certificado ("" se não haverá pergunta, "y" se a impressão confere); erro se não confere
+resposta_cert() {
+  [ -n "${VPN_GATEWAY:-}" ] && [ -n "${VPN_PORTA:-}" ] || { echo ""; return 0; }
+  cert_confiavel && { echo ""; return 0; }
+  local fp; fp="$(cert_sha1)"
+  [ -n "$fp" ] || { echo "✗ Não consegui ler o certificado de $VPN_GATEWAY:$VPN_PORTA (o FortiGate responde nesse endereço e porta?)." >&2; return 1; }
+  if [ -n "${VPN_CERT_SHA1:-}" ] && [ "$fp" = "$(printf '%s' "$VPN_CERT_SHA1" | tr 'a-f' 'A-F')" ]; then echo y; return 0; fi
+  echo "✗ O certificado do FortiGate não é confiável (autoassinado ou sem a cadeia) e a impressão digital não foi confirmada." >&2
+  echo "  Impressão digital SHA1 apresentada: $fp" >&2
+  echo "  Confira no FortiGate (System → Certificates, o certificado do SSL-VPN). Se for a mesma, informe-a no campo" >&2
+  echo "  \"Impressão digital do certificado\" do painel. O ideal é um certificado válido (Let's Encrypt no próprio FortiGate)." >&2
+  return 1
+}
+conectar_salva() { # reconexão com a senha salva; responde a pergunta do certificado só se a impressão digital confere
+  local y; y="$(resposta_cert 2>/dev/null)" || { logger -t prefichas-vpn "Certificado do FortiGate não confere com a impressão digital registrada: não reconectei" 2>/dev/null || true; return 0; }
+  { [ -n "$y" ] && printf '%s\n' "$y"; sleep "${VPN_ESPERA_PTY:-40}"; } 2>/dev/null | FC_PTY=1 FC_TIMEOUT=90 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "${VPN_USUARIO:-}") --always-up >/dev/null 2>&1 || true
+}
 mascarar() { # nunca deixa a senha (em $SENHA) passar para o log, mesmo se o terminal a ecoar
   local l
   while IFS= read -r l; do [ -n "${SENHA:-}" ] && l="${l//"$SENHA"/********}"; printf '%s\n' "$l"; done
@@ -147,7 +181,8 @@ mascarar() { # nunca deixa a senha (em $SENHA) passar para o log, mesmo se o ter
 conectar_com_senha() { # senha em $SENHA; digitada no prompt do FortiClient por pseudo-terminal
   ( FC_TIMEOUT=30 fc vpn disconnect ) >/dev/null 2>&1 || true
   sleep 2
-  { printf '%s\n' "$SENHA"; sleep "${VPN_ESPERA_PTY:-40}"; } | FC_PTY=1 FC_TIMEOUT=60 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "$VPN_USUARIO" pedir-senha) --save-password --always-up --auto-connect 2>&1 | mascarar | limpar_saida | tail -15 || true
+  local y; y="$(resposta_cert)" || { SENHA=""; return 1; }
+  { printf '%s\n' "$SENHA"; [ -n "$y" ] && printf '%s\n' "$y"; sleep "${VPN_ESPERA_PTY:-40}"; } 2>/dev/null | FC_PTY=1 FC_TIMEOUT=60 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "$VPN_USUARIO" pedir-senha) --save-password --always-up --auto-connect 2>&1 | mascarar | limpar_saida | tail -15 || true
   SENHA=""
   for _ in $(seq 1 20); do { tunel_ativo || tudo_pela_vpn; } && break; sleep "${VPN_ESPERA_PASSO:-3}"; done
   proteger
@@ -164,7 +199,7 @@ validar_redes() {
 }
 gravar_config() {
   mkdir -p "$ETC_PF" && chmod 700 "$ETC_PF"
-  ( umask 077; printf 'VPN_PERFIL=%q\nVPN_REDES=%q\nVPN_USUARIO=%q\nVPN_GATEWAY=%q\nVPN_PORTA=%q\n' "$PERFIL" "$VPN_REDES" "$VPN_USUARIO" "${VPN_GATEWAY:-}" "${VPN_PORTA:-}" > "$ESTADO" )
+  ( umask 077; printf 'VPN_PERFIL=%q\nVPN_REDES=%q\nVPN_USUARIO=%q\nVPN_GATEWAY=%q\nVPN_PORTA=%q\nVPN_CERT_SHA1=%q\n' "$PERFIL" "$VPN_REDES" "$VPN_USUARIO" "${VPN_GATEWAY:-}" "${VPN_PORTA:-}" "${VPN_CERT_SHA1:-}" > "$ESTADO" )
 }
 instalar_vigia() { # a cada 2 minutos, se o túnel caiu, reconecta com a senha salva no FortiClient
   cat > "$UNIDADES/${VIGIA}.service" <<UNIT
@@ -244,7 +279,7 @@ vigiar)
   # Chamado pelo systemd: reconecta se o túnel caiu (usa a senha salva no FortiClient)
   tunel_ativo && exit 0
   logger -t prefichas-vpn "Túnel FortiClient fora do ar: reconectando o perfil ${VPN_PERFIL:-$PERFIL}"
-  FC_TIMEOUT=90 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "${VPN_USUARIO:-}") --always-up </dev/null >/dev/null 2>&1 || true
+  conectar_salva
   sleep "${VPN_ESPERA_PASSO:-5}"; proteger
   ;;
 estado-json)
@@ -261,9 +296,9 @@ estado-json)
   versao=""; [ "$inst" = true ] && versao="$(dpkg-query -W -f='${Version}' forticlient 2>/dev/null || true)"
   ems=false; [ "$inst" = true ] && edicao_completa && ems=true
   jq -n --argjson ems "$ems" --argjson i "$inst" --argjson c "$conf" --argjson k "$con" --argjson v "$vig" --arg r "${VPN_REDES:-}" --arg d "$det" --arg l "$perfis" \
-    --arg gw "${VPN_GATEWAY:-}" --arg pt "${VPN_PORTA:-}" --arg perfil "${VPN_PERFIL:-$PERFIL}" --arg u "${VPN_USUARIO:-}" --arg ip "$(ip_na_vpn || true)" --arg ver "$versao" --arg linha "$VERSAO" \
+    --arg gw "${VPN_GATEWAY:-}" --arg pt "${VPN_PORTA:-}" --arg cf "${VPN_CERT_SHA1:-}" --arg perfil "${VPN_PERFIL:-$PERFIL}" --arg u "${VPN_USUARIO:-}" --arg ip "$(ip_na_vpn || true)" --arg ver "$versao" --arg linha "$VERSAO" \
     '{tipo:"forticlient", instalado:$i, configurada:$c, conectada:$k, vigia:$v, redes:($r|split(",")|map(select(length>0))), perfil:$perfil,
-      usuario:$u, gateway:$gw, porta:$pt, ip_na_vpn:$ip, detalhe:$d, perfis:$l, versao:$ver, linha_esperada:$linha, edicao_ems:$ems,
+      usuario:$u, gateway:$gw, porta:$pt, cert_sha1:$cf, ip_na_vpn:$ip, detalhe:$d, perfis:$l, versao:$ver, linha_esperada:$linha, edicao_ems:$ems,
       versao_ok:($ver == "" or ($ver | startswith($linha + ".")))}'
   ;;
 registrar)
@@ -275,6 +310,11 @@ registrar)
   validar_redes
   VPN_USUARIO="${VPN_USUARIO:-}"
   [ -z "$VPN_USUARIO" ] || [[ "$VPN_USUARIO" =~ ^[A-Za-z0-9@._\\-]{1,128}$ ]] || erro "Usuário inválido."
+  # gateway, porta e impressão digital: os informados agora ou os que já estavam gravados
+  if [ -r "$ESTADO" ]; then
+    eval "$(grep -E '^VPN_(GATEWAY|PORTA|CERT_SHA1)=' "$ESTADO" | sed 's/^/ANT_/')" 2>/dev/null || true
+    VPN_GATEWAY="${VPN_GATEWAY:-${ANT_VPN_GATEWAY:-}}"; VPN_PORTA="${VPN_PORTA:-${ANT_VPN_PORTA:-}}"; VPN_CERT_SHA1="${VPN_CERT_SHA1:-${ANT_VPN_CERT_SHA1:-}}"
+  fi
   preparar_usuario
   gravar_config
   instalar_vigia
@@ -286,7 +326,7 @@ reconectar)
   echo "→ Reconectando a VPN (perfil ${VPN_PERFIL:-$PERFIL})…"
   FC_TIMEOUT=30 fc vpn disconnect >/dev/null 2>&1 || true
   sleep 2
-  FC_TIMEOUT=90 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "${VPN_USUARIO:-}") --always-up </dev/null >/dev/null 2>&1 || true
+  conectar_salva
   for _ in $(seq 1 20); do { tunel_ativo || tudo_pela_vpn; } && break; sleep "${VPN_ESPERA_PASSO:-3}"; done
   proteger
   if tunel_ativo; then systemctl enable --now "${VIGIA}.timer" >/dev/null 2>&1 || true; echo "✓ VPN reconectada."; else erro "A VPN não voltou. Veja: fc vpn status — a senha salva pode ter expirado: rode vpn-fortinet.sh configurar."; fi
@@ -312,6 +352,7 @@ ssl)
   [[ "${VPN_GATEWAY:-}" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$ ]] || erro "Gateway inválido."
   [[ "${VPN_PORTA:-}" =~ ^[0-9]{1,5}$ ]] && [ "$VPN_PORTA" -ge 1 ] && [ "$VPN_PORTA" -le 65535 ] || erro "Porta inválida."
   [[ "${VPN_USUARIO:-}" =~ ^[A-Za-z0-9@._\\-]{1,128}$ ]] || erro "Usuário inválido."
+  [ -z "${VPN_CERT_SHA1:-}" ] || [[ "$VPN_CERT_SHA1" =~ ^([0-9A-Fa-f]{2}:){19}[0-9A-Fa-f]{2}$ ]] || erro "Impressão digital inválida (formato AA:BB:…, 20 pares)."
   validar_redes
   IFS= read -r SENHA || true
   [ -n "$SENHA" ] || erro "Senha vazia."
@@ -323,10 +364,10 @@ ssl)
   sleep 2
   gravar_saida
   echo "→ Criando o perfil SSL-VPN \"$PERFIL\" ($VPN_GATEWAY:$VPN_PORTA, usuário $VPN_USUARIO). Respostas do assistente:"
-  # perguntas do assistente (FortiClient VPN 7.4.3): Remote Gateway, Port, Authentication (1.prompt / 2.save /
-  # 3.disable), Certificate Type (1.pkcs12 / 2.pkcs11 / 3.disable). O usuário não é perguntado: vai no "connect".
+  # perguntas do assistente (FortiClient VPN 7.4.3, conferidas na VM): Remote Gateway, Port, Authentication
+  # (1.prompt / 2.save / 3.disable) → 2, Username (só com "save"), Certificate Type (1.pkcs12 / 2.pkcs11 / 3.disable) → 3.
   # Depois, ENTER (padrão) para o que mais aparecer. Erros de escrita depois que o assistente termina são ignorados.
-  { printf '%s\n' "$VPN_GATEWAY" "$VPN_PORTA" 2 3; for _ in 1 2 3 4; do sleep "${VPN_ESPERA_PASSO:-1}"; printf '\n'; done; sleep "${VPN_ESPERA_PASSO:-4}"; } 2>/dev/null \
+  { printf '%s\n' "$VPN_GATEWAY" "$VPN_PORTA" 2 "$VPN_USUARIO" 3; for _ in 1 2 3 4; do sleep "${VPN_ESPERA_PASSO:-1}"; printf '\n'; done; sleep "${VPN_ESPERA_PASSO:-4}"; } 2>/dev/null \
     | FC_PTY=1 FC_TIMEOUT=40 fc vpn edit "$PERFIL" 2>&1 | limpar_saida | tail -40 | sed 's/^/  │ /' || true
   echo "→ Perfil gravado no FortiClient:"
   ( FC_TIMEOUT=15 fc vpn view "$PERFIL" 2>&1 || FC_TIMEOUT=15 fc vpn list 2>&1 ) | limpar_saida | head -30 | sed 's/^/  │ /' || true
