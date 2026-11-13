@@ -156,6 +156,8 @@ test('backup de todos: cada acampamento vai cifrado para a sua pasta no OneDrive
   mexerFake((e) => { for (const d of ['2025-09-03', '2025-10-05', '2025-11-02', '2025-12-01', '2026-01-02', '2026-01-03', '2026-01-04', '2026-01-05'])
     e.itens['old' + d.replace(/-/g, '')] = { caminho: `PreFichas-Backups/prefichas-a/prefichas-a__${d}_0230.dump.age`, size: 10 } })
   assert.equal(pedir({ acao: 'backup-config', ligado: true, hora: '02:30', tenant_id: G1, client_id: G2, manter_diarios: 3, manter_mensais: 2 }).tarefa.situacao, 'concluida')
+  // túnel único de instalação antiga em /opt/prefichas-tunel: é do sistema, não entra no backup
+  mkdirSync(join(D.opt, 'prefichas-tunel'), { recursive: true }); writeFileSync(join(D.opt, 'prefichas-tunel/.env'), 'TUNNEL_TOKEN=x\n')
   const r = pedir({ acao: 'backup-nuvem' })
   assert.equal(r.tarefa.situacao, 'concluida', r.log)
   const itens = fake().itens
@@ -171,7 +173,8 @@ test('backup de todos: cada acampamento vai cifrado para a sua pasta no OneDrive
   assert.ok(Object.values(itens).some((v) => v.caminho.startsWith('PreFichas-Backups/prefichas-b/')), 'cada acampamento na sua pasta')
   assert.equal(statSync(join(D.dados, 'tmp/envio.dump.age')).size, 0, 'o temporário cifrado é esvaziado')
   assert.equal(spawnSync('grep', ['-rq', 'PGDMP', join(D.dados)]).status, 1, 'nenhum dump em claro no disco do painel')
-  assert.equal(estado('backup-ultimo.json').instancias, 2)
+  assert.equal(estado('backup-ultimo.json').instancias, 2, 'o túnel não conta como acampamento')
+  assert.equal(estado('backup-ultimo.json').falhas, 0)
   assert.deepEqual(Object.keys(estado('backups-nuvem.json').acampamentos).sort(), ['prefichas-a', 'prefichas-b'])
 })
 

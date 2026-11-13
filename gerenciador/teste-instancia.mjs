@@ -114,7 +114,7 @@ test('apagar: sem backup não apaga nada (a menos que peça); recusa o gerenciad
   assert.ok(existsSync(join(D.opt, 'prefichas-z/.env'))); assert.equal(chamadas().filter((x) => /^(tunel|proxy)|compose/.test(x)).length, 0, 'nada foi tirado do ar nem parado')
   const forcado = pedir({ acao: 'apagar', instancia: 'prefichas-z', confirmar: 'prefichas-z', sem_backup: true })
   assert.equal(forcado.tarefa.situacao, 'concluida', forcado.log); assert.ok(chamadas().includes('proxy remover z.exemplo.com.br')); assert.equal(existsSync(join(D.opt, 'prefichas-z')), false)
-  for (const nome of ['prefichas-gerenciador', 'prefichas-proxy', '../opt', 'prefichas-nao-existe']) {
+  for (const nome of ['prefichas-gerenciador', 'prefichas-proxy', 'prefichas-tunel', '../opt', 'prefichas-nao-existe']) {
     mkdirSync(join(D.opt, nome.replace(/\//g, '_')), { recursive: true })
     const x = pedir({ acao: 'apagar', instancia: nome, confirmar: nome }); assert.equal(x.tarefa.situacao, 'erro', nome)
   }

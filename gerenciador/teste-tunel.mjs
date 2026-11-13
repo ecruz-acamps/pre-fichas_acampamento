@@ -71,10 +71,11 @@ exit 0
 })
 after(() => servidor.close())
 
+let extra = {}
 const rodar = (...args) => new Promise((resolve) => {
   const p = spawn('bash', [join(RAIZ, 'scripts/tunel-compartilhado.sh'), ...args], {
     env: { ...process.env, PATH: `${BIN}:${process.env.PATH}`, PREFICHAS_ETC: ETC, TUNEL_PASTA: PASTA, INSTANCIAS_RAIZ: INST, CF_API_URL: url,
-      CF_API_TOKEN: '', TUNEL_VERIFICAR_BASE: url, TUNEL_ESPERA: '0' } })
+      CF_API_TOKEN: '', TUNEL_VERIFICAR_BASE: url, TUNEL_ESPERA: '0', ...extra } })
   let saida = ''; p.stdout.on('data', (c) => (saida += c)); p.stderr.on('data', (c) => (saida += c))
   p.on('close', (codigo) => resolve({ codigo, saida }))
 })
@@ -185,4 +186,18 @@ test('unificar: se o site NÃO responde pelo túnel único, o DNS volta ao túne
   assert.equal(est.dns.find((d) => d.name === 'antigo-c.movimentocampista.com.br').content, 'TC.cfargotunnel.com', 'DNS restaurado')
   assert.match(readFileSync(join(pasta, '.env'), 'utf8'), /COMPOSE_PROFILES=tunel/); assert.match(readFileSync(join(pasta, '.env'), 'utf8'), /TUNEL_TOKEN=segredo-c/)
   assert.equal(est.tuneis.find((t) => t.id === 'TC').deleted_at, null, 'o túnel antigo não é apagado')
+})
+
+test('religar: se o container do túnel foi apagado, sobe de novo no MESMO túnel; e muda a pasta antiga de /opt para fora das instâncias', async () => {
+  const { renameSync, rmSync } = await import('node:fs')
+  const tuneis = est.tuneis.length, dns = est.dns.length
+  rmSync(join(tmp, 'tunel-no-ar'), { force: true })               // "docker rm" feito à mão
+  const antiga = join(tmp, 'opt-antiga-prefichas-tunel')
+  renameSync(PASTA, antiga)                                           // instalação antiga: pasta em /opt/prefichas-tunel
+  extra = { TUNEL_PASTA_ANTIGA: antiga }
+  const r = await rodar('religar'); extra = {}
+  assert.equal(r.codigo, 0, r.saida); assert.match(r.saida, /no ar de novo/); assert.match(r.saida, /movido/)
+  assert.ok(existsSync(join(PASTA, 'docker-compose.yml')) && !existsSync(antiga), 'a pasta saiu do lugar antigo')
+  assert.ok(existsSync(join(tmp, 'tunel-no-ar')), 'o cloudflared subiu')
+  assert.equal(est.tuneis.length, tuneis, 'não cria outro túnel'); assert.equal(est.dns.length, dns, 'não mexe no DNS')
 })

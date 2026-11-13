@@ -187,7 +187,7 @@ function validarPedido(c) {
     return { pedido: { acao, instancia: c.instancia, habilitar, ...(habilitar ? { tenant_id: tenant, client_id: cliente } : {}), ...(segredo ? { segredo } : {}) } }
   }
   if (acao === 'apagar' || acao === 'trocar-link') {
-    if (!RE.instancia.test(c.instancia ?? '') || ['prefichas-gerenciador', 'prefichas-proxy'].includes(c.instancia)) return { erros: { instancia: 'Instância inválida.' } }
+    if (!RE.instancia.test(c.instancia ?? '') || ['prefichas-gerenciador', 'prefichas-proxy', 'prefichas-tunel'].includes(c.instancia)) return { erros: { instancia: 'Instância inválida.' } }
     const existe = (lerJson(join(ESTADO, 'instancias.json'), { instancias: [] }).instancias ?? []).some((i) => i.pasta === c.instancia)
     if (!existe) return { erros: { instancia: 'Instância não encontrada.' } }
     if (acao === 'apagar') {
@@ -242,7 +242,7 @@ function validarPedido(c) {
     if (Object.keys(e).length) return { erros: e }
     return { pedido: { acao, host, porta, usuario, remetente, aplicar: c.aplicar === true, ...(senha ? { senha } : {}) } }
   }
-  if (acao === 'email-teste' || acao === 'email-remover' || acao === 'email-aplicar' || acao === 'tunel-unificar') return { pedido: { acao } }
+  if (acao === 'email-teste' || acao === 'email-remover' || acao === 'email-aplicar' || acao === 'tunel-unificar' || acao === 'tunel-religar') return { pedido: { acao } }
   // ---- backup na nuvem (OneDrive) e mensagens de aniversário (textbee): só o painel da VM mexe nisso
   const instanciaExiste = (i) => RE.instancia.test(i ?? '') && (lerJson(join(ESTADO, 'instancias.json'), { instancias: [] }).instancias ?? []).some((x) => x.pasta === i)
   const hora = (v) => /^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(String(v ?? ''))

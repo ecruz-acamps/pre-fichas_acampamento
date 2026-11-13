@@ -37,7 +37,9 @@ estado_tarefa() { # id acao alvo situacao mensagem por inicio
     "$1" "$2" "$(json_str "$3")" "$4" "$(json_str "$5")" "$(json_str "$6")" "$7" \
     "$([ "$4" = executando ] && echo null || echo "\"$(date -Iseconds)\"")" > "$f.tmp" && mv -f "$f.tmp" "$f"
 }
-instancias() { for f in "$OPT"/prefichas-*/.env; do [ -f "$f" ] && basename "$(dirname "$f")"; done | grep -vx 'prefichas-gerenciador\|prefichas-proxy' || true; }
+# Pastas do próprio sistema (painel, proxy, túnel único): nunca são acampamentos (sem backup, sem atualizar, sem apagar)
+reservada() { case "$1" in prefichas-gerenciador|prefichas-proxy|prefichas-tunel) return 0 ;; esac; return 1; }
+instancias() { local f n; for f in "$OPT"/prefichas-*/.env; do [ -f "$f" ] || continue; n="$(basename "$(dirname "$f")")"; reservada "$n" || echo "$n"; done; }
 valor_env() { { grep -E "^$2=" "$OPT/$1/.env" 2>/dev/null || true; } | tail -1 | cut -d= -f2-; }
 
 # ---------------------------------------------------------------- ações
@@ -54,6 +56,7 @@ acao_nova() { # arquivo
   slug="$(printf '%s' "$slug" | tr 'A-Z' 'a-z' | tr -c 'a-z0-9' '-' | sed 's/-\+/-/g; s/^-//; s/-$//')"
   [ -n "$slug" ] || { echo "✗ Nome sem letras."; return 1; }
   pasta="/opt/prefichas-$slug"
+  reservada "prefichas-$slug" && { echo "✗ Este nome é reservado pelo sistema. Escolha outro."; return 1; }
   [ ! -e "$pasta" ] || { echo "✗ Já existe uma instância em $pasta."; return 1; }
   args=(--nome "$nome" --admin "$email" --nome-admin "$anome")
   case "$pub" in
@@ -87,7 +90,7 @@ acao_nova() { # arquivo
 limpar_instancia_incompleta() {
   local pasta="$1"
   casa "$pasta" '^/opt/prefichas-[a-z0-9-]{1,80}$' || return 0
-  case "$pasta" in /opt/prefichas-gerenciador|/opt/prefichas-proxy) return 0 ;; esac
+  reservada "$(basename "$pasta")" && return 0
   [ -d "$pasta" ] && [ ! -L "$pasta" ] || return 0
   [ -f "$pasta/docker-compose.yml" ] && (cd "$pasta" && timeout 120 docker compose down -v >/dev/null 2>&1) || true
   rm -rf --one-file-system -- "$pasta"
@@ -278,7 +281,7 @@ acao_apagar() { # arquivo do pedido
   local p="$1" i conf sem pub host dir real dest unidade proj lixo
   i="$(jq -r '.instancia // empty' "$p")"; conf="$(jq -r '.confirmar // empty' "$p")"; sem="$(jq -r '.sem_backup // false' "$p")"
   dir="$OPT/$i"
-  casa "$i" "$RE_INST" && [ "$i" != prefichas-gerenciador ] && [ "$i" != prefichas-proxy ] && [ -d "$dir" ] && [ ! -L "$dir" ] && [ -f "$dir/.env" ] || { echo "✗ Instância inválida: $i"; return 1; }
+  casa "$i" "$RE_INST" && ! reservada "$i" && [ -d "$dir" ] && [ ! -L "$dir" ] && [ -f "$dir/.env" ] || { echo "✗ Instância inválida: $i"; return 1; }
   [ "$conf" = "$i" ] || { echo "✗ Confirmação não confere: digite exatamente o nome da pasta ($i)."; return 1; }
   real="$(readlink -f "$dir")"; [ "$real" = "$OPT/$i" ] || { echo "✗ Pasta fora do lugar esperado."; return 1; }
   proj="$(valor_env "$i" COMPOSE_PROJECT_NAME)"
@@ -326,7 +329,7 @@ acao_trocar_link() { # arquivo do pedido
   local p="$1" i pub novo_tipo sub dom base novo antigo porta tentativas ok=0 url o pj
   i="$(jq -r '.instancia // empty' "$p")"; novo_tipo="$(jq -r '.publicacao // empty' "$p")"
   sub="$(jq -r '.subdominio // empty' "$p")"; dom="$(jq -r '.dominio // empty' "$p" | tr 'A-Z' 'a-z')"
-  casa "$i" "$RE_INST" && [ "$i" != prefichas-gerenciador ] && [ "$i" != prefichas-proxy ] && [ -f "$OPT/$i/.env" ] && [ ! -L "$OPT/$i/.env" ] || { echo "✗ Instância inválida: $i"; return 1; }
+  casa "$i" "$RE_INST" && ! reservada "$i" && [ -f "$OPT/$i/.env" ] && [ ! -L "$OPT/$i/.env" ] || { echo "✗ Instância inválida: $i"; return 1; }
   pub="$(valor_env "$i" PUBLICACAO)"
   case "$pub" in cloudflare|direta) ;; *) echo "✗ Só dá para trocar o link de instâncias publicadas pela Cloudflare ou por domínio direto (esta está como: ${pub:-desconhecida})."; return 1 ;; esac
   antigo="$(host_da_instancia "$i")"; [ "$pub" = cloudflare ] && [ -n "$(valor_env "$i" ENDERECO_PUBLICO)" ] && antigo="$(valor_env "$i" ENDERECO_PUBLICO)"
@@ -450,6 +453,7 @@ processar() { # arquivo do pedido
     atualizar-painel) acao_atualizar_painel >> "$log" 2>&1 && ok=1 ;;
     cloudflare) acao_cloudflare "$tmp" >> "$log" 2>&1 && ok=1 ;;
     cloudflare-remover) acao_cloudflare_remover >> "$log" 2>&1 && ok=1 ;;
+    tunel-religar) "$CODIGO/scripts/tunel-compartilhado.sh" religar >> "$log" 2>&1 && ok=1 ;;
     tunel-unificar) "$CODIGO/scripts/tunel-compartilhado.sh" unificar >> "$log" 2>&1 && ok=1 ;;
     email) acao_email "$tmp" >> "$log" 2>&1 && ok=1 ;;
     email-teste) acao_email_teste "$tmp" >> "$log" 2>&1 && ok=1 ;;
