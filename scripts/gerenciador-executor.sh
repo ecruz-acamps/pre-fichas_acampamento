@@ -403,32 +403,21 @@ Se não foi você que pediu, ignore este e-mail: sua senha continua a mesma." >/
   echo "✓ email-redefinicao: link enviado."
 }
 
-# ---------------------------------------------------------------- VPN (aba Configurações)
-# Qual cliente está instalado: FortiClient (preferido) ou strongSwan (plano B)
-vpn_backend() {
-  if [ -r "$ETC/vpn-forticlient.env" ]; then echo vpn-fortinet.sh
-  elif [ -f /etc/swanctl/conf.d/prefichas.conf ]; then echo vpn-ipsec-strongswan.sh; fi
-}
+# ---------------------------------------------------------------- VPN (aba Configurações): só FortiClient
+# Situação lida pelo vpn-fortinet.sh (instalado, configuração registrada, túnel, vigia). Sem FortiClient: nada a mostrar.
+vpn_backend() { if [ -r "$ETC/vpn-forticlient.env" ] || command -v forticlient >/dev/null 2>&1; then echo vpn-fortinet.sh; fi; }
 acao_vpn_reconectar() {
-  local b; b="$(vpn_backend)"
-  [ -n "$b" ] || { echo "✗ A VPN ainda não foi configurada neste servidor (use o terminal: vpn-fortinet.sh configurar)."; return 1; }
-  "$CODIGO/scripts/$b" reconectar
+  [ -r "$ETC/vpn-forticlient.env" ] || { echo "✗ A VPN ainda não foi configurada neste servidor (Configurações → VPN, ou no terminal: vpn-fortinet.sh configurar)."; return 1; }
+  "$CODIGO/scripts/vpn-fortinet.sh" reconectar
 }
-acao_vpn_credenciais() { # arquivo do pedido
-  local p="$1" b psk senha
-  b="$(vpn_backend)"
-  [ -n "$b" ] || { echo "✗ A VPN ainda não foi configurada neste servidor."; return 1; }
-  if [ "$b" != vpn-ipsec-strongswan.sh ]; then
-    echo "✗ Com o FortiClient, a troca de chave/senha da VPN ainda é feita pelo terminal:"
-    echo "  sudo $CODIGO/scripts/vpn-fortinet.sh configurar"
-    return 1
-  fi
-  psk="$(jq -r '.psk // empty' "$p")"; senha="$(jq -r '.senha // empty' "$p")"
-  [ -z "$psk" ] || casa "$psk" '^[ -~]{4,128}$' || { echo "✗ Chave (PSK) inválida: use de 4 a 128 caracteres comuns."; return 1; }
-  [ -z "$senha" ] || casa "$senha" '^[^[:cntrl:]]{1,256}$' || { echo "✗ Senha inválida."; return 1; }
-  [ -n "$psk$senha" ] || { echo "✗ Informe a nova chave e/ou a nova senha."; return 1; }
-  # os segredos vão por variável de ambiente (não aparecem na lista de processos nem no log)
-  VPN_NOVA_PSK="$psk" VPN_NOVA_SENHA="$senha" "$CODIGO/scripts/$b" trocar-credenciais
+# Grava pelo painel qual perfil do FortiClient usar, as redes internas e o usuário (a senha e a PSK ficam no FortiClient)
+acao_vpn_config() { # {perfil, redes, usuario}
+  local p="$1" perfil redes usuario
+  perfil="$(jq -r '.perfil // empty' "$p")"; redes="$(jq -r '.redes // empty' "$p")"; usuario="$(jq -r '.usuario // empty' "$p")"
+  casa "$perfil" '^[A-Za-z0-9._-]{1,64}$' || { echo "✗ Nome do perfil inválido."; return 1; }
+  casa "$redes" '^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}(,([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}){0,15}$' || { echo "✗ Redes inválidas (ex.: 192.168.10.0/24,192.168.16.0/24)."; return 1; }
+  [ -z "$usuario" ] || casa "$usuario" '^[A-Za-z0-9@._-]{1,128}$' || { echo "✗ Usuário inválido."; return 1; }
+  VPN_PERFIL="$perfil" VPN_REDES="$redes" VPN_USUARIO="$usuario" "$CODIGO/scripts/vpn-fortinet.sh" registrar
 }
 
 acao_atualizar_painel() {
@@ -482,7 +471,7 @@ processar() { # arquivo do pedido
     sms-bloqueio) acao_sms_bloqueio "$tmp" >> "$log" 2>&1 && ok=1 ;;
     trocar-link) acao_trocar_link "$tmp" >> "$log" 2>&1 && ok=1 ;;
     vpn-reconectar) acao_vpn_reconectar >> "$log" 2>&1 && ok=1 ;;
-    vpn-credenciais) acao_vpn_credenciais "$tmp" >> "$log" 2>&1 && ok=1 ;;
+    vpn-config) acao_vpn_config "$tmp" >> "$log" 2>&1 && ok=1 ;;
     atualizar-todas)
       ok=1
       for i in $(instancias); do acao_atualizar "$i" >> "$log" 2>&1 || { ok=0; echo "✗ Falhou: $i" >> "$log"; }; done ;;

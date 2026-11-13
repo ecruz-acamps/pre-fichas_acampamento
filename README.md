@@ -119,7 +119,6 @@ sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh fechar-ssh   # 22 só pe
 - A instalação do FortiClient confere a assinatura do repositório oficial da Fortinet.
 - Só as redes internas passam pelo túnel; o site continua saindo pela internet normal.
 - Emergência (VPN fora e SSH fechado): pelo console da VM, rode `vpn-fortinet.sh abrir-ssh`.
-- Plano B, se o FortiClient não mantiver o túnel IPsec sem tela: `scripts/vpn-ipsec-strongswan.sh`.
 
 Detalhes e o que pedir ao analista de segurança: [manual de instalação](docs/INSTALACAO.md), seção 11d.
 
@@ -207,9 +206,6 @@ Para manter um servidor existente na 1.0, veja a seção 11g do [manual de insta
 
 <p><em>Configurações: colar o token da Cloudflare (conferido antes de ser guardado)</em><br />
 <img src="docs/imagens/41-painel-central-configuracoes.webp" alt="Painel central: aba Configurações com o token da Cloudflare" /></p>
-
-<p><em>Configurações: VPN do servidor (situação, reconectar e troca de credenciais com retorno automático)</em><br />
-<img src="docs/imagens/42-painel-central-vpn-strongswan.webp" alt="Painel central: VPN do servidor" /></p>
 
 <p><em>Publicação na internet pela Cloudflare (painel do acampamento)</em><br />
 <img src="docs/imagens/39-configuracoes-publicacao-cloudflare.webp" alt="Ligar ou desligar a publicação pela Cloudflare" /></p>
@@ -378,7 +374,7 @@ Para manter um servidor existente na 1.0, veja a seção 11g do [manual de insta
 - **Ativação por chave** (`XXX-0000`) e **auditoria** de tudo o que é feito.
 
 **Painel central da VM** (versão 2.0)
-- **Aba Configurações, VPN:** situação do túnel, **Reconectar** e troca de chave/senha com **retorno automático** se o túnel não subir (strongSwan). A configuração inicial e o fechamento da porta 22 ficam só no terminal.
+- **Aba Configurações, VPN (FortiClient):** mostra a configuração (perfil, usuário, redes, IP do servidor na VPN, versão do FortiClient, reconexão automática) e a situação do túnel; **Reconectar** e editar perfil/redes/usuário pelo painel. A instalação, a criação do perfil e o fechamento da porta 22 ficam só no terminal.
 - **Aba Configurações, Cloudflare:** cola o **token da Cloudflare** e o domínio, sem reinstalar; o servidor confere o token e ele nunca mais aparece em tela, auditoria ou log.
 - Mostra todas as instâncias (endereço, publicação, no ar ou fora, versão, memória, porta) e o servidor (CPU, memória, disco, proxy).
 - **Nova instância** pelo navegador; **Atualizar**, **Backup** e **Atualizar todas**; atualizar o próprio painel; tarefas com andamento ao vivo; auditoria.
@@ -515,7 +511,7 @@ gerenciador/                   painel central da VM (servidor, interface, CLI de
 marcas/                        modelo de identidade (.json + logo)
 deploy/                        Caddyfile, Caddyfile.multi, nginx.conf, serviço systemd
 scripts/                       instalação, atualização, backup, proxy compartilhado, Cloudflare,
-                               VPN (FortiClient / strongSwan), executor e instalador do painel central
+                               VPN (FortiClient), executor e instalador do painel central
 instalar.sh                    instalador de um comando (painel central ou acampamento)
 docs/                          manual de uso, manual de instalação, análises de performance
 .github/workflows/imagem.yml   gera a imagem pronta a cada mudança na main

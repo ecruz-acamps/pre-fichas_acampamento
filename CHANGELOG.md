@@ -1,5 +1,12 @@
 # Histórico de versões
 
+## 2.25.0 — VPN só com FortiClient
+
+- **strongSwan removido:** o script `vpn-ipsec-strongswan.sh`, a detecção dele no painel e a troca de chave/senha que só funcionava com ele saíram do sistema. A VPN do servidor passa a ser só o **FortiClient**.
+- **Configurações → VPN do servidor (FortiClient)** mostra a configuração: perfil, usuário, redes internas pela VPN, **IP do servidor na VPN**, **versão do FortiClient** (com aviso se não for da linha 7.4, a do FortiOS 7.4.x do FortiGate), reconexão automática e a situação do túnel. Senha e PSK nunca aparecem (linhas com senha/chave são filtradas do que o FortiClient informa).
+- **Editar/registrar a configuração pelo painel:** perfil, redes e usuário (o perfil é criado no FortiClient pelo terminal); grava `/etc/prefichas/vpn-forticlient.env` e liga a reconexão automática. Serve também para perfis criados à mão.
+- Novo comando `vpn-fortinet.sh registrar` (usado pelo painel).
+
 ## 2.24.0 — backup diário no OneDrive e mensagens de aniversário (painel da VM)
 
 Tudo gerido **só pelo painel da VM** (os administradores dos acampamentos não veem nada disso).
