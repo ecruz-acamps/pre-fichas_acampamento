@@ -98,7 +98,20 @@ function conferirTotp(segredo, codigo, ultimo, janela = [0, -1, 1]) {
 // ------------------------------------------------------------------ usuários, sessões, auditoria
 const ARQ_USUARIOS = join(DADOS, 'usuarios.json')
 const lerUsuarios = () => lerJson(ARQ_USUARIOS, [])
-const sessoes = new Map() // hash do token -> { email, expira }
+// Sessões: hash do token -> { email, expira }. Ficam também em DADOS/sessoes.json (só hashes, modo 600) para que
+// "Atualizar o painel" (que recria o container) não desconecte quem está usando. O token em si nunca é gravado.
+const ARQ_SESSOES = join(DADOS, 'sessoes.json')
+class SessoesGuardadas extends Map {
+  set(k, v) { super.set(k, v); this.salvar(); return this }
+  delete(k) { const r = super.delete(k); if (r) this.salvar(); return r }
+  salvar() { if (this.carregando) return; try { gravarJson(ARQ_SESSOES, Object.fromEntries(this)) } catch { /* sem disco: segue só em memória */ } }
+}
+const sessoes = new SessoesGuardadas()
+sessoes.carregando = true
+for (const [k, v] of Object.entries(lerJson(ARQ_SESSOES, {}) ?? {})) {
+  if (/^[0-9a-f]{64}$/.test(k) && v && typeof v.email === 'string' && Number(v.expira) > Date.now()) sessoes.set(k, { email: v.email, expira: Number(v.expira) })
+}
+sessoes.carregando = false
 const falhas = new Map()  // email -> { n, ate }
 const falhasIp = new Map() // ip -> { n, ate }: limite por origem (além do limite por e-mail)
 const LIMITE_IP = 20
@@ -561,11 +574,12 @@ const servidor = createServer(async (req, res) => {
 })
 
 // limpeza de sessões vencidas
-setInterval(() => { const agora = Date.now(); for (const [k, v] of sessoes) if (v.expira < agora) sessoes.delete(k) }, 60000).unref()
+setInterval(() => { const agora = Date.now(); for (const [k, v] of sessoes) if (v.expira < agora) sessoes.delete(k); sessoes.salvar() }, 60000).unref()   // grava também as renovações
 
 if (process.argv[1] && process.argv[1].endsWith('servidor.mjs')) {
   if (!existsSync(ARQ_USUARIOS)) console.warn('Nenhum usuário. Crie com: node cli.mjs criar-usuario EMAIL')
   try { statSync(PEDIDOS); statSync(ESTADO) } catch { console.error('Pastas de pedidos/estado não encontradas.'); process.exit(1) }
+  for (const sinal of ['SIGTERM', 'SIGINT']) process.once(sinal, () => { sessoes.salvar(); process.exit(0) })   // ao reiniciar, guarda as renovações
   servidor.listen(PORTA, ESCUTAR, () => console.log(`Painel central em http://${ESCUTAR}:${PORTA} (redes permitidas: ${REDES.join(', ')})`))
 }
 export { servidor, validarPedido, permitido, conferirTotp, codigoTotp, ipDoVisitante }

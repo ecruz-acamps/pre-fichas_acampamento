@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 2.32.0 — Atualizar sem desconectar e sem encher o disco
+
+- **"Atualizar o painel" não desconecta mais:** as sessões do painel central ficavam só na memória e sumiam quando o container era recriado. Agora ficam também em `dados/sessoes.json` (só o hash do token, modo 600; o token nunca é gravado), com as renovações gravadas a cada minuto e ao desligar.
+- **Limpeza automática do Docker depois de atualizar** (um acampamento, todos ou o painel): apaga imagens e cache de construção que nenhum container usa e que têm mais de 1 dia. Imagens em uso nunca são apagadas. A tarefa mostra quantos MB foram liberados.
+
 ## 2.31.2 — Senha da VPN guardada pelo próprio sistema
 
 - Na VM, o "salvar senha" do FortiClient gratuito sem tela devolvia uma senha errada na reconexão (`Login failed: Insufficient credential(s)` logo depois de conectar com a senha nova). Agora, quando a conexão com a senha informada dá certo, ela é guardada em `/etc/prefichas/vpn-senha` (só root, 600) e digitada no prompt do FortiClient a cada reconexão (vigia e Reconectar). Uma senha errada não substitui a que funciona. `remover` apaga o arquivo.
