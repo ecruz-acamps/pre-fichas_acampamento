@@ -11,7 +11,7 @@
 #
 # Instala o FortiClient pelo repositório OFICIAL da Fortinet (repo.fortinet.com), conferindo a
 # impressão digital da chave de assinatura. O perfil (IPsec, gateway, PSK…) é preenchido no
-# assistente do próprio FortiClient (`forticlient vpn edit`). Um vigia (systemd) reconecta se cair.
+# assistente do próprio FortiClient (`fc vpn edit`). Um vigia (systemd) reconecta se cair.
 #
 # Variáveis: FORTICLIENT_VERSAO (7.4 padrão), VPN_PERFIL (prefichas), VPN_USUARIO,
 #            VPN_REDES (redes internas da empresa, ex.: 192.168.10.0/24,10.0.0.0/8).
@@ -30,6 +30,35 @@ erro() { echo "✗ $*" >&2; exit 1; }
 TEM_TTY=0; { : </dev/tty; } 2>/dev/null && TEM_TTY=1
 perguntar() { local v="${!1:-}"; if [ -z "$v" ] && [ "$TEM_TTY" = 1 ]; then read -r -p "$2${3:+ [$3]}: " v </dev/tty; fi; printf -v "$1" '%s' "${v:-${3:-}}"; }
 rede_valida() { [[ "$1" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$ ]]; }
+# O CLI do FortiClient 7.4 recusa root ("please run this command under non-root user") e guarda a senha num
+# chaveiro (Secret Service), que precisa de uma sessão D-Bus. Num servidor sem tela: roda como um usuário de
+# sistema próprio, numa sessão D-Bus com o gnome-keyring destravado por uma senha aleatória só do root.
+SO_USUARIO="${PREFICHAS_VPN_SO_USUARIO-prefichas-vpn}"   # vazio = roda direto (testes)
+SO_HOME="${PREFICHAS_VPN_SO_HOME:-/var/lib/prefichas-vpn}"
+CHAVEIRO="$ETC_PF/vpn-chaveiro"
+fc() {
+  local t=(); [ -n "${FC_TIMEOUT:-}" ] && t=(timeout "$FC_TIMEOUT")
+  if [ -z "$SO_USUARIO" ]; then "${t[@]}" forticlient "$@"; return; fi
+  [ -r "$CHAVEIRO" ] || erro "Usuário da VPN não preparado: rode sudo ./scripts/vpn-fortinet.sh configurar."
+  # a senha do chaveiro vai pelo descritor 3 (aberto pelo root); o usuário da VPN não consegue ler o arquivo
+  "${t[@]}" runuser -u "$SO_USUARIO" -- env -i HOME="$SO_HOME" PATH="${PREFICHAS_VPN_PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}" LANG=C.UTF-8 ${TERM:+TERM="$TERM"} \
+    dbus-run-session -- bash -c 'eval "$(gnome-keyring-daemon --unlock --components=secrets <&3 2>/dev/null)" >/dev/null; exec 3<&-; gnome-keyring-daemon --start --components=secrets >/dev/null 2>&1 || true; exec forticlient "$@"' fc "$@" 3< "$CHAVEIRO"
+}
+preparar_usuario() { # usuário de sistema sem login + D-Bus + chaveiro
+  [ -n "$SO_USUARIO" ] || return 0
+  local falta=()
+  command -v dbus-run-session >/dev/null || falta+=(dbus)
+  command -v dbus-launch >/dev/null || falta+=(dbus-x11)
+  command -v gnome-keyring-daemon >/dev/null || falta+=(gnome-keyring)
+  if [ "${#falta[@]}" -gt 0 ]; then
+    echo "→ Instalando ${falta[*]} (sessão e chaveiro para o FortiClient sem tela)…"
+    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "${falta[@]}" >/dev/null
+  fi
+  id "$SO_USUARIO" >/dev/null 2>&1 || useradd --system --home-dir "$SO_HOME" --create-home --shell /usr/sbin/nologin "$SO_USUARIO"
+  mkdir -p "$SO_HOME"; chown "$SO_USUARIO": "$SO_HOME"; chmod 700 "$SO_HOME"
+  mkdir -p "$ETC_PF" && chmod 700 "$ETC_PF"
+  [ -s "$CHAVEIRO" ] || ( umask 077; head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$CHAVEIRO" )
+}
 # Configuração salva (no "configurar" e no "registrar" vale o que for informado agora)
 case "${1:-configurar}" in configurar|registrar) ;; *) [ -r "$ESTADO" ] && . "$ESTADO" ;; esac
 
@@ -116,6 +145,8 @@ configurar)
   fi
   command -v forticlient >/dev/null || erro "FortiClient não foi instalado."
 
+  preparar_usuario
+
   [ "$TEM_TTY" = 1 ] || erro "A criação do perfil é feita no assistente do FortiClient: rode este comando num terminal."
 
   # 2) Perfil: assistente do próprio FortiClient (tipo IPsec, gateway, PSK, IKE…)
@@ -123,12 +154,12 @@ configurar)
   echo "→ Abrindo o assistente do FortiClient para o perfil \"$PERFIL\"."
   echo "  Escolha o tipo IPsec e preencha conforme o analista: gateway, autenticação (PSK),"
   echo "  versão do IKE e, se houver, usuário. NÃO marque 'todo o tráfego pela VPN'."
-  forticlient vpn edit "$PERFIL" </dev/tty
+  fc vpn edit "$PERFIL" </dev/tty
 
   # 3) Conectar: senha salva, sempre ativo e reconexão automática
   echo
   echo "→ Conectando (digite a senha da VPN se for pedida)…"
-  CONECTAR=(forticlient vpn connect "$PERFIL" --save-password --always-up)
+  CONECTAR=(fc vpn connect "$PERFIL" --save-password --always-up)
   [ -n "$VPN_USUARIO" ] && CONECTAR+=(--user="$VPN_USUARIO" --password)
   "${CONECTAR[@]}" </dev/tty || true
 
@@ -141,11 +172,11 @@ configurar)
   for _ in $(seq 1 20); do tunel_ativo && break; echo -n "."; sleep 3; done; echo
   if tunel_ativo; then
     echo "✓ VPN conectada (a rede ${VPN_REDES%%,*} passa pelo túnel)."
-    forticlient vpn status 2>/dev/null | sed 's/^/  /' || true
+    fc vpn status 2>/dev/null | sed 's/^/  /' || true
     echo "  Descubra o IP do servidor na VPN com o analista (ou em 'ip -4 addr') e teste o SSH a partir da empresa."
     echo "  Depois de testar: sudo ./scripts/vpn-fortinet.sh fechar-ssh"
   else
-    echo "✗ Não consegui confirmar o túnel. Veja: forticlient vpn status"
+    echo "✗ Não consegui confirmar o túnel. Veja: fc vpn status"
     exit 1
   fi
   ;;
@@ -153,7 +184,7 @@ vigiar)
   # Chamado pelo systemd: reconecta se o túnel caiu (usa a senha salva no FortiClient)
   tunel_ativo && exit 0
   logger -t prefichas-vpn "Túnel FortiClient fora do ar: reconectando o perfil ${VPN_PERFIL:-$PERFIL}"
-  timeout 90 forticlient vpn connect "${VPN_PERFIL:-$PERFIL}" --always-up </dev/null >/dev/null 2>&1 || true
+  FC_TIMEOUT=90 fc vpn connect "${VPN_PERFIL:-$PERFIL}" --always-up </dev/null >/dev/null 2>&1 || true
   ;;
 estado-json)
   # usado pelo painel central: situação e configuração em JSON (sem segredos: senha e PSK ficam só no FortiClient)
@@ -163,8 +194,8 @@ estado-json)
   vig=false; systemctl is-active "${VIGIA}.timer" >/dev/null 2>&1 && vig=true
   det=""; perfis=""
   if [ "$inst" = true ]; then
-    det="$(timeout 10 forticlient vpn status 2>/dev/null | grep -viE 'pass|psk|secret|senha|key' | head -c 600 || true)"
-    perfis="$(timeout 10 forticlient vpn list 2>/dev/null | grep -viE 'pass|psk|secret|senha|key' | head -c 600 || true)"
+    det="$(FC_TIMEOUT=10 fc vpn status 2>/dev/null | grep -viE 'pass|psk|secret|senha|key' | head -c 600 || true)"
+    perfis="$(FC_TIMEOUT=10 fc vpn list 2>/dev/null | grep -viE 'pass|psk|secret|senha|key' | head -c 600 || true)"
   fi
   versao=""; [ "$inst" = true ] && versao="$(dpkg-query -W -f='${Version}' forticlient 2>/dev/null || true)"
   jq -n --argjson i "$inst" --argjson c "$conf" --argjson k "$con" --argjson v "$vig" --arg r "${VPN_REDES:-}" --arg d "$det" --arg l "$perfis" \
@@ -182,6 +213,7 @@ registrar)
   validar_redes
   VPN_USUARIO="${VPN_USUARIO:-}"
   [ -z "$VPN_USUARIO" ] || [[ "$VPN_USUARIO" =~ ^[A-Za-z0-9@._\\-]{1,128}$ ]] || erro "Usuário inválido."
+  preparar_usuario
   gravar_config
   instalar_vigia
   echo "✓ Configuração da VPN gravada: perfil $PERFIL, redes $VPN_REDES${VPN_USUARIO:+, usuário $VPN_USUARIO}. Vigia de reconexão ligado."
@@ -190,14 +222,14 @@ registrar)
 reconectar)
   [ -r "$ESTADO" ] || erro "A VPN ainda não foi configurada neste servidor (use: vpn-fortinet.sh configurar)."
   echo "→ Reconectando a VPN (perfil ${VPN_PERFIL:-$PERFIL})…"
-  timeout 30 forticlient vpn disconnect >/dev/null 2>&1 || true
+  FC_TIMEOUT=30 fc vpn disconnect >/dev/null 2>&1 || true
   sleep 2
-  timeout 90 forticlient vpn connect "${VPN_PERFIL:-$PERFIL}" --always-up </dev/null >/dev/null 2>&1 || true
+  FC_TIMEOUT=90 fc vpn connect "${VPN_PERFIL:-$PERFIL}" --always-up </dev/null >/dev/null 2>&1 || true
   for _ in $(seq 1 20); do tunel_ativo && break; sleep 3; done
-  if tunel_ativo; then echo "✓ VPN reconectada."; else erro "A VPN não voltou. Veja: forticlient vpn status — a senha salva pode ter expirado: rode vpn-fortinet.sh configurar."; fi
+  if tunel_ativo; then echo "✓ VPN reconectada."; else erro "A VPN não voltou. Veja: fc vpn status — a senha salva pode ter expirado: rode vpn-fortinet.sh configurar."; fi
   ;;
 status)
-  forticlient vpn status 2>/dev/null || echo "FortiClient não instalado ou sem perfil."
+  fc vpn status 2>/dev/null || echo "FortiClient não instalado ou sem perfil."
   if tunel_ativo; then echo "Túnel: ativo (rede ${VPN_REDES%%,*} pela VPN)"; else echo "Túnel: inativo"; fi
   systemctl is-active "${VIGIA}.timer" >/dev/null 2>&1 && echo "Vigia de reconexão: ligado" || echo "Vigia de reconexão: desligado"
   command -v ufw >/dev/null && ufw status | grep -E '(^| )22(/tcp)?( |$)' || true
@@ -227,8 +259,8 @@ abrir-ssh)
 remover)
   systemctl disable --now "${VIGIA}.timer" >/dev/null 2>&1 || true
   rm -f "/etc/systemd/system/${VIGIA}.service" "/etc/systemd/system/${VIGIA}.timer"; systemctl daemon-reload
-  forticlient vpn disconnect >/dev/null 2>&1 || true
-  forticlient vpn remove "${VPN_PERFIL:-$PERFIL}" >/dev/null 2>&1 || true
+  fc vpn disconnect >/dev/null 2>&1 || true
+  fc vpn remove "${VPN_PERFIL:-$PERFIL}" >/dev/null 2>&1 || true
   rm -f "$ESTADO"
   echo "✓ VPN removida (o pacote forticlient continua instalado: apt remove forticlient para tirar)."
   echo "  Se tinha fechado o SSH, confira: sudo ufw status"

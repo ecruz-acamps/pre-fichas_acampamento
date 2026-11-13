@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 2.27.0 — FortiClient sem root
+
+- O FortiClient 7.4 recusa rodar como root (`please run this command under non-root user`) e precisa de sessão D-Bus e chaveiro para guardar a senha (`dbus-launch: executable file not found`). Agora o `vpn-fortinet.sh` cria o usuário de sistema `prefichas-vpn` (sem login), instala `dbus-x11` e `gnome-keyring` e roda todo comando do FortiClient (criar perfil, conectar, vigia, reconectar, situação) como esse usuário, numa sessão D-Bus com o chaveiro destravado.
+- A senha do chaveiro é aleatória, fica em `/etc/prefichas/vpn-chaveiro` (só root, 600) e é entregue por descritor de arquivo, nunca na linha de comando.
+
 ## 2.25.0 — VPN só com FortiClient
 
 - **strongSwan removido:** o script `vpn-ipsec-strongswan.sh`, a detecção dele no painel e a troca de chave/senha que só funcionava com ele saíram do sistema. A VPN do servidor passa a ser só o **FortiClient**.

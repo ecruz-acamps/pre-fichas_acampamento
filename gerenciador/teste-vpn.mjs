@@ -16,15 +16,22 @@ for (const d of Object.values(D)) mkdirSync(d, { recursive: true })
 for (const d of ['pedidos', 'estado']) mkdirSync(join(D.dados, d), { recursive: true })
 const LOG = join(T, 'chamadas.log')
 const exe = (n, corpo) => { writeFileSync(join(D.bin, n), `#!/bin/sh\necho "${n} $*" >> ${LOG}\n${corpo}\n`); chmodSync(join(D.bin, n), 0o755) }
-exe('forticlient', `case "$2" in status) printf 'Status: Connected\\nRemote gateway: vpn.empresa.com.br\\nPassword: segredo-nao-pode-aparecer\\n' ;; list) printf 'prefichas  ipsec  vpn.empresa.com.br\\nPSK: chave-nao-pode-aparecer\\n' ;; esac; exit 0`)
+const SO_HOME = join(T, 'home-vpn')
+// como o FortiClient 7.4 de verdade: recusa root. Aqui "não é root" = rodou pelo runuser (HOME do usuário da VPN) numa sessão D-Bus
+exe('forticlient', `[ "$HOME" = "${SO_HOME}" ] && [ -n "$DBUS_FAKE" ] && [ "$CHAVEIRO_FAKE" = destravado ] || { echo 'Error: please run this command under non-root user.' >&2; exit 1; }
+case "$2" in status) printf 'Status: Connected\\nRemote gateway: vpn.empresa.com.br\\nPassword: segredo-nao-pode-aparecer\\n' ;; list) printf 'prefichas  ipsec  vpn.empresa.com.br\\nPSK: chave-nao-pode-aparecer\\n' ;; esac; exit 0`)
 exe('systemctl', 'exit 0')
+exe('runuser', '[ "$1" = -u ] && [ "$2" = prefichas-vpn ] && [ "$3" = -- ] || exit 9; shift 3; exec "$@"')
+exe('dbus-run-session', '[ "$1" = -- ] && shift; DBUS_FAKE=1 exec "$@"')
+exe('gnome-keyring-daemon', `case "$*" in *--unlock*) s=$(cat); [ \${#s} -ge 32 ] && echo "CHAVEIRO_FAKE=destravado; export CHAVEIRO_FAKE" ;; esac; exit 0`)
+exe('dbus-launch', 'exit 0'); exe('id', '[ "$1" = prefichas-vpn ] && exit 0; exec /usr/bin/id "$@"'); exe('useradd', 'exit 0'); exe('chown', 'exit 0')
 exe('dpkg-query', "printf '7.4.3.1714'")
 exe('ip', `case "$*" in "route show default") echo 'default via 10.0.0.1 dev eth0' ;; "route get "*) echo "$3 dev ppp0 src 192.168.50.10" ;; esac; exit 0`)
 exe('docker', 'exit 0'); exe('curl', 'exit 7')
 
 function rodar(modo) {
   return spawnSync('bash', [join(RAIZ, 'scripts/gerenciador-executor.sh'), modo], { encoding: 'utf8', timeout: 60000,
-    env: { ...process.env, PATH: `${D.bin}:${process.env.PATH}`, GERENCIADOR_DADOS: D.dados, PREFICHAS_OPT: D.opt, PREFICHAS_ETC: D.etc, PREFICHAS_SYSTEMD: D.unidades } })
+    env: { ...process.env, PATH: `${D.bin}:${process.env.PATH}`, GERENCIADOR_DADOS: D.dados, PREFICHAS_OPT: D.opt, PREFICHAS_ETC: D.etc, PREFICHAS_SYSTEMD: D.unidades, PREFICHAS_VPN_SO_HOME: SO_HOME, PREFICHAS_VPN_PATH: `${D.bin}:${process.env.PATH}` } })
 }
 function pedir(corpo) {
   const id = randomUUID(); writeFileSync(join(D.dados, 'pedidos', `${id}.json`), JSON.stringify({ por: 'adm@x.com', ...corpo })); rodar('pedidos')
@@ -65,4 +72,15 @@ test('versão fora da linha 7.4 é sinalizada', { skip: !root && 'precisa de roo
   rodar('coletar')
   const v = JSON.parse(readFileSync(join(D.dados, 'estado/vpn.json'), 'utf8'))
   assert.equal(v.versao_ok, false)
+})
+
+test('o FortiClient roda como usuário comum (o 7.4 recusa root) numa sessão D-Bus com chaveiro, e a senha do chaveiro é só do root', { skip: !root && 'precisa de root' }, () => {
+  const ch = join(D.etc, 'vpn-chaveiro')
+  assert.equal((statSync(ch).mode & 0o777).toString(8), '600'); assert.ok(readFileSync(ch, 'utf8').length >= 32)
+  const r = pedir({ acao: 'vpn-reconectar' })
+  assert.equal(r.tarefa.situacao, 'concluida', r.log)
+  const log = readFileSync(LOG, 'utf8')
+  assert.match(log, /runuser -u prefichas-vpn -- env -i HOME=/); assert.match(log, /forticlient vpn connect prefichas --always-up/)
+  assert.doesNotMatch(log, new RegExp(readFileSync(ch, 'utf8')), 'a senha do chaveiro não vai na linha de comando')
+  assert.doesNotMatch(r.log, /non-root/)
 })
