@@ -623,7 +623,8 @@ async function cartaoVpn(area) {
     linha('IP do servidor na VPN', v.ip_na_vpn || (v.conectada ? 'não identificado' : 'túnel fora do ar')),
     linha('Reconexão automática (a cada 2 min)', v.vigia ? 'ligada' : 'desligada'),
     linha('Lido em', v.coletado_em ? dataHora(v.coletado_em) : '')))))
-  if (v.versao && v.versao_ok === false) partes.push(h('div', { class: 'alerta erro' }, `O FortiClient instalado (${v.versao}) não é da linha ${v.linha_esperada}, a mesma do FortiOS 7.4.x do FortiGate. Reinstale pelo terminal: sudo FORTICLIENT_VERSAO=${v.linha_esperada} /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh configurar`))
+  if (v.versao && v.versao_ok === false) partes.push(h('div', { class: 'alerta erro' }, `O FortiClient instalado (${v.versao}) não é da linha ${v.linha_esperada}, a mesma do FortiOS 7.4.x do FortiGate. Confira pelo terminal: sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh configurar`))
+  if (v.edicao_ems) partes.push(h('div', { class: 'alerta erro' }, 'O FortiClient instalado é a edição completa, que se registra num EMS e, sem EMS, recusa o IPsec ("IPsec VPN is disabled while registered to EMS"). Troque pela edição gratuita só de VPN pelo terminal: sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh configurar'))
   if (v.erro) partes.push(h('div', { class: 'alerta erro' }, v.erro))
   if (v.detalhe) partes.push(h('details', {}, h('summary', {}, 'Situação informada pelo FortiClient'), h('pre', { class: 'log' }, v.detalhe)))
   if (v.perfis) partes.push(h('details', {}, h('summary', {}, 'Perfis existentes no FortiClient'), h('pre', { class: 'log' }, v.perfis)))

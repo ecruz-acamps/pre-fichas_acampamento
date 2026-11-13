@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 2.29.0 — FortiClient VPN gratuito (sem EMS)
+
+- O pacote do repositório `repo.fortinet.com` é o FortiClient **completo** (7.4.8), que se registra num EMS e, sem EMS, recusa o IPsec: `IPsec VPN is disabled while registered to EMS`. O `vpn-fortinet.sh configurar` agora instala o **FortiClient VPN gratuito** (só VPN, 7.4.3.5411) baixado da Fortinet, conferindo o **SHA-256 fixado** no script; se a edição completa estiver instalada, ela é removida, o repositório dela é apagado e a versão fica travada (`apt-mark hold`).
+- Os argumentos de usuário seguem a edição instalada: a gratuita usa `--user` + `--password` (pede a senha), a completa usa `--username`.
+- O painel avisa se a edição instalada for a completa (EMS).
+
 ## 2.28.1 — FortiClient: pasta de execução do usuário
 
 - Correção de `Error: failed to find runtime user dir`: o FortiClient exige `XDG_RUNTIME_DIR` (`/run/user/<uid>`), que só existe quando alguém faz login. O script cria essa pasta para o usuário `prefichas-vpn` (dono só ele, 700) e a informa a cada comando do FortiClient.

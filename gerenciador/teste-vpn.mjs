@@ -16,6 +16,10 @@ for (const d of Object.values(D)) mkdirSync(d, { recursive: true })
 for (const d of ['pedidos', 'estado']) mkdirSync(join(D.dados, d), { recursive: true })
 const LOG = join(T, 'chamadas.log')
 const exe = (n, corpo) => { writeFileSync(join(D.bin, n), `#!/bin/sh\necho "${n} $*" >> ${LOG}\n${corpo}\n`); chmodSync(join(D.bin, n), 0o755) }
+// binário da CLI do FortiClient: só os textos que o script procura (edição gratuita = --user; completa = --username + EMS)
+const CLI_VPN = join(T, 'cli-vpn'), CLI_EMS = join(T, 'cli-ems')
+writeFileSync(CLI_VPN, 'VPN CLI interface\nvpn connect <vpn_name> --user=username --password\n')
+writeFileSync(CLI_EMS, 'VPN CLI interface\nEndpoint Control CLI interface\nvpn connect <vpn_name> --username=username\n')
 const SO_HOME = join(T, 'home-vpn')
 // como o FortiClient 7.4 de verdade: recusa root. Aqui "não é root" = rodou pelo runuser (HOME do usuário da VPN) numa sessão D-Bus
 exe('forticlient', `[ -n "$XDG_RUNTIME_DIR" ] && [ -d "$XDG_RUNTIME_DIR" ] || { echo "Error: failed to find runtime user dir" >&2; exit 1; }
@@ -33,7 +37,7 @@ exe('docker', 'exit 0'); exe('curl', 'exit 7')
 
 function rodar(modo) {
   return spawnSync('bash', [join(RAIZ, 'scripts/gerenciador-executor.sh'), modo], { encoding: 'utf8', timeout: 60000,
-    env: { ...process.env, PATH: `${D.bin}:${process.env.PATH}`, GERENCIADOR_DADOS: D.dados, PREFICHAS_OPT: D.opt, PREFICHAS_ETC: D.etc, PREFICHAS_SYSTEMD: D.unidades, PREFICHAS_VPN_SO_HOME: SO_HOME, PREFICHAS_VPN_RUNTIME_BASE: join(T, 'run-user'), PREFICHAS_VPN_PATH: `${D.bin}:${process.env.PATH}` } })
+    env: { ...process.env, PATH: `${D.bin}:${process.env.PATH}`, GERENCIADOR_DADOS: D.dados, PREFICHAS_OPT: D.opt, PREFICHAS_ETC: D.etc, PREFICHAS_SYSTEMD: D.unidades, PREFICHAS_VPN_SO_HOME: SO_HOME, PREFICHAS_VPN_RUNTIME_BASE: join(T, 'run-user'), FORTICLIENT_CLI: CLI_VPN, PREFICHAS_VPN_PATH: `${D.bin}:${process.env.PATH}` } })
 }
 function pedir(corpo) {
   const id = randomUUID(); writeFileSync(join(D.dados, 'pedidos', `${id}.json`), JSON.stringify({ por: 'adm@x.com', ...corpo })); rodar('pedidos')
@@ -82,7 +86,7 @@ test('o FortiClient roda como usuário comum (o 7.4 recusa root) numa sessão D-
   const r = pedir({ acao: 'vpn-reconectar' })
   assert.equal(r.tarefa.situacao, 'concluida', r.log)
   const log = readFileSync(LOG, 'utf8')
-  assert.match(log, /runuser -u prefichas-vpn -- env -i HOME=\S+ PATH=\S+ LANG=C.UTF-8 XDG_RUNTIME_DIR=\S+run-user\/0 /); assert.match(log, /forticlient vpn connect prefichas --username=servidor --always-up/)
+  assert.match(log, /runuser -u prefichas-vpn -- env -i HOME=\S+ PATH=\S+ LANG=C.UTF-8 XDG_RUNTIME_DIR=\S+run-user\/0 /); assert.match(log, /forticlient vpn connect prefichas --user=servidor --always-up/)
   assert.doesNotMatch(log, new RegExp(readFileSync(ch, 'utf8')), 'a senha do chaveiro não vai na linha de comando')
   assert.doesNotMatch(r.log, /non-root/)
 })
@@ -93,8 +97,38 @@ test('trocar a senha pelo painel: vai pelo prompt do FortiClient (pseudo-termina
   assert.equal(r.tarefa.situacao, 'concluida', r.log)
   assert.equal(readFileSync(join(T, 'senha-recebida'), 'utf8'), SENHA, 'o FortiClient recebeu a senha exata no prompt')
   const log = readFileSync(LOG, 'utf8')
-  assert.match(log, /forticlient vpn connect prefichas --username=servidor --save-password --always-up --auto-connect/)
+  assert.match(log, /forticlient vpn connect prefichas --user=servidor --password --save-password --always-up --auto-connect/)
   assert.doesNotMatch(log + r.log + JSON.stringify(r.tarefa), /S3nh@/, 'a senha não aparece em comandos, no log da tarefa nem na tarefa')
   const r2 = spawnSync('grep', ['-rl', 'S3nh@', D.dados, D.etc], { encoding: 'utf8' })
   assert.equal(r2.stdout, '', 'nem em nenhum arquivo do painel ou de /etc/prefichas')
+})
+
+const direto = (args, env = {}, input) => spawnSync('bash', [join(RAIZ, 'scripts/vpn-fortinet.sh'), ...args], { encoding: 'utf8', timeout: 60000, input,
+  env: { ...process.env, PATH: `${D.bin}:${process.env.PATH}`, PREFICHAS_ETC: D.etc, PREFICHAS_SYSTEMD: D.unidades, PREFICHAS_VPN_SO_HOME: SO_HOME,
+    PREFICHAS_VPN_RUNTIME_BASE: join(T, 'run-user'), PREFICHAS_VPN_PATH: `${D.bin}:${process.env.PATH}`, FORTICLIENT_CLI: CLI_VPN, ...env } })
+
+test('edição completa (EMS) é detectada: o painel avisa, e os argumentos de usuário seguem a edição instalada', { skip: !root && 'precisa de root' }, () => {
+  const ems = JSON.parse(direto(['estado-json'], { FORTICLIENT_CLI: CLI_EMS }).stdout)
+  assert.equal(ems.edicao_ems, true)
+  assert.equal(JSON.parse(direto(['estado-json']).stdout).edicao_ems, false)
+  writeFileSync(LOG, '')
+  direto(['reconectar'], { FORTICLIENT_CLI: CLI_EMS })
+  assert.match(readFileSync(LOG, 'utf8'), /forticlient vpn connect prefichas --username=servidor --always-up/, 'a completa usa --username')
+})
+
+test('instalador: troca a edição completa pela gratuita só se o SHA-256 do .deb conferir; tira o repositório e segura a versão', { skip: !root && 'precisa de root' }, () => {
+  exe('curl', 'while [ $# -gt 0 ]; do [ "$1" = -o ] && { printf "deb-de-teste" > "$2"; }; shift; done; exit 0')
+  exe('apt-get', 'exit 0'); exe('apt-mark', 'exit 0')
+  const base = { FORTICLIENT_CLI: CLI_EMS, VPN_REDES: '192.168.15.0/24', VPN_USUARIO: 'servidor' }
+  writeFileSync(LOG, '')
+  let r = direto(['configurar'], { ...base, FORTICLIENT_VPN_SHA256: '0'.repeat(64) })
+  assert.notEqual(r.status, 0); assert.match(r.stderr, /não confere com o SHA-256/)
+  assert.doesNotMatch(readFileSync(LOG, 'utf8'), /apt-get (purge|install)/, 'nada é removido nem instalado se o arquivo não confere')
+  const sha = spawnSync('bash', ['-c', 'printf deb-de-teste | sha256sum | cut -d" " -f1'], { encoding: 'utf8' }).stdout.trim()
+  writeFileSync(LOG, '')
+  r = direto(['configurar'], { ...base, FORTICLIENT_VPN_SHA256: sha })
+  const log = readFileSync(LOG, 'utf8')
+  assert.match(log, /apt-get purge -y -qq forticlient[\s\S]*apt-get install -y -qq \S+forticlient-vpn\.deb[\s\S]*apt-mark hold forticlient/, log)
+  assert.match(r.stdout, /FortiClient VPN \(gratuito/)
+  exe('curl', 'exit 7')
 })

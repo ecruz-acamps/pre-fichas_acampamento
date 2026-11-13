@@ -562,9 +562,11 @@ sudo ./scripts/vpn-fortinet.sh fechar-ssh   # 22 só a partir das redes da VPN; 
 ```
 
 **O que o script faz:**
-1. Instala o FortiClient pelo **repositório oficial** `repo.fortinet.com` (versão 7.4 por padrão;
-   `FORTICLIENT_VERSAO=8.0` para outra), **conferindo a impressão digital da chave de assinatura** da
-   Fortinet. Se não bater, cancela.
+1. Instala o **FortiClient VPN gratuito** (só VPN, 7.4.3), baixado da Fortinet (`filestore.fortinet.com`),
+   **conferindo o SHA-256** fixado no script. Se não bater, cancela. A edição completa do repositório
+   `repo.fortinet.com` **não** serve: ela se registra num EMS e, sem EMS, recusa o IPsec
+   ("IPsec VPN is disabled while registered to EMS"). Se ela estiver instalada, o script a remove, apaga o
+   repositório dela e trava a versão (`apt-mark hold`) para o apt não voltar para a completa.
 2. Abre o assistente do próprio FortiClient (`forticlient vpn edit prefichas`). Escolha **IPsec** e preencha
    com os dados do analista: gateway, PSK, IKE e usuário. **Não** marque "todo o tráfego pela VPN".
 3. Conecta com senha salva e "sempre ativo" (`--save-password --always-up`).
@@ -584,7 +586,7 @@ sudo ./scripts/vpn-fortinet.sh fechar-ssh   # 22 só a partir das redes da VPN; 
 
 **Sem root:** o FortiClient 7.4 não aceita comandos como root. O script cria o usuário de sistema `prefichas-vpn` e roda o FortiClient por ele (com `dbus-x11` e `gnome-keyring` para guardar a senha). Para ver a situação à mão: `sudo ./scripts/vpn-fortinet.sh status` (não use `forticlient` direto como root).
 
-**Versão:** use o FortiClient da **mesma linha do FortiOS do FortiGate**. Para FortiOS 7.4.x (ex.: 7.4.13), a linha 7.4 (padrão do script). Para outra linha: `sudo FORTICLIENT_VERSAO=7.2 ./scripts/vpn-fortinet.sh configurar`. O painel mostra a versão instalada e avisa se não for da linha 7.4.
+**Versão:** use o FortiClient da **mesma linha do FortiOS do FortiGate**. Para FortiOS 7.4.x (ex.: 7.4.13), a linha 7.4 (padrão do script). O FortiClient VPN gratuito 7.4.3 é da mesma linha. O painel mostra a versão instalada e avisa se não for da linha 7.4 ou se for a edição completa (EMS).
 
 **Emergência** (VPN fora do ar e SSH fechado): use o console da VM no provedor ou hipervisor e rode
 `sudo ./scripts/vpn-fortinet.sh abrir-ssh`.
