@@ -13,7 +13,8 @@
 #   Conta → Cloudflare Tunnel → Editar   ·   Zona → DNS → Editar   ·   Zona → Zona → Ler
 set -euo pipefail
 ETC="${PREFICHAS_ETC:-/etc/prefichas}"
-PASTA="${TUNEL_PASTA:-/opt/prefichas-tunel}"
+PASTA="${TUNEL_PASTA:-/var/lib/prefichas-tunel}"   # fora de /opt: é parte do sistema, não um acampamento
+PASTA_ANTIGA="${TUNEL_PASTA_ANTIGA:-/opt/prefichas-tunel}"
 RAIZ_INSTANCIAS="${INSTANCIAS_RAIZ:-/opt}"
 API="${CF_API_URL:-https://api.cloudflare.com/client/v4}"
 CONTAINER=prefichas-tunel
@@ -84,6 +85,10 @@ garantir_conector() { # sobe (ou confere) o cloudflared único desta VM
   command -v docker >/dev/null || erro "Docker não encontrado."
   local token; token="$(cf_ou_sai GET "/accounts/$CONTA_ID/cfd_tunnel/$TUNEL_ID/token" | jq -r '.result')"
   [ -n "$token" ] && [ "$token" != null ] || erro "A Cloudflare não entregou o token do túnel."
+  # versões antigas guardavam o túnel em /opt/prefichas-tunel e ele aparecia como instância: muda de lugar uma vez
+  if [ -d "$PASTA_ANTIGA" ] && [ ! -L "$PASTA_ANTIGA" ] && [ ! -e "$PASTA" ] && grep -q "gerado por scripts/tunel-compartilhado.sh" "$PASTA_ANTIGA/docker-compose.yml" 2>/dev/null; then
+    mkdir -p "$(dirname "$PASTA")"; mv "$PASTA_ANTIGA" "$PASTA"; echo "✓ Túnel único movido para $PASTA (não aparece mais como instância)" >&2
+  fi
   mkdir -p "$PASTA"; chmod 700 "$PASTA"
   local novo=0
   if [ ! -f "$PASTA/.env" ] || ! grep -qxF "TUNNEL_TOKEN=${token}" "$PASTA/.env"; then
@@ -167,7 +172,7 @@ case "$ACAO" in
       || erro "O token não consegue ler o DNS da zona (${CF_ERRO}). Adicione a permissão Zona › DNS › Editar para a zona."
     echo "✓ Cloudflare conferida: zona, túnel e DNS acessíveis para ${HOST}."
     ;;
-  adicionar|remover|listar|unificar)
+  adicionar|remover|listar|unificar|religar)
     mkdir -p "$ETC" && chmod 700 "$ETC"
     exec 9>"$ETC/tunel.lock"; flock -w 120 9 || erro "Outro pedido do túnel está em andamento. Tente de novo em instantes."
     ;;&
@@ -180,6 +185,16 @@ case "$ACAO" in
   remover)
     HOST="${2:?Informe o endereço}"; dominio_valido "$HOST" || erro "Endereço inválido: $HOST"
     cmd_remover "$HOST"
+    ;;
+  religar)
+    # Recria/sobe o cloudflared único (ex.: container apagado à mão). Mesmo túnel, mesmos endereços: nada é duplicado.
+    H1=""; for f in "$RAIZ_INSTANCIAS"/prefichas-*/.env; do [ -f "$f" ] || continue; h="$(valor_env_de "$f" ENDERECO_PUBLICO)"; [ -n "$h" ] && { H1="$h"; break; }; done
+    [ -n "$H1" ] || { [ -r "$ETC/tunel-hosts" ] && H1="$(awk 'NF{print $1; exit}' "$ETC/tunel-hosts")"; }
+    [ -n "$H1" ] || erro "Nenhum acampamento publicado pela Cloudflare: não há túnel para religar."
+    achar_zona "$H1"; garantir_tunel
+    docker rm -f "$CONTAINER" >/dev/null 2>&1 || true
+    garantir_conector
+    echo "✓ Túnel único no ar de novo."
     ;;
   listar)
     # precisa de um endereço só para achar a zona/conta: usa o primeiro acampamento publicado
