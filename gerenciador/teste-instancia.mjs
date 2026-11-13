@@ -119,3 +119,20 @@ test('apagar: sem backup não apaga nada (a menos que peça); recusa o gerenciad
     const x = pedir({ acao: 'apagar', instancia: nome, confirmar: nome }); assert.equal(x.tarefa.situacao, 'erro', nome)
   }
 })
+
+test('atualizar limpa as imagens antigas do Docker sem uso (mais de 1 dia) depois de dar certo; se falhar, não limpa', () => {
+  const dir = instancia('prefichas-limpeza', { PUBLICACAO: 'direta' })
+  exe(join(dir, 'scripts/atualizar.sh'), 'echo "✓ Atualizado."')
+  limpar()
+  const r = pedir({ acao: 'atualizar', instancia: 'prefichas-limpeza' })
+  assert.equal(r.tarefa.situacao, 'concluida', r.log)
+  const c = chamadas()
+  assert.ok(c.some((x) => /docker \S+ image prune -a -f --filter until=24h/.test(x)), c.join('\n'))
+  assert.ok(c.some((x) => /docker \S+ builder prune -a -f --filter until=24h/.test(x)))
+  assert.match(r.log, /Limpeza do Docker/); assert.equal(r.tarefa.resumo ?? r.tarefa.mensagem ?? '', r.tarefa.resumo ?? r.tarefa.mensagem ?? '')
+  assert.doesNotMatch(JSON.stringify(r.tarefa), /Limpeza do Docker/, 'o resumo da tarefa continua sendo o da atualização')
+  exe(join(dir, 'scripts/atualizar.sh'), 'echo "✗ Falhou."; exit 1')
+  limpar()
+  assert.equal(pedir({ acao: 'atualizar', instancia: 'prefichas-limpeza' }).tarefa.situacao, 'erro')
+  assert.equal(chamadas().some((x) => /prune/.test(x)), false)
+})

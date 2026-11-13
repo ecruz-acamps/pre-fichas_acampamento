@@ -95,8 +95,8 @@ limpar_instancia_incompleta() {
   [ -f "$pasta/docker-compose.yml" ] && (cd "$pasta" && timeout 120 docker compose down -v >/dev/null 2>&1) || true
   rm -rf --one-file-system -- "$pasta"
 }
-acao_atualizar() { local i="$1"; casa "$i" "$RE_INST" && [ -f "/opt/$i/.env" ] || { echo "✗ Instância inválida: $i"; return 1; }
-  echo "→ Atualizando $i…"; (cd "/opt/$i" && ./scripts/atualizar.sh); }
+acao_atualizar() { local i="$1"; casa "$i" "$RE_INST" && [ -f "$OPT/$i/.env" ] || { echo "✗ Instância inválida: $i"; return 1; }
+  echo "→ Atualizando $i…"; (cd "$OPT/$i" && ./scripts/atualizar.sh); }
 # ---------------------------------------------------------------- Cloudflare (aba Configurações)
 RE_TOKEN='^[A-Za-z0-9_-]{20,200}$'
 valor_painel() { { grep -E "^$1=" "$ETC/painel.env" 2>/dev/null || true; } | tail -1 | cut -d= -f2-; }
@@ -442,6 +442,16 @@ acao_atualizar_painel() {
   (cd "$BASE" && docker compose up -d --force-recreate >/dev/null) || { echo "✗ Falha ao reiniciar o painel."; return 1; }
   echo "✓ Painel central atualizado para $(git -C "$CODIGO" rev-parse --short HEAD)."
 }
+# Depois de atualizar: apaga imagens e cache de construção do Docker que nenhum container usa e que têm mais de
+# 1 dia (cada atualização deixa a versão anterior para trás). Imagens em uso nunca são apagadas.
+limpar_imagens() {
+  local antes depois
+  antes="$(df -Pm / | awk 'NR==2{print $4}')"
+  docker image prune -a -f --filter "until=24h" >/dev/null 2>&1 || true
+  docker builder prune -a -f --filter "until=24h" >/dev/null 2>&1 || true
+  depois="$(df -Pm / | awk 'NR==2{print $4}')"
+  echo "• Limpeza do Docker: $(( depois > antes ? depois - antes : 0 )) MB liberados (imagens antigas sem uso)."
+}
 acao_backup() { local i="$1"; casa "$i" "$RE_INST" && [ -f "/opt/$i/.env" ] || { echo "✗ Instância inválida: $i"; return 1; }
   echo "→ Backup de $i…"; (cd "/opt/$i" && ./scripts/backup.sh); }
 
@@ -498,6 +508,7 @@ processar() { # arquivo do pedido
       for i in $(instancias); do acao_atualizar "$i" >> "$log" 2>&1 || { ok=0; echo "✗ Falhou: $i" >> "$log"; }; done ;;
     *) echo "✗ Ação desconhecida." >> "$log" ;;
   esac
+  case "$acao" in atualizar|atualizar-todas|atualizar-painel) [ "$ok" = 1 ] && limpar_imagens >> "$log" 2>&1 ;; esac
   rm -f "$tmp"
   if [ "$ok" = 1 ]; then estado_tarefa "$id" "$acao" "$alvo" concluida "$(grep -E '^✓' "$log" | tail -1)" "$por" "$inicio"
   else estado_tarefa "$id" "$acao" "$alvo" erro "$(grep -E '^✗' "$log" | tail -1 || echo 'Falhou')" "$por" "$inicio"; fi

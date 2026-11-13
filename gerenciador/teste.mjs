@@ -55,6 +55,22 @@ test('sem login não vê nada; com login lista instâncias', async () => {
   assert.equal((await r.json()).instancias[0].pasta, 'prefichas-sao-pedro')
 })
 
+test('a sessão continua depois de reiniciar o painel ("Atualizar o painel"); no disco só fica o hash do token', async () => {
+  const { spawn } = await import('node:child_process')
+  const arq = readFileSync(join(base, 'dados', 'sessoes.json'), 'utf8')
+  const token = globalThis.cookie.split('=')[1]
+  assert.ok(token.length > 20); assert.equal(arq.includes(token), false, 'o token nunca é gravado')
+  assert.match(arq, /"[0-9a-f]{64}"/)
+  // um "novo" painel (outro processo, como o container recriado), lendo a mesma pasta de dados
+  const alvo = new URL('./servidor.mjs', import.meta.url).href
+  const p = spawn(process.execPath, ['--input-type=module', '-e', `const m = await import(${JSON.stringify(alvo)}); m.servidor.listen(0, '127.0.0.1', () => console.log('PORTA ' + m.servidor.address().port))`], { env: process.env })
+  try {
+    const porta = await new Promise((ok, falha) => { let t = ''; p.stdout.on('data', (c) => { t += c; const x = /PORTA (\d+)/.exec(t); if (x) ok(x[1]) }); p.on('exit', () => falha(new Error('o painel não subiu'))) })
+    const eu = await (await fetch(`http://127.0.0.1:${porta}/api/eu`, { headers: { cookie: globalThis.cookie } })).json()
+    assert.equal(eu.email, 'adm@x.com', 'continua conectado')
+  } finally { p.kill() }
+})
+
 test('pedidos validados (injeção recusada) e gravados para o executor', async () => {
   const post = (corpo) => fetch(`${url}/api/tarefas`, { method: 'POST', headers: { ...H, cookie: globalThis.cookie }, body: JSON.stringify(corpo) })
   const ruim = await post({ acao: 'nova', nome: 'X; rm -rf /', publicacao: 'cloudflare', subdominio: 'a$(id)', admin_email: 'x', admin_nome: '' })
