@@ -214,7 +214,22 @@ function validarPedido(c) {
     return { pedido: { acao, dominio_base: base, ...(token ? { token } : {}) } }
   }
   if (acao === 'cloudflare-remover') return { pedido: { acao } }
-  if (acao === 'vpn-reconectar') return { pedido: { acao } }
+  if (acao === 'vpn-reconectar' || acao === 'vpn-desligar' || acao === 'ssh-abrir') return { pedido: { acao } }
+  if (acao === 'vpn-ssl') {
+    const e = {}
+    const perfil = String(c.perfil ?? 'prefichas').trim() || 'prefichas', gateway = String(c.gateway ?? '').trim().toLowerCase(), usuario = String(c.usuario ?? '').trim()
+    const porta = Number(c.porta), senha = typeof c.senha === 'string' ? c.senha : ''
+    const redes = String(c.redes ?? '').replace(/\s+/g, '').split(/[,;]/).filter(Boolean)
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(perfil)) e.perfil = 'Nome do perfil inválido.'
+    if (!/^[a-z0-9]([a-z0-9.-]{0,251}[a-z0-9])?$/.test(gateway) || !gateway.includes('.')) e.gateway = 'Informe o endereço do FortiGate (ex.: vpn.empresa.com.br).'
+    if (!Number.isInteger(porta) || porta < 1 || porta > 65535) e.porta = 'Porta inválida.'
+    if (!/^[A-Za-z0-9@._-]{1,128}$/.test(usuario)) e.usuario = 'Informe o usuário da VPN.'
+    if (!senha || senha.length > 128 || /[\u0000-\u001f\u007f]/.test(senha)) e.senha = 'Informe a senha da VPN (até 128 caracteres).'
+    if (!redes.length || redes.length > 16 || !redes.every((r) => /^(\d{1,3}\.){3}\d{1,3}\/(\d|[12]\d|3[0-2])$/.test(r) && r.split('/')[0].split('.').every((o) => Number(o) <= 255))) e.redes = 'Informe as redes internas no formato 192.168.10.0/24 (separe várias por vírgula).'
+    else if (redes.some((r) => r.endsWith('/0'))) e.redes = 'Todo o tráfego pela VPN (/0) derrubaria o site.'
+    if (Object.keys(e).length) return { erros: e }
+    return { pedido: { acao, perfil, gateway, porta: String(porta), usuario, redes: redes.join(','), senha } }
+  }
   if (acao === 'vpn-senha') {
     const senha = typeof c.senha === 'string' ? c.senha : ''
     if (!senha || senha.length > 128 || /[\u0000-\u001f\u007f]/.test(senha)) return { erros: { senha: 'Informe a senha da VPN (até 128 caracteres, sem quebra de linha).' } }

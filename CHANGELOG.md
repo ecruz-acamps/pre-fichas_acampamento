@@ -1,5 +1,11 @@
 # Histórico de versões
 
+## 2.30.0 — VPN configurada toda pelo painel, com proteção contra perder o acesso
+
+- **Configurações → VPN → Configurar e conectar:** gateway, porta, usuário, senha e redes internas. O painel instala o FortiClient VPN (se faltar), responde o assistente do FortiClient (o log da tarefa mostra as perguntas e respostas, sem a senha), conecta e só então liga a reconexão automática. O terminal não é mais necessário para a VPN.
+- **Proteção contra "todo o tráfego pela VPN":** o servidor guarda por qual interface a internet sai com a VPN desligada. Se, ao conectar (painel, reconectar ou vigia), a internet passar a sair pelo túnel — split tunnel desligado no FortiGate, o que derruba o site e o SSH —, a VPN é desconectada na hora e a reconexão automática é desligada.
+- **Emergência pelo painel:** **Desligar a VPN** (desconecta e para a reconexão) e **Liberar o SSH** (porta 22 no ufw).
+
 ## 2.29.1 — VPN por SSL-VPN
 
 - O assistente de linha de comando do FortiClient VPN gratuito só cria perfis **SSL-VPN** (IPsec nele só pela interface gráfica, e o motor IPsec do Linux só aceita IKEv2). A VPN do servidor passa a ser SSL-VPN: instruções do script, do painel e da documentação atualizadas (FortiGate: SSL-VPN em modo túnel, split tunnel, política de `ssl.root`; saída TCP na porta do SSL-VPN).
