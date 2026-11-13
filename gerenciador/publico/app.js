@@ -609,7 +609,7 @@ async function cartaoVpn(area) {
   const partes = [h('div', { class: 'topo' }, h('h2', {}, 'VPN do servidor (FortiClient)'), selo)]
   if (v.configurada === null) { area.append(h('section', { class: 'cartao' }, ...partes)); return }
   if (!v.instalado) {
-    partes.push(h('p', { class: 'dica' }, 'O FortiClient não está instalado neste servidor. A instalação e a criação do perfil (gateway, chave, IKE…) são feitas uma vez pelo terminal, com o analista de segurança ao lado:'),
+    partes.push(h('p', { class: 'dica' }, 'O FortiClient não está instalado neste servidor. A instalação e a criação do perfil (gateway, porta, usuário) são feitas uma vez pelo terminal, com o analista de segurança ao lado:'),
       h('pre', { class: 'log' }, 'sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh configurar'))
     area.append(h('section', { class: 'cartao' }, ...partes)); return
   }
@@ -624,7 +624,7 @@ async function cartaoVpn(area) {
     linha('Reconexão automática (a cada 2 min)', v.vigia ? 'ligada' : 'desligada'),
     linha('Lido em', v.coletado_em ? dataHora(v.coletado_em) : '')))))
   if (v.versao && v.versao_ok === false) partes.push(h('div', { class: 'alerta erro' }, `O FortiClient instalado (${v.versao}) não é da linha ${v.linha_esperada}, a mesma do FortiOS 7.4.x do FortiGate. Confira pelo terminal: sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh configurar`))
-  if (v.edicao_ems) partes.push(h('div', { class: 'alerta erro' }, 'O FortiClient instalado é a edição completa, que se registra num EMS e, sem EMS, recusa o IPsec ("IPsec VPN is disabled while registered to EMS"). Troque pela edição gratuita só de VPN pelo terminal: sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh configurar'))
+  if (v.edicao_ems) partes.push(h('div', { class: 'alerta erro' }, 'O FortiClient instalado é a edição completa, que se registra num EMS e, sem EMS, recusa a VPN ("VPN is disabled while registered to EMS"). Troque pela edição gratuita só de VPN pelo terminal: sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh configurar'))
   if (v.erro) partes.push(h('div', { class: 'alerta erro' }, v.erro))
   if (v.detalhe) partes.push(h('details', {}, h('summary', {}, 'Situação informada pelo FortiClient'), h('pre', { class: 'log' }, v.detalhe)))
   if (v.perfis) partes.push(h('details', {}, h('summary', {}, 'Perfis existentes no FortiClient'), h('pre', { class: 'log' }, v.perfis)))
@@ -643,7 +643,7 @@ async function cartaoVpn(area) {
       aviso.append(h('div', { class: 'alerta erro' }, err.message)); for (const [k, m] of Object.entries(err.dados?.erros ?? {})) erros[k]?.append(m)
     }
   } }, h('h3', {}, v.configurada ? 'Editar a configuração' : 'Registrar a configuração'),
-  h('p', { class: 'dica' }, 'Informe o perfil já criado no FortiClient, as redes internas da empresa que passam pela VPN e o usuário (se houver). Gateway, chave (PSK) e IKE ficam no próprio FortiClient — para mudá-los, use o terminal: sudo ./scripts/vpn-fortinet.sh configurar. A senha do usuário pode ser trocada abaixo.'),
+  h('p', { class: 'dica' }, 'Informe o perfil já criado no FortiClient, as redes internas da empresa que passam pela VPN e o usuário (se houver). Gateway e porta do SSL-VPN ficam no próprio FortiClient — para mudá-los, use o terminal: sudo ./scripts/vpn-fortinet.sh configurar. A senha do usuário pode ser trocada abaixo.'),
   h('div', { class: 'linha-2' },
     h('div', { class: 'campo' }, h('label', { for: 'vpn-perfil' }, 'Perfil do FortiClient'), perfil, erros.perfil),
     h('div', { class: 'campo' }, h('label', { for: 'vpn-usuario' }, 'Usuário da VPN'), usuario, erros.usuario)),

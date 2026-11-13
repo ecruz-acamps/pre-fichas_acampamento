@@ -329,7 +329,7 @@ domínio e clique em **Salvar token**. O servidor confere o token antes de guard
 ### VPN no painel central
 Na aba **Configurações → VPN do servidor (FortiClient)** você vê a configuração (perfil, usuário, redes, IP do servidor na
 VPN, versão do FortiClient), se a VPN está **conectada**, usa **Reconectar** quando ela cair e pode editar perfil, redes e
-usuário. A instalação, a criação do perfil (gateway, chave, IKE) e o fechamento da porta 22 são feitos só pelo terminal.
+usuário. A instalação, a criação do perfil (gateway e porta do SSL-VPN) e o fechamento da porta 22 são feitos só pelo terminal.
 
 ## 15. Atualizações do sistema
 

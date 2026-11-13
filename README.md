@@ -33,7 +33,7 @@ rede local**.
 - **Painel central da VM:** cria acampamentos pelo navegador, mostra a situação de cada um e do servidor, atualiza um ou todos, faz backup e mantém uma auditoria.
 - **Vários acampamentos na mesma VM**, de forma **híbrida**: cada um pode ser publicado pela Cloudflare, direto ou só na rede local.
 - **Instalador com ordem de implantação:** 1) painel central, que prepara a VM; 2) acampamentos.
-- **VPN FortiClient (IPsec)** para administrar um servidor remoto e fechar a porta 22.
+- **VPN FortiClient (SSL-VPN)** para administrar um servidor remoto e fechar a porta 22.
 - **Ficha impressa** no formato de pré-inscrição, com cabeçalho personalizável.
 - **Performance:** a fila com 20 mil fichas abre em 1 s, antes levava 22 s.
 
@@ -104,14 +104,14 @@ A publicação pela Cloudflare pode ser **ligada e desligada depois** no painel 
 | Entrada | TCP 9090 | Painel central, **somente a partir das redes da VPN**. Nunca libere para a internet. |
 | Saída | TCP 443 | GitHub e imagem pronta (atualizações), Let's Encrypt, Cloudflare, ViaCEP |
 | Saída | TCP 465/587 | E-mail de recuperação de senha |
-| Saída | UDP 500 e 4500 | VPN IPsec com o FortiGate |
+| Saída | TCP (porta do SSL-VPN) | VPN SSL com o FortiGate |
 
 **Nunca libere** 5432 (banco de dados) nem 3000+ (aplicações). Eles atendem só dentro da VM.
 
 ### Servidor remoto: VPN e porta 22 fechada
 
 ```bash
-sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh configurar   # FortiClient + perfil IPsec + reconexão
+sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh configurar   # FortiClient VPN + perfil SSL-VPN + reconexão
 sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh status
 sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh fechar-ssh   # 22 só pela VPN (recusa se a VPN estiver fora)
 ```

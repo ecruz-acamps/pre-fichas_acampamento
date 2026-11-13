@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 2.29.1 — VPN por SSL-VPN
+
+- O assistente de linha de comando do FortiClient VPN gratuito só cria perfis **SSL-VPN** (IPsec nele só pela interface gráfica, e o motor IPsec do Linux só aceita IKEv2). A VPN do servidor passa a ser SSL-VPN: instruções do script, do painel e da documentação atualizadas (FortiGate: SSL-VPN em modo túnel, split tunnel, política de `ssl.root`; saída TCP na porta do SSL-VPN).
+
 ## 2.29.0 — FortiClient VPN gratuito (sem EMS)
 
 - O pacote do repositório `repo.fortinet.com` é o FortiClient **completo** (7.4.8), que se registra num EMS e, sem EMS, recusa o IPsec: `IPsec VPN is disabled while registered to EMS`. O `vpn-fortinet.sh configurar` agora instala o **FortiClient VPN gratuito** (só VPN, 7.4.3.5411) baixado da Fortinet, conferindo o **SHA-256 fixado** no script; se a edição completa estiver instalada, ela é removida, o repositório dela é apagado e a versão fica travada (`apt-mark hold`).

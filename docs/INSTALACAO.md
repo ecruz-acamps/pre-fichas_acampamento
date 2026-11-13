@@ -564,20 +564,24 @@ sudo ./scripts/vpn-fortinet.sh fechar-ssh   # 22 só a partir das redes da VPN; 
 **O que o script faz:**
 1. Instala o **FortiClient VPN gratuito** (só VPN, 7.4.3), baixado da Fortinet (`filestore.fortinet.com`),
    **conferindo o SHA-256** fixado no script. Se não bater, cancela. A edição completa do repositório
-   `repo.fortinet.com` **não** serve: ela se registra num EMS e, sem EMS, recusa o IPsec
-   ("IPsec VPN is disabled while registered to EMS"). Se ela estiver instalada, o script a remove, apaga o
+   `repo.fortinet.com` **não** serve: ela se registra num EMS e, sem EMS, recusa a VPN
+   ("VPN is disabled while registered to EMS"). Se ela estiver instalada, o script a remove, apaga o
    repositório dela e trava a versão (`apt-mark hold`) para o apt não voltar para a completa.
-2. Abre o assistente do próprio FortiClient (`forticlient vpn edit prefichas`). Escolha **IPsec** e preencha
-   com os dados do analista: gateway, PSK, IKE e usuário. **Não** marque "todo o tráfego pela VPN".
+2. Abre o assistente do próprio FortiClient (`forticlient vpn edit prefichas`). É um perfil **SSL-VPN**:
+   gateway do FortiGate, porta do SSL-VPN e usuário. (O assistente de linha de comando da edição gratuita só cria
+   SSL-VPN; IPsec nela só pela interface gráfica, que o servidor não tem.)
 3. Conecta com senha salva e "sempre ativo" (`--save-password --always-up`).
 4. Liga um **vigia** (systemd, a cada 2 minutos) que reconecta se o túnel cair.
 
-**Peça ao analista** o túnel IPsec para o FortiClient (Linux), com:
-- gateway e porta, **PSK** e **IKEv2** (o FortiClient 7.4 não aceita IKEv1);
+**No FortiGate (SSL-VPN):**
+- **VPN → SSL-VPN Settings** ligado (porta, certificado), com o **grupo** do usuário do servidor no portal;
+- portal em **modo túnel** com **split tunnel** ligado e só as redes internas (ex.: um grupo de endereços próprio);
+- política de firewall de `ssl.root` (origem: grupo do usuário) para a rede interna, só os serviços necessários (ex.: SSH);
+- alguns modelos pequenos (2 GB de memória) não têm SSL-VPN em modo túnel a partir do FortiOS 7.4.4: confira se o menu existe;
 - usuário **sem token/2FA**, se houver, porque o servidor conecta sozinho;
 - **split tunnel**, só com as redes internas;
 - liberação, da rede da empresa, para o IP do servidor na VPN, na porta 22;
-- no local do servidor: saída **UDP 500 e 4500** liberada;
+- no local do servidor: saída **TCP** na porta do SSL-VPN liberada;
 - depois do teste, **bloquear a 22 no NAT 1:1**.
 
 **Limitações (documentação da Fortinet):**
@@ -688,11 +692,11 @@ baixe as listas de quarentena/conferência se quiser e confirme. Abaixo ficam as
 - Quem perdeu a senha **e** o celular do autenticador no painel central usa o terminal (`cli.mjs nova-senha` e `novo-autenticador`); no acampamento, outro administrador redefine o acesso.
 
 **VPN pelo painel central (aba Configurações → "VPN do servidor (FortiClient)"):**
-- **Configuração:** perfil do FortiClient, usuário, redes internas pela VPN, IP do servidor na VPN, versão do FortiClient e se a reconexão automática (a cada 2 min) está ligada. Atualizada a cada minuto. Senha e chave (PSK) nunca aparecem: ficam só no FortiClient.
+- **Configuração:** perfil do FortiClient, usuário, redes internas pela VPN, IP do servidor na VPN, versão do FortiClient e se a reconexão automática (a cada 2 min) está ligada. Atualizada a cada minuto. A senha nunca aparece: ficam só no FortiClient.
 - **Editar/registrar a configuração:** informe o perfil já criado no FortiClient, as redes internas e o usuário; o painel grava e liga a reconexão automática. Útil também se o perfil foi criado à mão no FortiClient.
 - **Senha da VPN:** quando a senha do usuário for trocada ou expirar, informe a nova aqui: ela é gravada no FortiClient e a VPN reconecta. O usuário do servidor não pode ter FortiToken/MFA.
 - **Reconectar:** reinicia o túnel. Se você acessa o painel pela VPN, ele pode ficar alguns segundos sem resposta; a tela de Tarefas tenta de novo sozinha.
-- Gateway, chave (PSK), IKE e senha continuam sendo alterados pelo terminal: `sudo forticlient vpn edit prefichas` (ou `vpn-fortinet.sh configurar`).
+- Gateway e porta continuam sendo alterados pelo terminal: `sudo ./scripts/vpn-fortinet.sh configurar`.
 
 **Acesso (a VPN é opcional):**
 - **Pela internet, na porta web normal (recomendado):** informe um domínio, por exemplo
