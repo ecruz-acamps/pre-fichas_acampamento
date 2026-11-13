@@ -24,7 +24,11 @@ const SO_HOME = join(T, 'home-vpn')
 // como o FortiClient 7.4 de verdade: recusa root. Aqui "não é root" = rodou pelo runuser (HOME do usuário da VPN) numa sessão D-Bus
 exe('forticlient', `[ -n "$XDG_RUNTIME_DIR" ] && [ -d "$XDG_RUNTIME_DIR" ] || { echo "Error: failed to find runtime user dir" >&2; exit 1; }
 [ "$HOME" = "${SO_HOME}" ] && [ -n "$DBUS_FAKE" ] && [ "$CHAVEIRO_FAKE" = destravado ] || { echo 'Error: please run this command under non-root user.' >&2; exit 1; }
-case "$2" in connect) if [ -n "$PTY_FAKE" ]; then IFS= read -r pw; printf '%s' "$pw" > "${T}/senha-recebida"; fi ;; esac
+case "$2" in
+  connect) if [ -n "$PTY_FAKE" ]; then IFS= read -r pw; printf '%s' "$pw" > "${T}/senha-recebida"; fi; [ -e "${T}/recusa" ] || touch "${T}/tunel" ;;
+  disconnect) rm -f "${T}/tunel" ;;
+  edit) if [ -n "$PTY_FAKE" ]; then echo 'Remote Gateway:'; IFS= read -r g; echo 'Port [default=443]:'; IFS= read -r p; echo 'Username:'; IFS= read -r u; printf '%s|%s|%s' "$g" "$p" "$u" > "${T}/edit-respostas"; echo 'Saved VPN tunnel'; fi ;;
+esac
 case "$2" in status) printf 'Status: Connected\\nRemote gateway: vpn.empresa.com.br\\nPassword: segredo-nao-pode-aparecer\\n' ;; list) printf 'prefichas  ipsec  vpn.empresa.com.br\\nPSK: chave-nao-pode-aparecer\\n' ;; esac; exit 0`)
 exe('systemctl', 'exit 0')
 exe('runuser', '[ "$1" = -u ] && [ "$2" = prefichas-vpn ] && [ "$3" = -- ] || exit 9; shift 3; exec "$@"')
@@ -32,12 +36,18 @@ exe('dbus-run-session', '[ "$1" = -- ] && shift; DBUS_FAKE=1 exec "$@"')
 exe('gnome-keyring-daemon', `case "$*" in *--unlock*) s=$(cat); [ \${#s} -ge 32 ] && echo "CHAVEIRO_FAKE=destravado; export CHAVEIRO_FAKE" ;; esac; exit 0`)
 exe('script', '[ "$1" = -qec ] && [ "$3" = /dev/null ] || exit 9; PTY_FAKE=1 exec bash -c "$2"'); exe('dbus-launch', 'exit 0'); exe('id', 'case "$*" in "-u prefichas-vpn"|"-g prefichas-vpn") echo 0 ;; prefichas-vpn) exit 0 ;; *) exec /usr/bin/id "$@" ;; esac'); exe('install', 'shift 7; mkdir -p "$1"'); exe('useradd', 'exit 0'); exe('chown', 'exit 0')
 exe('dpkg-query', "printf '7.4.3.1714'")
-exe('ip', `case "$*" in "route show default") echo 'default via 10.0.0.1 dev eth0' ;; "route get "*) echo "$3 dev ppp0 src 192.168.50.10" ;; esac; exit 0`)
+// túnel no ar = arquivo "tunel"; "full" = o FortiGate empurra a rota da internet (split tunnel desligado)
+writeFileSync(join(T, 'tunel'), '')
+exe('ip', `case "$*" in
+  "route show default") echo 'default via 10.0.0.1 dev eth0' ;;
+  "route get 1.1.1.1") if [ -e "${T}/tunel" ] && [ -e "${T}/full" ]; then echo '1.1.1.1 dev ppp0 src 192.168.50.10'; else echo '1.1.1.1 via 10.0.0.1 dev eth0 src 10.0.0.5'; fi ;;
+  "route get "*) if [ -e "${T}/tunel" ]; then echo "$3 dev ppp0 src 192.168.50.10"; else echo "$3 via 10.0.0.1 dev eth0 src 10.0.0.5"; fi ;;
+esac; exit 0`)
 exe('docker', 'exit 0'); exe('curl', 'exit 7')
 
 function rodar(modo) {
   return spawnSync('bash', [join(RAIZ, 'scripts/gerenciador-executor.sh'), modo], { encoding: 'utf8', timeout: 60000,
-    env: { ...process.env, PATH: `${D.bin}:${process.env.PATH}`, GERENCIADOR_DADOS: D.dados, PREFICHAS_OPT: D.opt, PREFICHAS_ETC: D.etc, PREFICHAS_SYSTEMD: D.unidades, PREFICHAS_VPN_SO_HOME: SO_HOME, PREFICHAS_VPN_RUNTIME_BASE: join(T, 'run-user'), FORTICLIENT_CLI: CLI_VPN, PREFICHAS_VPN_PATH: `${D.bin}:${process.env.PATH}` } })
+    env: { ...process.env, PATH: `${D.bin}:${process.env.PATH}`, GERENCIADOR_DADOS: D.dados, PREFICHAS_OPT: D.opt, PREFICHAS_ETC: D.etc, PREFICHAS_SYSTEMD: D.unidades, PREFICHAS_VPN_SO_HOME: SO_HOME, PREFICHAS_VPN_RUNTIME_BASE: join(T, 'run-user'), FORTICLIENT_CLI: CLI_VPN, VPN_ESPERA_PTY: '0', VPN_ESPERA_PASSO: '0', PREFICHAS_VPN_PATH: `${D.bin}:${process.env.PATH}` } })
 }
 function pedir(corpo) {
   const id = randomUUID(); writeFileSync(join(D.dados, 'pedidos', `${id}.json`), JSON.stringify({ por: 'adm@x.com', ...corpo })); rodar('pedidos')
@@ -105,7 +115,7 @@ test('trocar a senha pelo painel: vai pelo prompt do FortiClient (pseudo-termina
 
 const direto = (args, env = {}, input) => spawnSync('bash', [join(RAIZ, 'scripts/vpn-fortinet.sh'), ...args], { encoding: 'utf8', timeout: 60000, input,
   env: { ...process.env, PATH: `${D.bin}:${process.env.PATH}`, PREFICHAS_ETC: D.etc, PREFICHAS_SYSTEMD: D.unidades, PREFICHAS_VPN_SO_HOME: SO_HOME,
-    PREFICHAS_VPN_RUNTIME_BASE: join(T, 'run-user'), PREFICHAS_VPN_PATH: `${D.bin}:${process.env.PATH}`, FORTICLIENT_CLI: CLI_VPN, ...env } })
+    PREFICHAS_VPN_RUNTIME_BASE: join(T, 'run-user'), PREFICHAS_VPN_PATH: `${D.bin}:${process.env.PATH}`, FORTICLIENT_CLI: CLI_VPN, VPN_ESPERA_PTY: '0', VPN_ESPERA_PASSO: '0', ...env } })
 
 test('edição completa (EMS) é detectada: o painel avisa, e os argumentos de usuário seguem a edição instalada', { skip: !root && 'precisa de root' }, () => {
   const ems = JSON.parse(direto(['estado-json'], { FORTICLIENT_CLI: CLI_EMS }).stdout)
@@ -131,4 +141,49 @@ test('instalador: troca a edição completa pela gratuita só se o SHA-256 do .d
   assert.match(log, /apt-get purge -y -qq forticlient[\s\S]*apt-get install -y -qq \S+forticlient-vpn\.deb[\s\S]*apt-mark hold forticlient/, log)
   assert.match(r.stdout, /FortiClient VPN \(gratuito/)
   exe('curl', 'exit 7')
+})
+
+const SSL = { acao: 'vpn-ssl', perfil: 'prefichas', gateway: 'ecruz.exemplo.com.br', porta: '10443', usuario: 'vpn_acampamento', redes: '192.168.1.0/24,192.168.50.0/24', senha: 'Senha-SSL-#1 "x" $(id)' }
+
+test('SSL-VPN pelo painel: responde o assistente (gateway, porta, usuário), conecta com a senha e só então liga a reconexão', { skip: !root && 'precisa de root' }, () => {
+  writeFileSync(LOG, '')
+  const r = pedir(SSL)
+  assert.equal(r.tarefa.situacao, 'concluida', r.log)
+  assert.equal(readFileSync(join(T, 'edit-respostas'), 'utf8'), 'ecruz.exemplo.com.br|10443|vpn_acampamento')
+  assert.equal(readFileSync(join(T, 'senha-recebida'), 'utf8'), SSL.senha)
+  assert.match(r.log, /Remote Gateway/, 'o log mostra as perguntas do assistente (para ajustar se a Fortinet mudar)')
+  assert.match(r.log, /VPN conectada/)
+  const env = spawnSync('bash', ['-c', `. '${join(D.etc, 'vpn-forticlient.env')}'; printf '%s|%s|%s|%s' "$VPN_GATEWAY" "$VPN_PORTA" "$VPN_USUARIO" "$VPN_REDES"`], { encoding: 'utf8' }).stdout
+  assert.equal(env, 'ecruz.exemplo.com.br|10443|vpn_acampamento|192.168.1.0/24,192.168.50.0/24')
+  assert.equal(readFileSync(join(D.etc, 'vpn-saida'), 'utf8').trim(), 'eth0', 'saída da internet guardada com a VPN desligada')
+  const log = readFileSync(LOG, 'utf8')
+  assert.ok(log.lastIndexOf('systemctl enable --now prefichas-vpn-vigia.timer') > log.lastIndexOf('forticlient vpn connect'), 'reconexão ligada só depois de conectar')
+  assert.doesNotMatch(log + r.log + JSON.stringify(r.tarefa), /Senha-SSL/)
+  assert.equal(spawnSync('grep', ['-rl', 'Senha-SSL', D.dados, D.etc], { encoding: 'utf8' }).stdout, '')
+})
+
+test('split tunnel desligado no FortiGate: a VPN é derrubada na hora e a reconexão fica desligada (o site e o SSH não caem)', { skip: !root && 'precisa de root' }, () => {
+  writeFileSync(join(T, 'full'), ''); writeFileSync(LOG, '')
+  const r = pedir(SSL)
+  assert.equal(r.tarefa.situacao, 'erro', r.log)
+  assert.match(r.log, /TODO o tráfego pela VPN/)
+  assert.equal(existsSync(join(T, 'tunel')), false, 'desconectou')
+  const log = readFileSync(LOG, 'utf8')
+  assert.match(log, /systemctl disable --now prefichas-vpn-vigia.timer/)
+  assert.ok(log.lastIndexOf('systemctl disable --now prefichas-vpn-vigia.timer') > log.lastIndexOf('systemctl enable --now prefichas-vpn-vigia.timer'), 'não ficou religada')
+  // o vigia também se protege
+  writeFileSync(LOG, '')
+  direto(['vigiar'])
+  assert.equal(existsSync(join(T, 'tunel')), false); assert.match(readFileSync(LOG, 'utf8'), /disable --now prefichas-vpn-vigia/)
+  spawnSync('rm', ['-f', join(T, 'full')])
+})
+
+test('emergência pelo painel: desligar a VPN e liberar o SSH', { skip: !root && 'precisa de root' }, () => {
+  writeFileSync(join(T, 'tunel'), ''); writeFileSync(LOG, '')
+  const r = pedir({ acao: 'vpn-desligar' })
+  assert.equal(r.tarefa.situacao, 'concluida', r.log); assert.equal(existsSync(join(T, 'tunel')), false)
+  assert.match(readFileSync(LOG, 'utf8'), /systemctl disable --now prefichas-vpn-vigia.timer/)
+  exe('ufw', 'exit 0')
+  const s2 = pedir({ acao: 'ssh-abrir' })
+  assert.equal(s2.tarefa.situacao, 'concluida', s2.log); assert.match(readFileSync(LOG, 'utf8'), /ufw allow 22\/tcp/)
 })

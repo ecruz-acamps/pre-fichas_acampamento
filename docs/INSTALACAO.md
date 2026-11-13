@@ -692,6 +692,8 @@ baixe as listas de quarentena/conferência se quiser e confirme. Abaixo ficam as
 - Quem perdeu a senha **e** o celular do autenticador no painel central usa o terminal (`cli.mjs nova-senha` e `novo-autenticador`); no acampamento, outro administrador redefine o acesso.
 
 **VPN pelo painel central (aba Configurações → "VPN do servidor (FortiClient)"):**
+- **Configurar e conectar:** gateway, porta do SSL-VPN, usuário, senha e redes internas. O painel instala o FortiClient VPN, cria o perfil, conecta e liga a reconexão. Se o FortiGate mandar todo o tráfego pela VPN (split tunnel desligado), o servidor desconecta sozinho e desliga a reconexão, para o site e o SSH não caírem.
+- **Desligar a VPN** e **Emergência: liberar o SSH:** para recuperar o acesso sem console.
 - **Configuração:** perfil do FortiClient, usuário, redes internas pela VPN, IP do servidor na VPN, versão do FortiClient e se a reconexão automática (a cada 2 min) está ligada. Atualizada a cada minuto. A senha nunca aparece: ficam só no FortiClient.
 - **Editar/registrar a configuração:** informe o perfil já criado no FortiClient, as redes internas e o usuário; o painel grava e liga a reconexão automática. Útil também se o perfil foi criado à mão no FortiClient.
 - **Senha da VPN:** quando a senha do usuário for trocada ou expirar, informe a nova aqui: ela é gravada no FortiClient e a VPN reconecta. O usuário do servidor não pode ter FortiToken/MFA.

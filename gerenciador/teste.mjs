@@ -118,6 +118,10 @@ test('aba Configurações: VPN FortiClient (situação, reconectar, configurar p
   assert.equal((await post({ acao: 'vpn-credenciais', psk: 'chave-qualquer-123' })).status, 400)
   for (const senha of ['', 'a\nb', 'x'.repeat(129), 123]) assert.equal((await post({ acao: 'vpn-senha', senha })).status, 400, JSON.stringify(senha))
   assert.equal((await post({ acao: 'vpn-senha', senha: 'Senha-Boa-123' })).status, 201)
+  const ssl = { acao: 'vpn-ssl', gateway: 'ecruz.fortiddns.com', porta: 10443, usuario: 'vpn_acampamento', senha: 'x1', redes: '192.168.1.0/24' }
+  for (const ruim of [{ gateway: '' }, { gateway: 'a b;c' }, { porta: 0 }, { porta: 70000 }, { usuario: '' }, { senha: '' }, { redes: '0.0.0.0/0' }]) assert.equal((await post({ ...ssl, ...ruim })).status, 400, JSON.stringify(ruim))
+  assert.equal((await post(ssl)).status, 201)
+  for (const acao of ['vpn-desligar', 'ssh-abrir']) assert.equal((await post({ acao })).status, 201, acao)
   const ok = { acao: 'vpn-config', perfil: 'prefichas', redes: '192.168.15.0/24, 192.168.16.0/24', usuario: 'servidor' }
   for (const ruim of [{ perfil: '' }, { perfil: 'perfil; rm' }, { redes: '' }, { redes: '0.0.0.0/0' }, { redes: '192.168.15.0' }, { redes: '999.1.1.0/24' }, { redes: '10.0.0.0/8;$(id)' }, { usuario: 'a b' }]) {
     assert.equal((await post({ ...ok, ...ruim })).status, 400, JSON.stringify(ruim))

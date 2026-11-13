@@ -70,7 +70,7 @@ preparar_usuario() { # usuário de sistema sem login + D-Bus + chaveiro
   [ -s "$CHAVEIRO" ] || ( umask 077; head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$CHAVEIRO" )
 }
 # Configuração salva (no "configurar" e no "registrar" vale o que for informado agora)
-case "${1:-configurar}" in configurar|registrar) ;; *) [ -r "$ESTADO" ] && . "$ESTADO" ;; esac
+case "${1:-configurar}" in configurar|registrar|ssl) ;; *) [ -r "$ESTADO" ] && . "$ESTADO" ;; esac
 
 # O túnel está de pé se a rota para a rede interna da empresa NÃO sai pela interface padrão
 tunel_ativo() {
@@ -118,6 +118,37 @@ instalar_vpn_gratuito() {
   DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$d/forticlient-vpn.deb" >/dev/null
   apt-mark hold forticlient >/dev/null 2>&1 || true
 }
+# ---- proteção contra "todo o tráfego pela VPN" (split tunnel desligado no FortiGate) -----------------------------
+# Se a VPN levar a rota da internet, as respostas do site e do SSH saem pelo túnel e o servidor some da internet.
+# Guardamos por qual interface a internet sai com a VPN desligada; se, conectada, a saída mudar, desconectamos.
+SAIDA="$ETC_PF/vpn-saida"
+saida_internet() { ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="dev"){print $(i+1); exit}}'; }
+gravar_saida() { # só com o túnel fora do ar (senão gravaria a interface da VPN)
+  tunel_ativo && return 0
+  local d; d="$(saida_internet)"; [ -n "$d" ] || return 0
+  mkdir -p "$ETC_PF" && chmod 700 "$ETC_PF"; printf '%s\n' "$d" > "$SAIDA"; chmod 600 "$SAIDA"
+}
+tudo_pela_vpn() { [ -r "$SAIDA" ] || return 1; local d; d="$(saida_internet)"; [ -n "$d" ] && [ "$d" != "$(cat "$SAIDA")" ]; }
+desligar_vpn() { # desconecta e para a reconexão automática
+  systemctl disable --now "${VIGIA}.timer" >/dev/null 2>&1 || true
+  ( FC_TIMEOUT=30 fc vpn disconnect ) >/dev/null 2>&1 || true
+}
+proteger() { # depois de conectar: se a internet passou a sair pela VPN, derruba na hora
+  tudo_pela_vpn || return 0
+  desligar_vpn
+  logger -t prefichas-vpn "VPN derrubada: o FortiGate mandou todo o tráfego pelo túnel (split tunnel desligado)" 2>/dev/null || true
+  erro "O FortiGate mandou TODO o tráfego pela VPN (split tunnel desligado): o site e o SSH ficariam fora do ar. Desconectei e desliguei a reconexão automática. Ligue o split tunnel no portal SSL-VPN do FortiGate (só as redes internas) e configure de novo."
+}
+limpar_saida() { sed -e 's/\x1b\[[0-9;?]*[A-Za-z]//g' -e 's/\r//g' | grep -viE 'pass|senha|secret|key' | grep -v '^[[:space:]]*$' || true; }
+conectar_com_senha() { # senha em $SENHA; digitada no prompt do FortiClient por pseudo-terminal
+  ( FC_TIMEOUT=30 fc vpn disconnect ) >/dev/null 2>&1 || true
+  sleep 2
+  { printf '%s\n' "$SENHA"; sleep "${VPN_ESPERA_PTY:-40}"; } | FC_PTY=1 FC_TIMEOUT=60 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "$VPN_USUARIO" pedir-senha) --save-password --always-up --auto-connect 2>&1 | limpar_saida | tail -15 || true
+  SENHA=""
+  for _ in $(seq 1 20); do { tunel_ativo || tudo_pela_vpn; } && break; sleep "${VPN_ESPERA_PASSO:-3}"; done
+  proteger
+  tunel_ativo
+}
 validar_redes() {
   VPN_REDES="$(printf '%s' "$VPN_REDES" | tr -d ' ')"
   [ -n "$VPN_REDES" ] || erro "Informe as redes internas (usadas para conferir o túnel e fechar a 22)."
@@ -129,7 +160,7 @@ validar_redes() {
 }
 gravar_config() {
   mkdir -p "$ETC_PF" && chmod 700 "$ETC_PF"
-  ( umask 077; printf 'VPN_PERFIL=%q\nVPN_REDES=%q\nVPN_USUARIO=%q\n' "$PERFIL" "$VPN_REDES" "$VPN_USUARIO" > "$ESTADO" )
+  ( umask 077; printf 'VPN_PERFIL=%q\nVPN_REDES=%q\nVPN_USUARIO=%q\nVPN_GATEWAY=%q\nVPN_PORTA=%q\n' "$PERFIL" "$VPN_REDES" "$VPN_USUARIO" "${VPN_GATEWAY:-}" "${VPN_PORTA:-}" > "$ESTADO" )
 }
 instalar_vigia() { # a cada 2 minutos, se o túnel caiu, reconecta com a senha salva no FortiClient
   cat > "$UNIDADES/${VIGIA}.service" <<UNIT
@@ -210,6 +241,7 @@ vigiar)
   tunel_ativo && exit 0
   logger -t prefichas-vpn "Túnel FortiClient fora do ar: reconectando o perfil ${VPN_PERFIL:-$PERFIL}"
   FC_TIMEOUT=90 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "${VPN_USUARIO:-}") --always-up </dev/null >/dev/null 2>&1 || true
+  sleep "${VPN_ESPERA_PASSO:-5}"; proteger
   ;;
 estado-json)
   # usado pelo painel central: situação e configuração em JSON (sem segredos: senha e PSK ficam só no FortiClient)
@@ -225,9 +257,9 @@ estado-json)
   versao=""; [ "$inst" = true ] && versao="$(dpkg-query -W -f='${Version}' forticlient 2>/dev/null || true)"
   ems=false; [ "$inst" = true ] && edicao_completa && ems=true
   jq -n --argjson ems "$ems" --argjson i "$inst" --argjson c "$conf" --argjson k "$con" --argjson v "$vig" --arg r "${VPN_REDES:-}" --arg d "$det" --arg l "$perfis" \
-    --arg perfil "${VPN_PERFIL:-$PERFIL}" --arg u "${VPN_USUARIO:-}" --arg ip "$(ip_na_vpn || true)" --arg ver "$versao" --arg linha "$VERSAO" \
+    --arg gw "${VPN_GATEWAY:-}" --arg pt "${VPN_PORTA:-}" --arg perfil "${VPN_PERFIL:-$PERFIL}" --arg u "${VPN_USUARIO:-}" --arg ip "$(ip_na_vpn || true)" --arg ver "$versao" --arg linha "$VERSAO" \
     '{tipo:"forticlient", instalado:$i, configurada:$c, conectada:$k, vigia:$v, redes:($r|split(",")|map(select(length>0))), perfil:$perfil,
-      usuario:$u, ip_na_vpn:$ip, detalhe:$d, perfis:$l, versao:$ver, linha_esperada:$linha, edicao_ems:$ems,
+      usuario:$u, gateway:$gw, porta:$pt, ip_na_vpn:$ip, detalhe:$d, perfis:$l, versao:$ver, linha_esperada:$linha, edicao_ems:$ems,
       versao_ok:($ver == "" or ($ver | startswith($linha + ".")))}'
   ;;
 registrar)
@@ -251,8 +283,9 @@ reconectar)
   FC_TIMEOUT=30 fc vpn disconnect >/dev/null 2>&1 || true
   sleep 2
   FC_TIMEOUT=90 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "${VPN_USUARIO:-}") --always-up </dev/null >/dev/null 2>&1 || true
-  for _ in $(seq 1 20); do tunel_ativo && break; sleep 3; done
-  if tunel_ativo; then echo "✓ VPN reconectada."; else erro "A VPN não voltou. Veja: fc vpn status — a senha salva pode ter expirado: rode vpn-fortinet.sh configurar."; fi
+  for _ in $(seq 1 20); do { tunel_ativo || tudo_pela_vpn; } && break; sleep "${VPN_ESPERA_PASSO:-3}"; done
+  proteger
+  if tunel_ativo; then systemctl enable --now "${VIGIA}.timer" >/dev/null 2>&1 || true; echo "✓ VPN reconectada."; else erro "A VPN não voltou. Veja: fc vpn status — a senha salva pode ter expirado: rode vpn-fortinet.sh configurar."; fi
   ;;
 senha)
   # pelo painel: a senha chega pela entrada padrão (nunca em argumento nem variável de ambiente), é digitada no
@@ -262,12 +295,49 @@ senha)
   IFS= read -r SENHA || true
   [ -n "$SENHA" ] || erro "Senha vazia."
   echo "→ Gravando a nova senha e reconectando (perfil ${VPN_PERFIL:-$PERFIL}, usuário $VPN_USUARIO)…"
-  FC_TIMEOUT=30 fc vpn disconnect >/dev/null 2>&1 || true
-  sleep 2
-  { printf '%s\n' "$SENHA"; sleep 40; } | FC_PTY=1 FC_TIMEOUT=60 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "$VPN_USUARIO" pedir-senha) --save-password --always-up --auto-connect >/dev/null 2>&1 || true
-  SENHA=""
-  for _ in $(seq 1 20); do tunel_ativo && break; sleep 3; done
+  gravar_saida
+  conectar_com_senha || true
   if tunel_ativo; then echo "✓ Senha salva e VPN conectada."; else erro "A VPN não conectou com essa senha. Confira a senha e o usuário (ou se o usuário tem FortiToken/MFA, que impede a conexão automática)."; fi
+  ;;
+ssl)
+  # PELO PAINEL: instala (se faltar), cria/atualiza o perfil SSL-VPN respondendo o assistente do FortiClient,
+  # conecta com a senha (entrada padrão) e só então liga a reconexão. Ambiente: VPN_PERFIL, VPN_GATEWAY,
+  # VPN_PORTA, VPN_USUARIO, VPN_REDES. Se o FortiGate mandar todo o tráfego pela VPN, desconecta sozinho.
+  PERFIL="${VPN_PERFIL:-prefichas}"
+  [[ "$PERFIL" =~ ^[A-Za-z0-9._-]{1,64}$ ]] || erro "Nome do perfil inválido."
+  [[ "${VPN_GATEWAY:-}" =~ ^[A-Za-z0-9]([A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$ ]] || erro "Gateway inválido."
+  [[ "${VPN_PORTA:-}" =~ ^[0-9]{1,5}$ ]] && [ "$VPN_PORTA" -ge 1 ] && [ "$VPN_PORTA" -le 65535 ] || erro "Porta inválida."
+  [[ "${VPN_USUARIO:-}" =~ ^[A-Za-z0-9@._\\-]{1,128}$ ]] || erro "Usuário inválido."
+  validar_redes
+  IFS= read -r SENHA || true
+  [ -n "$SENHA" ] || erro "Senha vazia."
+  if ! command -v forticlient >/dev/null || edicao_completa; then instalar_vpn_gratuito; fi
+  command -v forticlient >/dev/null || erro "FortiClient não foi instalado."
+  preparar_usuario
+  systemctl disable --now "${VIGIA}.timer" >/dev/null 2>&1 || true   # sem reconexão até confirmar que está tudo certo
+  ( FC_TIMEOUT=30 fc vpn disconnect ) >/dev/null 2>&1 || true
+  sleep 2
+  gravar_saida
+  echo "→ Criando o perfil SSL-VPN \"$PERFIL\" ($VPN_GATEWAY:$VPN_PORTA, usuário $VPN_USUARIO). Respostas do assistente:"
+  # respostas: gateway, porta, usuário; depois ENTER (padrão) para o que mais for perguntado
+  { printf '%s\n' "$VPN_GATEWAY" "$VPN_PORTA" "$VPN_USUARIO"; for _ in 1 2 3 4 5 6 7 8; do sleep "${VPN_ESPERA_PASSO:-1}"; printf '\n'; done; sleep "${VPN_ESPERA_PASSO:-4}"; } \
+    | FC_PTY=1 FC_TIMEOUT=40 fc vpn edit "$PERFIL" 2>&1 | limpar_saida | tail -40 | sed 's/^/  │ /' || true
+  echo "→ Perfil gravado no FortiClient:"
+  ( FC_TIMEOUT=15 fc vpn view "$PERFIL" 2>&1 || FC_TIMEOUT=15 fc vpn list 2>&1 ) | limpar_saida | head -30 | sed 's/^/  │ /' || true
+  gravar_config
+  echo "→ Conectando…"
+  if conectar_com_senha; then
+    instalar_vigia
+    echo "✓ VPN conectada (a rede ${VPN_REDES%%,*} passa pelo túnel; a internet continua pela saída normal). Reconexão automática ligada."
+    ip="$(ip_na_vpn || true)"; [ -n "$ip" ] && echo "  IP do servidor na VPN: $ip"
+  else
+    erro "A VPN não conectou. Confira acima as respostas do assistente e a mensagem do FortiClient (gateway, porta, usuário, senha, certificado do FortiGate). A reconexão automática ficou desligada."
+  fi
+  ;;
+desligar)
+  # emergência (painel): desconecta e desliga a reconexão automática; o perfil e a configuração ficam
+  desligar_vpn
+  echo "✓ VPN desconectada e reconexão automática desligada. Para voltar: Reconectar (ou configure de novo)."
   ;;
 status)
   fc vpn status 2>/dev/null || echo "FortiClient não instalado ou sem perfil."
@@ -294,7 +364,7 @@ fechar-ssh)
   echo "  Emergência: console da VM → sudo ./scripts/vpn-fortinet.sh abrir-ssh"
   ;;
 abrir-ssh)
-  command -v ufw >/dev/null || erro "ufw não instalado."
+  command -v ufw >/dev/null || { echo "✓ O ufw não está instalado: o SSH não estava bloqueado por ele."; exit 0; }
   ufw allow 22/tcp >/dev/null && echo "✓ SSH (22) liberado de novo para qualquer origem."
   ;;
 remover)
