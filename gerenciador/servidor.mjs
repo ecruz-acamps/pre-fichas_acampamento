@@ -215,6 +215,11 @@ function validarPedido(c) {
   }
   if (acao === 'cloudflare-remover') return { pedido: { acao } }
   if (acao === 'vpn-reconectar') return { pedido: { acao } }
+  if (acao === 'vpn-senha') {
+    const senha = typeof c.senha === 'string' ? c.senha : ''
+    if (!senha || senha.length > 128 || /[\u0000-\u001f\u007f]/.test(senha)) return { erros: { senha: 'Informe a senha da VPN (até 128 caracteres, sem quebra de linha).' } }
+    return { pedido: { acao, senha } }
+  }
   if (acao === 'vpn-config') {
     const e = {}
     const perfil = String(c.perfil ?? '').trim(), usuario = String(c.usuario ?? '').trim()

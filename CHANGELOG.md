@@ -1,5 +1,10 @@
 # Histórico de versões
 
+## 2.28.0 — Senha da VPN pelo painel
+
+- **Correção:** o FortiClient 7.4 usa `--username` (não `--user`/`--password`, que não existem nessa versão); a senha é pedida no prompt. O `configurar` agora conecta com `--username … --save-password --always-up --auto-connect`, e a reconexão automática também informa o usuário.
+- **Configurações → VPN → Senha da VPN:** grava a senha do usuário no chaveiro do FortiClient e reconecta, mostrando se o túnel subiu. A senha vai do pedido direto para o prompt do FortiClient por um pseudo-terminal: nunca aparece em argumento de comando, variável de ambiente, log, tarefa ou auditoria, e não volta para a tela.
+
 ## 2.27.0 — FortiClient sem root
 
 - O FortiClient 7.4 recusa rodar como root (`please run this command under non-root user`) e precisa de sessão D-Bus e chaveiro para guardar a senha (`dbus-launch: executable file not found`). Agora o `vpn-fortinet.sh` cria o usuário de sistema `prefichas-vpn` (sem login), instala `dbus-x11` e `gnome-keyring` e roda todo comando do FortiClient (criar perfil, conectar, vigia, reconectar, situação) como esse usuário, numa sessão D-Bus com o chaveiro destravado.

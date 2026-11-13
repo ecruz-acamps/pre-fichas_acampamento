@@ -688,6 +688,7 @@ baixe as listas de quarentena/conferência se quiser e confirme. Abaixo ficam as
 **VPN pelo painel central (aba Configurações → "VPN do servidor (FortiClient)"):**
 - **Configuração:** perfil do FortiClient, usuário, redes internas pela VPN, IP do servidor na VPN, versão do FortiClient e se a reconexão automática (a cada 2 min) está ligada. Atualizada a cada minuto. Senha e chave (PSK) nunca aparecem: ficam só no FortiClient.
 - **Editar/registrar a configuração:** informe o perfil já criado no FortiClient, as redes internas e o usuário; o painel grava e liga a reconexão automática. Útil também se o perfil foi criado à mão no FortiClient.
+- **Senha da VPN:** quando a senha do usuário for trocada ou expirar, informe a nova aqui: ela é gravada no FortiClient e a VPN reconecta. O usuário do servidor não pode ter FortiToken/MFA.
 - **Reconectar:** reinicia o túnel. Se você acessa o painel pela VPN, ele pode ficar alguns segundos sem resposta; a tela de Tarefas tenta de novo sozinha.
 - Gateway, chave (PSK), IKE e senha continuam sendo alterados pelo terminal: `sudo forticlient vpn edit prefichas` (ou `vpn-fortinet.sh configurar`).
 
