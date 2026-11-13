@@ -19,12 +19,13 @@ const exe = (n, corpo) => { writeFileSync(join(D.bin, n), `#!/bin/sh\necho "${n}
 const SO_HOME = join(T, 'home-vpn')
 // como o FortiClient 7.4 de verdade: recusa root. Aqui "não é root" = rodou pelo runuser (HOME do usuário da VPN) numa sessão D-Bus
 exe('forticlient', `[ "$HOME" = "${SO_HOME}" ] && [ -n "$DBUS_FAKE" ] && [ "$CHAVEIRO_FAKE" = destravado ] || { echo 'Error: please run this command under non-root user.' >&2; exit 1; }
+case "$2" in connect) if [ -n "$PTY_FAKE" ]; then IFS= read -r pw; printf '%s' "$pw" > "${T}/senha-recebida"; fi ;; esac
 case "$2" in status) printf 'Status: Connected\\nRemote gateway: vpn.empresa.com.br\\nPassword: segredo-nao-pode-aparecer\\n' ;; list) printf 'prefichas  ipsec  vpn.empresa.com.br\\nPSK: chave-nao-pode-aparecer\\n' ;; esac; exit 0`)
 exe('systemctl', 'exit 0')
 exe('runuser', '[ "$1" = -u ] && [ "$2" = prefichas-vpn ] && [ "$3" = -- ] || exit 9; shift 3; exec "$@"')
 exe('dbus-run-session', '[ "$1" = -- ] && shift; DBUS_FAKE=1 exec "$@"')
 exe('gnome-keyring-daemon', `case "$*" in *--unlock*) s=$(cat); [ \${#s} -ge 32 ] && echo "CHAVEIRO_FAKE=destravado; export CHAVEIRO_FAKE" ;; esac; exit 0`)
-exe('dbus-launch', 'exit 0'); exe('id', '[ "$1" = prefichas-vpn ] && exit 0; exec /usr/bin/id "$@"'); exe('useradd', 'exit 0'); exe('chown', 'exit 0')
+exe('script', '[ "$1" = -qec ] && [ "$3" = /dev/null ] || exit 9; PTY_FAKE=1 exec bash -c "$2"'); exe('dbus-launch', 'exit 0'); exe('id', '[ "$1" = prefichas-vpn ] && exit 0; exec /usr/bin/id "$@"'); exe('useradd', 'exit 0'); exe('chown', 'exit 0')
 exe('dpkg-query', "printf '7.4.3.1714'")
 exe('ip', `case "$*" in "route show default") echo 'default via 10.0.0.1 dev eth0' ;; "route get "*) echo "$3 dev ppp0 src 192.168.50.10" ;; esac; exit 0`)
 exe('docker', 'exit 0'); exe('curl', 'exit 7')
@@ -80,7 +81,19 @@ test('o FortiClient roda como usuário comum (o 7.4 recusa root) numa sessão D-
   const r = pedir({ acao: 'vpn-reconectar' })
   assert.equal(r.tarefa.situacao, 'concluida', r.log)
   const log = readFileSync(LOG, 'utf8')
-  assert.match(log, /runuser -u prefichas-vpn -- env -i HOME=/); assert.match(log, /forticlient vpn connect prefichas --always-up/)
+  assert.match(log, /runuser -u prefichas-vpn -- env -i HOME=/); assert.match(log, /forticlient vpn connect prefichas --username=servidor --always-up/)
   assert.doesNotMatch(log, new RegExp(readFileSync(ch, 'utf8')), 'a senha do chaveiro não vai na linha de comando')
   assert.doesNotMatch(r.log, /non-root/)
+})
+
+test('trocar a senha pelo painel: vai pelo prompt do FortiClient (pseudo-terminal), nunca em argumento, log, tarefa ou auditoria', { skip: !root && 'precisa de root' }, () => {
+  const SENHA = 'S3nh@-Nova "com" espaço $(id)'
+  const r = pedir({ acao: 'vpn-senha', senha: SENHA })
+  assert.equal(r.tarefa.situacao, 'concluida', r.log)
+  assert.equal(readFileSync(join(T, 'senha-recebida'), 'utf8'), SENHA, 'o FortiClient recebeu a senha exata no prompt')
+  const log = readFileSync(LOG, 'utf8')
+  assert.match(log, /forticlient vpn connect prefichas --username=servidor --save-password --always-up --auto-connect/)
+  assert.doesNotMatch(log + r.log + JSON.stringify(r.tarefa), /S3nh@/, 'a senha não aparece em comandos, no log da tarefa nem na tarefa')
+  const r2 = spawnSync('grep', ['-rl', 'S3nh@', D.dados, D.etc], { encoding: 'utf8' })
+  assert.equal(r2.stdout, '', 'nem em nenhum arquivo do painel ou de /etc/prefichas')
 })

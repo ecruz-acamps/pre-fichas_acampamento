@@ -41,8 +41,8 @@ fc() {
   if [ -z "$SO_USUARIO" ]; then "${t[@]}" forticlient "$@"; return; fi
   [ -r "$CHAVEIRO" ] || erro "Usuário da VPN não preparado: rode sudo ./scripts/vpn-fortinet.sh configurar."
   # a senha do chaveiro vai pelo descritor 3 (aberto pelo root); o usuário da VPN não consegue ler o arquivo
-  "${t[@]}" runuser -u "$SO_USUARIO" -- env -i HOME="$SO_HOME" PATH="${PREFICHAS_VPN_PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}" LANG=C.UTF-8 ${TERM:+TERM="$TERM"} \
-    dbus-run-session -- bash -c 'eval "$(gnome-keyring-daemon --unlock --components=secrets <&3 2>/dev/null)" >/dev/null; exec 3<&-; gnome-keyring-daemon --start --components=secrets >/dev/null 2>&1 || true; exec forticlient "$@"' fc "$@" 3< "$CHAVEIRO"
+  "${t[@]}" runuser -u "$SO_USUARIO" -- env -i HOME="$SO_HOME" PATH="${PREFICHAS_VPN_PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}" LANG=C.UTF-8 ${TERM:+TERM="$TERM"} FC_PTY="${FC_PTY:-}" \
+    dbus-run-session -- bash -c 'eval "$(gnome-keyring-daemon --unlock --components=secrets <&3 2>/dev/null)" >/dev/null; exec 3<&-; gnome-keyring-daemon --start --components=secrets >/dev/null 2>&1 || true; if [ -n "$FC_PTY" ]; then exec script -qec "$(printf "%q " forticlient "$@")" /dev/null; fi; exec forticlient "$@"' fc "$@" 3< "$CHAVEIRO"
 }
 preparar_usuario() { # usuário de sistema sem login + D-Bus + chaveiro
   [ -n "$SO_USUARIO" ] || return 0
@@ -159,8 +159,8 @@ configurar)
   # 3) Conectar: senha salva, sempre ativo e reconexão automática
   echo
   echo "→ Conectando (digite a senha da VPN se for pedida)…"
-  CONECTAR=(fc vpn connect "$PERFIL" --save-password --always-up)
-  [ -n "$VPN_USUARIO" ] && CONECTAR+=(--user="$VPN_USUARIO" --password)
+  CONECTAR=(fc vpn connect "$PERFIL" --save-password --always-up --auto-connect)
+  [ -n "$VPN_USUARIO" ] && CONECTAR+=(--username="$VPN_USUARIO")
   "${CONECTAR[@]}" </dev/tty || true
 
   gravar_config
@@ -184,7 +184,7 @@ vigiar)
   # Chamado pelo systemd: reconecta se o túnel caiu (usa a senha salva no FortiClient)
   tunel_ativo && exit 0
   logger -t prefichas-vpn "Túnel FortiClient fora do ar: reconectando o perfil ${VPN_PERFIL:-$PERFIL}"
-  FC_TIMEOUT=90 fc vpn connect "${VPN_PERFIL:-$PERFIL}" --always-up </dev/null >/dev/null 2>&1 || true
+  FC_TIMEOUT=90 fc vpn connect "${VPN_PERFIL:-$PERFIL}" ${VPN_USUARIO:+--username="$VPN_USUARIO"} --always-up </dev/null >/dev/null 2>&1 || true
   ;;
 estado-json)
   # usado pelo painel central: situação e configuração em JSON (sem segredos: senha e PSK ficam só no FortiClient)
@@ -224,9 +224,24 @@ reconectar)
   echo "→ Reconectando a VPN (perfil ${VPN_PERFIL:-$PERFIL})…"
   FC_TIMEOUT=30 fc vpn disconnect >/dev/null 2>&1 || true
   sleep 2
-  FC_TIMEOUT=90 fc vpn connect "${VPN_PERFIL:-$PERFIL}" --always-up </dev/null >/dev/null 2>&1 || true
+  FC_TIMEOUT=90 fc vpn connect "${VPN_PERFIL:-$PERFIL}" ${VPN_USUARIO:+--username="$VPN_USUARIO"} --always-up </dev/null >/dev/null 2>&1 || true
   for _ in $(seq 1 20); do tunel_ativo && break; sleep 3; done
   if tunel_ativo; then echo "✓ VPN reconectada."; else erro "A VPN não voltou. Veja: fc vpn status — a senha salva pode ter expirado: rode vpn-fortinet.sh configurar."; fi
+  ;;
+senha)
+  # pelo painel: a senha chega pela entrada padrão (nunca em argumento nem variável de ambiente), é digitada no
+  # pedido de senha do FortiClient por um pseudo-terminal e fica salva no chaveiro (--save-password)
+  [ -r "$ESTADO" ] || erro "Registre a configuração da VPN antes (perfil, redes e usuário)."
+  [ -n "${VPN_USUARIO:-}" ] || erro "Este perfil não tem usuário registrado: informe o usuário da VPN na configuração antes de trocar a senha."
+  IFS= read -r SENHA || true
+  [ -n "$SENHA" ] || erro "Senha vazia."
+  echo "→ Gravando a nova senha e reconectando (perfil ${VPN_PERFIL:-$PERFIL}, usuário $VPN_USUARIO)…"
+  FC_TIMEOUT=30 fc vpn disconnect >/dev/null 2>&1 || true
+  sleep 2
+  { printf '%s\n' "$SENHA"; sleep 40; } | FC_PTY=1 FC_TIMEOUT=60 fc vpn connect "${VPN_PERFIL:-$PERFIL}" --username="$VPN_USUARIO" --save-password --always-up --auto-connect >/dev/null 2>&1 || true
+  SENHA=""
+  for _ in $(seq 1 20); do tunel_ativo && break; sleep 3; done
+  if tunel_ativo; then echo "✓ Senha salva e VPN conectada."; else erro "A VPN não conectou com essa senha. Confira a senha e o usuário (ou se o usuário tem FortiToken/MFA, que impede a conexão automática)."; fi
   ;;
 status)
   fc vpn status 2>/dev/null || echo "FortiClient não instalado ou sem perfil."

@@ -414,6 +414,10 @@ acao_vpn_reconectar() {
   "$CODIGO/scripts/vpn-fortinet.sh" reconectar
 }
 # Grava pelo painel qual perfil do FortiClient usar, as redes internas e o usuário (a senha e a PSK ficam no FortiClient)
+acao_vpn_senha() { # {senha}: vai do pedido direto para a entrada do script (nunca em argumento, log ou auditoria)
+  [ -r "$ETC/vpn-forticlient.env" ] || { echo "✗ Registre a configuração da VPN antes (perfil, redes e usuário)."; return 1; }
+  jq -j '.senha // empty' "$1" | "$CODIGO/scripts/vpn-fortinet.sh" senha
+}
 acao_vpn_config() { # {perfil, redes, usuario}
   local p="$1" perfil redes usuario
   perfil="$(jq -r '.perfil // empty' "$p")"; redes="$(jq -r '.redes // empty' "$p")"; usuario="$(jq -r '.usuario // empty' "$p")"
@@ -475,6 +479,7 @@ processar() { # arquivo do pedido
     sms-bloqueio) acao_sms_bloqueio "$tmp" >> "$log" 2>&1 && ok=1 ;;
     trocar-link) acao_trocar_link "$tmp" >> "$log" 2>&1 && ok=1 ;;
     vpn-reconectar) acao_vpn_reconectar >> "$log" 2>&1 && ok=1 ;;
+    vpn-senha) acao_vpn_senha "$tmp" >> "$log" 2>&1 && ok=1 ;;
     vpn-config) acao_vpn_config "$tmp" >> "$log" 2>&1 && ok=1 ;;
     atualizar-todas)
       ok=1
