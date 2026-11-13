@@ -147,7 +147,7 @@ mascarar() { # nunca deixa a senha (em $SENHA) passar para o log, mesmo se o ter
 conectar_com_senha() { # senha em $SENHA; digitada no prompt do FortiClient por pseudo-terminal
   ( FC_TIMEOUT=30 fc vpn disconnect ) >/dev/null 2>&1 || true
   sleep 2
-  { printf '%s\n' "$SENHA"; sleep "${VPN_ESPERA_PTY:-40}"; } | FC_PTY=1 FC_TIMEOUT=60 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "$VPN_USUARIO" pedir-senha) --save-password --always-up --auto-connect 2>&1 | mascarar | limpar_saida | tail -15 || true
+  { printf '%s\n' "$SENHA"; sleep "${VPN_ESPERA_PTY:-40}"; } | FC_PTY=1 FC_TIMEOUT=60 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "$VPN_USUARIO" pedir-senha) --save-password --always-up --auto-connect 2>&1 | mascarar | sed -e 's/\x1b\[[0-9;?]*[A-Za-z]//g' -e 's/\r/\n/g' | grep -v '^[[:space:]]*$' | tail -30 | sed 's/^/  │ /' || true
   SENHA=""
   for _ in $(seq 1 20); do { tunel_ativo || tudo_pela_vpn; } && break; sleep "${VPN_ESPERA_PASSO:-3}"; done
   proteger
