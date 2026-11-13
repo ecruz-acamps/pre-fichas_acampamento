@@ -118,8 +118,8 @@ test('trocar a senha pelo painel: vai pelo prompt do FortiClient (pseudo-termina
   const log = readFileSync(LOG, 'utf8')
   assert.match(log, /forticlient vpn connect prefichas --user=servidor --password --save-password/)
   assert.doesNotMatch(log + r.log + JSON.stringify(r.tarefa), /S3nh@/, 'a senha não aparece em comandos, no log da tarefa nem na tarefa')
-  const r2 = spawnSync('grep', ['-rl', 'S3nh@', D.dados, D.etc], { encoding: 'utf8' })
-  assert.equal(r2.stdout, '', 'nem em nenhum arquivo do painel ou de /etc/prefichas')
+  const r2 = spawnSync('grep', ['-rl', '--exclude=vpn-senha', 'S3nh@', D.dados, D.etc], { encoding: 'utf8' })
+  assert.equal(r2.stdout, '', 'nem em nenhum arquivo do painel ou de /etc/prefichas (fora o vpn-senha, só do root)')
 })
 
 const direto = (args, env = {}, input) => spawnSync('bash', [join(RAIZ, 'scripts/vpn-fortinet.sh'), ...args], { encoding: 'utf8', timeout: 60000, input,
@@ -169,7 +169,7 @@ test('SSL-VPN pelo painel: responde o assistente (gateway, porta, usuário), con
   const log = readFileSync(LOG, 'utf8')
   assert.ok(log.lastIndexOf('systemctl enable --now prefichas-vpn-vigia.timer') > log.lastIndexOf('forticlient vpn connect'), 'reconexão ligada só depois de conectar')
   assert.doesNotMatch(log + r.log + JSON.stringify(r.tarefa), /Senha-SSL/)
-  assert.equal(spawnSync('grep', ['-rl', 'Senha-SSL', D.dados, D.etc], { encoding: 'utf8' }).stdout, '')
+  assert.equal(spawnSync('grep', ['-rl', '--exclude=vpn-senha', 'Senha-SSL', D.dados, D.etc], { encoding: 'utf8' }).stdout, '')
 })
 
 test('split tunnel desligado no FortiGate: a VPN é derrubada na hora e a reconexão fica desligada (o site e o SSH não caem)', { skip: !root && 'precisa de root' }, () => {
@@ -233,4 +233,21 @@ test('reconectar termina assim que o FortiClient termina (não espera a folga de
   assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /VPN reconectada/)
   assert.ok(s < 15, `levou ${s.toFixed(1)} s`)
   assert.equal(spawnSync('pgrep', ['-f', 'sleep 40'], { encoding: 'utf8' }).stdout, '', 'a espera de folga não fica para trás')
+})
+
+test('a senha fica num arquivo só do root e é digitada a cada reconexão (o "salvar senha" do FortiClient não é usado)', { skip: !root && 'precisa de root' }, () => {
+  const arq = join(D.etc, 'vpn-senha')
+  assert.ok(existsSync(arq), 'guardada depois de conectar com sucesso')
+  assert.equal((statSync(arq).mode & 0o777).toString(8), '600')
+  const guardada = readFileSync(arq, 'utf8')
+  spawnSync('rm', ['-f', join(T, 'tunel'), join(T, 'senha-recebida')])
+  const r = direto(['reconectar'])
+  assert.equal(r.status, 0, r.stderr)
+  assert.equal(readFileSync(join(T, 'senha-recebida'), 'utf8'), guardada, 'a reconexão digitou a senha guardada no prompt')
+  assert.doesNotMatch(r.stdout + r.stderr, new RegExp(guardada.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')))
+  // senha errada pelo painel: não substitui a que funciona
+  writeFileSync(join(T, 'recusa'), '')
+  pedir({ acao: 'vpn-senha', senha: 'errada-123' })
+  assert.equal(readFileSync(arq, 'utf8'), guardada)
+  spawnSync('rm', ['-f', join(T, 'recusa')])
 })

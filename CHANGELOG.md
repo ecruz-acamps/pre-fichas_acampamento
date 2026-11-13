@@ -1,5 +1,9 @@
 # Histórico de versões
 
+## 2.31.2 — Senha da VPN guardada pelo próprio sistema
+
+- Na VM, o "salvar senha" do FortiClient gratuito sem tela devolvia uma senha errada na reconexão (`Login failed: Insufficient credential(s)` logo depois de conectar com a senha nova). Agora, quando a conexão com a senha informada dá certo, ela é guardada em `/etc/prefichas/vpn-senha` (só root, 600) e digitada no prompt do FortiClient a cada reconexão (vigia e Reconectar). Uma senha errada não substitui a que funciona. `remover` apaga o arquivo.
+
 ## 2.31.1 — Reconexão da VPN rápida e respondendo na hora certa
 
 - O "y" para o certificado autoassinado era enviado antes de o FortiClient perguntar e se perdia: a conexão ficava em `Waiting user confirm remote certificate` até o limite de tempo (2–3 minutos). Agora o script lê o que o FortiClient escreve e só responde quando aparece `Password:` ou `Confirm (y/n)`, e termina junto com ele (sem a folga fixa de 40 s).

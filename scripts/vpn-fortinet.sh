@@ -170,9 +170,19 @@ resposta_cert() {
   echo "  \"Impressão digital do certificado\" do painel. O ideal é um certificado válido (Let's Encrypt no próprio FortiGate)." >&2
   return 1
 }
-conectar_salva() { # reconexão com a senha salva; responde a pergunta do certificado só se a impressão digital confere
-  local y; y="$(resposta_cert 2>/dev/null)" || { logger -t prefichas-vpn "Certificado do FortiGate não confere com a impressão digital registrada: não reconectei" 2>/dev/null || true; return 0; }
-  FC_TIMEOUT=90 fc_dialogo "" "$y" -- vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "${VPN_USUARIO:-}") >/dev/null 2>&1 || true
+# A senha da VPN fica num arquivo só do root (600). O "salvar senha" do FortiClient gratuito sem tela não é confiável
+# (na VM, a senha recém-salva voltava errada: "Insufficient credential(s)"); o script a digita no prompt a cada conexão.
+SENHA_ARQ="$ETC_PF/vpn-senha"
+guardar_senha() { mkdir -p "$ETC_PF" && chmod 700 "$ETC_PF"; ( umask 077; printf '%s' "$1" > "$SENHA_ARQ.novo" && mv -f "$SENHA_ARQ.novo" "$SENHA_ARQ" ); }
+conectar_salva() { # reconexão com a senha guardada; responde a pergunta do certificado só se a impressão digital confere
+  local y pw=""; y="$(resposta_cert 2>/dev/null)" || { logger -t prefichas-vpn "Certificado do FortiGate não confere com a impressão digital registrada: não reconectei" 2>/dev/null || true; return 0; }
+  if [ -r "$SENHA_ARQ" ] && [ -n "${VPN_USUARIO:-}" ]; then
+    IFS= read -r pw < "$SENHA_ARQ" || true
+    FC_TIMEOUT=90 fc_dialogo "$pw" "$y" -- vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "$VPN_USUARIO" pedir-senha) >/dev/null 2>&1 || true
+    pw=""
+  else
+    FC_TIMEOUT=90 fc_dialogo "" "$y" -- vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "${VPN_USUARIO:-}") >/dev/null 2>&1 || true
+  fi
 }
 # Conversa com o FortiClient: lê o que ele escreve e só responde quando a pergunta aparece
 # ("Password:" → $1; "Confirm (y/n)" do certificado → $2, ou "n" se vazio). Termina junto com ele.
@@ -357,14 +367,16 @@ reconectar)
   ;;
 senha)
   # pelo painel: a senha chega pela entrada padrão (nunca em argumento nem variável de ambiente), é digitada no
-  # pedido de senha do FortiClient por um pseudo-terminal e fica salva no chaveiro (--save-password)
+  # pedido de senha do FortiClient por um pseudo-terminal e, se conectar, fica guardada em /etc/prefichas/vpn-senha (600)
   [ -r "$ESTADO" ] || erro "Registre a configuração da VPN antes (perfil, redes e usuário)."
   [ -n "${VPN_USUARIO:-}" ] || erro "Este perfil não tem usuário registrado: informe o usuário da VPN na configuração antes de trocar a senha."
   IFS= read -r SENHA || true
   [ -n "$SENHA" ] || erro "Senha vazia."
   echo "→ Gravando a nova senha e reconectando (perfil ${VPN_PERFIL:-$PERFIL}, usuário $VPN_USUARIO)…"
   gravar_saida
-  conectar_com_senha || true
+  NOVA="$SENHA"
+  if conectar_com_senha; then guardar_senha "$NOVA"; fi
+  NOVA=""
   if tunel_ativo; then echo "✓ Senha salva e VPN conectada."; else erro "A VPN não conectou com essa senha. Confira a senha e o usuário (ou se o usuário tem FortiToken/MFA, que impede a conexão automática)."; fi
   ;;
 ssl)
@@ -397,7 +409,9 @@ ssl)
   ( FC_TIMEOUT=15 fc vpn view "$PERFIL" 2>&1 || FC_TIMEOUT=15 fc vpn list 2>&1 ) | limpar_saida | head -30 | sed 's/^/  │ /' || true
   gravar_config
   echo "→ Conectando…"
+  NOVA="$SENHA"
   if conectar_com_senha; then
+    guardar_senha "$NOVA"; NOVA=""
     instalar_vigia
     echo "✓ VPN conectada (a rede ${VPN_REDES%%,*} passa pelo túnel; a internet continua pela saída normal). Reconexão automática ligada."
     ip="$(ip_na_vpn || true)"; [ -n "$ip" ] && echo "  IP do servidor na VPN: $ip"
@@ -443,7 +457,7 @@ remover)
   rm -f "/etc/systemd/system/${VIGIA}.service" "/etc/systemd/system/${VIGIA}.timer"; systemctl daemon-reload
   fc vpn disconnect >/dev/null 2>&1 || true
   fc vpn remove "${VPN_PERFIL:-$PERFIL}" >/dev/null 2>&1 || true
-  rm -f "$ESTADO"
+  rm -f "$ESTADO" "$SENHA_ARQ"
   echo "✓ VPN removida (o pacote forticlient continua instalado: apt remove forticlient para tirar)."
   echo "  Se tinha fechado o SSH, confira: sudo ufw status"
   ;;
