@@ -459,7 +459,7 @@ function telaNova(area) {
 // ------------------------------------------------------------------ tarefas
 async function telaTarefas(area) {
   const d = await api('GET', '/api/tarefas')
-  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas', 'atualizar-painel': 'Atualizar o painel', cloudflare: 'Token da Cloudflare', 'cloudflare-remover': 'Remover token da Cloudflare', 'tunel-unificar': 'Unificar túneis da Cloudflare', 'email': 'Servidor de e-mail', 'email-teste': 'E-mail de teste', 'email-remover': 'Remover servidor de e-mail', 'email-aplicar': 'Aplicar e-mail aos acampamentos', 'microsoft': 'Login Microsoft', 'apagar': 'Apagar instância', 'trocar-link': 'Trocar link de acesso', 'backup-config': 'Configurar backup na nuvem', 'backup-conectar': 'Conectar o OneDrive', 'backup-desconectar': 'Desconectar o OneDrive', 'backup-chave-gerar': 'Gerar chave de recuperação', 'backup-chave-guardada': 'Chave de recuperação guardada', 'backup-nuvem': 'Backup na nuvem', 'backup-listar': 'Ler backups do OneDrive', 'backup-restaurar': 'Restaurar backup', 'sms-config': 'Configurar mensagens', 'sms-enviar': 'Mensagens de aniversário', 'sms-teste': 'Mensagem de teste', 'sms-bloqueio': 'Lista de não receber', 'vpn-reconectar': 'Reconectar a VPN', 'vpn-credenciais': 'Trocar credenciais da VPN' }
+  const nomeAcao = { nova: 'Nova instância', atualizar: 'Atualizar', backup: 'Backup', 'atualizar-todas': 'Atualizar todas', 'atualizar-painel': 'Atualizar o painel', cloudflare: 'Token da Cloudflare', 'cloudflare-remover': 'Remover token da Cloudflare', 'tunel-unificar': 'Unificar túneis da Cloudflare', 'email': 'Servidor de e-mail', 'email-teste': 'E-mail de teste', 'email-remover': 'Remover servidor de e-mail', 'email-aplicar': 'Aplicar e-mail aos acampamentos', 'microsoft': 'Login Microsoft', 'apagar': 'Apagar instância', 'trocar-link': 'Trocar link de acesso', 'backup-config': 'Configurar backup na nuvem', 'backup-conectar': 'Conectar o OneDrive', 'backup-desconectar': 'Desconectar o OneDrive', 'backup-chave-gerar': 'Gerar chave de recuperação', 'backup-chave-guardada': 'Chave de recuperação guardada', 'backup-nuvem': 'Backup na nuvem', 'backup-listar': 'Ler backups do OneDrive', 'backup-restaurar': 'Restaurar backup', 'sms-config': 'Configurar mensagens', 'sms-enviar': 'Mensagens de aniversário', 'sms-teste': 'Mensagem de teste', 'sms-bloqueio': 'Lista de não receber', 'vpn-reconectar': 'Reconectar a VPN', 'vpn-config': 'Configurar a VPN (FortiClient)' }
   const linha = (t) => h('tr', { style: 'cursor:pointer', onclick: () => { tarefaAberta = t.id; desenhar() } },
     h('td', {}, dataHora(t.inicio || t.pedido_em)), h('td', {}, nomeAcao[t.acao] ?? t.acao), h('td', {}, t.alvo || t.nome || t.instancia || '—'),
     h('td', {}, h('span', { class: `selo ${t.situacao === 'concluida' ? 'ok' : t.situacao === 'erro' ? 'erro' : 'neutro'}` }, t.situacao)), h('td', {}, t.por || '—'))
@@ -595,46 +595,56 @@ function cartaoEmail(area, e) {
   area.append(form, h('p', { class: 'dica' }, e.atualizado_em ? `Último servidor de e-mail guardado em ${dataHora(e.atualizado_em)}.` : ''))
 }
 
-// VPN do servidor: situação, reconectar e (strongSwan) troca de credenciais com retorno automático.
-// A configuração inicial e o fechamento da porta 22 ficam só no terminal, de propósito.
+// VPN do servidor (FortiClient): configuração, situação e reconexão. A senha e a chave (PSK) ficam só no FortiClient.
 async function cartaoVpn(area) {
   const v = await api('GET', '/api/vpn').catch(() => ({ configurada: null }))
-  const selo = v.configurada === false ? h('span', { class: 'selo neutro' }, 'não configurada')
-    : v.configurada === null ? h('span', { class: 'selo neutro' }, 'aguardando leitura do servidor')
-      : v.conectada ? h('span', { class: 'selo ok' }, 'conectada') : h('span', { class: 'selo erro' }, 'desconectada')
-  const partes = [h('div', { class: 'topo' }, h('h2', {}, 'VPN do servidor'), selo)]
-  if (v.configurada === false || v.configurada === null) {
-    partes.push(h('p', { class: 'dica' }, 'A VPN ainda não foi configurada neste servidor. A configuração inicial é feita pelo terminal, com o analista de segurança ao lado: '),
+  const selo = v.configurada === null ? h('span', { class: 'selo neutro' }, 'aguardando leitura do servidor')
+    : !v.instalado ? h('span', { class: 'selo neutro' }, 'FortiClient não instalado')
+      : !v.configurada ? h('span', { class: 'selo neutro' }, 'não configurada')
+        : v.conectada ? h('span', { class: 'selo ok' }, 'conectada') : h('span', { class: 'selo erro' }, 'desconectada')
+  const partes = [h('div', { class: 'topo' }, h('h2', {}, 'VPN do servidor (FortiClient)'), selo)]
+  if (v.configurada === null) { area.append(h('section', { class: 'cartao' }, ...partes)); return }
+  if (!v.instalado) {
+    partes.push(h('p', { class: 'dica' }, 'O FortiClient não está instalado neste servidor. A instalação e a criação do perfil (gateway, chave, IKE…) são feitas uma vez pelo terminal, com o analista de segurança ao lado:'),
       h('pre', { class: 'log' }, 'sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh configurar'))
-  } else {
-    partes.push(h('p', { class: 'dica' }, `Cliente: ${v.tipo === 'forticlient' ? 'FortiClient' : 'strongSwan'}`
-      + (v.redes?.length ? ` · redes pelo túnel: ${v.redes.join(', ')}` : '') + (v.ip_na_vpn ? ` · IP do servidor na VPN: ${v.ip_na_vpn}` : '')
-      + (v.coletado_em ? ` · lido em ${dataHora(v.coletado_em)}` : '')))
-    if (v.erro) partes.push(h('div', { class: 'alerta erro' }, v.erro))
-    if (v.detalhe) partes.push(h('pre', { class: 'log' }, v.detalhe))
-    partes.push(h('div', {}, h('button', { class: 'secundario', type: 'button', onclick: () => pedir({ acao: 'vpn-reconectar' },
-      'Reconectar a VPN agora? O painel pode ficar alguns segundos sem resposta se você o acessa pela VPN.') }, 'Reconectar')))
-    if (v.troca_credenciais) {
-      const aviso = h('div'); const erros = { psk: h('span', { class: 'erro-campo' }), senha: h('span', { class: 'erro-campo' }) }
-      const psk = h('input', { id: 'vpn-psk', type: 'password', autocomplete: 'off', placeholder: 'Nova chave pré-compartilhada (PSK) — opcional' })
-      const senha = v.tem_usuario ? h('input', { id: 'vpn-senha', type: 'password', autocomplete: 'off', placeholder: 'Nova senha do usuário da VPN — opcional' }) : null
-      partes.push(h('form', { autocomplete: 'off', onsubmit: async (e) => {
-        e.preventDefault(); aviso.replaceChildren(); Object.values(erros).forEach((x) => x.replaceChildren())
-        if (!confirm('Trocar as credenciais da VPN? O túnel será reiniciado. Se não subir em 90 segundos, o servidor volta sozinho para as credenciais anteriores. A página pode ficar sem resposta nesse tempo.')) return
-        try { const r = await api('POST', '/api/tarefas', { acao: 'vpn-credenciais', psk: psk.value, senha: senha?.value ?? '' }); psk.value = ''; if (senha) senha.value = ''; tarefaAberta = r.id; tela = 'tarefas'; desenhar() } catch (err) {
-          aviso.append(h('div', { class: 'alerta erro' }, err.message)); for (const [k, m] of Object.entries(err.dados?.erros ?? {})) erros[k]?.append(m)
-        }
-      } }, h('h3', {}, 'Trocar chave ou senha'),
-      h('p', { class: 'dica' }, 'Antes, a mudança precisa estar feita no FortiGate. Se o túnel não subir com os novos valores, o servidor volta sozinho para os anteriores (você acompanha em Tarefas).'),
-      h('div', { class: 'campo' }, h('label', { for: 'vpn-psk' }, 'Chave (PSK)'), psk, erros.psk),
-      senha && h('div', { class: 'campo' }, h('label', { for: 'vpn-senha' }, 'Senha do usuário'), senha, erros.senha),
-      aviso, h('button', { class: 'principal', type: 'submit' }, 'Trocar e testar')))
-    } else {
-      partes.push(h('p', { class: 'dica' }, 'Com o FortiClient, a troca de chave ou senha ainda é feita pelo terminal: '),
-        h('pre', { class: 'log' }, 'sudo /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh configurar'))
-    }
+    area.append(h('section', { class: 'cartao' }, ...partes)); return
   }
-  partes.push(h('p', { class: 'dica' }, 'Por segurança, a configuração inicial da VPN e o fechamento da porta 22 só podem ser feitos pelo terminal.'))
+  // ---- configuração atual (sem segredos)
+  const linha = (rotulo, valor) => h('tr', {}, h('th', {}, rotulo), h('td', {}, valor || '—'))
+  partes.push(h('div', { class: 'tabela-wrap' }, h('table', { class: 'tabela-vpn' }, h('tbody', {},
+    linha('Cliente', `FortiClient${v.versao ? ` ${v.versao}` : ''}`),
+    linha('Perfil', v.configurada ? v.perfil : 'não registrado no painel'),
+    linha('Usuário', v.configurada ? (v.usuario || 'sem usuário (só chave)') : ''),
+    linha('Redes internas pela VPN', (v.redes ?? []).join(', ')),
+    linha('IP do servidor na VPN', v.ip_na_vpn || (v.conectada ? 'não identificado' : 'túnel fora do ar')),
+    linha('Reconexão automática (a cada 2 min)', v.vigia ? 'ligada' : 'desligada'),
+    linha('Lido em', v.coletado_em ? dataHora(v.coletado_em) : '')))))
+  if (v.versao && v.versao_ok === false) partes.push(h('div', { class: 'alerta erro' }, `O FortiClient instalado (${v.versao}) não é da linha ${v.linha_esperada}, a mesma do FortiOS 7.4.x do FortiGate. Reinstale pelo terminal: sudo FORTICLIENT_VERSAO=${v.linha_esperada} /opt/prefichas-gerenciador/scripts/vpn-fortinet.sh configurar`))
+  if (v.erro) partes.push(h('div', { class: 'alerta erro' }, v.erro))
+  if (v.detalhe) partes.push(h('details', {}, h('summary', {}, 'Situação informada pelo FortiClient'), h('pre', { class: 'log' }, v.detalhe)))
+  if (v.perfis) partes.push(h('details', {}, h('summary', {}, 'Perfis existentes no FortiClient'), h('pre', { class: 'log' }, v.perfis)))
+  if (v.configurada) partes.push(h('div', {}, h('button', { class: 'secundario', type: 'button', onclick: () => pedir({ acao: 'vpn-reconectar' },
+    'Reconectar a VPN agora? O painel pode ficar alguns segundos sem resposta se você o acessa pela VPN.') }, 'Reconectar')))
+
+  // ---- editar a configuração registrada (qual perfil, redes, usuário)
+  const aviso = h('div'); const erros = { perfil: h('span', { class: 'erro-campo' }), redes: h('span', { class: 'erro-campo' }), usuario: h('span', { class: 'erro-campo' }) }
+  const perfil = h('input', { id: 'vpn-perfil', value: v.perfil || 'prefichas', maxlength: '64', spellcheck: 'false', autocomplete: 'off' })
+  const redes = h('input', { id: 'vpn-redes', value: (v.redes ?? []).join(', '), placeholder: '192.168.15.0/24, 192.168.16.0/24', spellcheck: 'false', autocomplete: 'off' })
+  const usuario = h('input', { id: 'vpn-usuario', value: v.usuario || '', maxlength: '128', spellcheck: 'false', autocomplete: 'off', placeholder: '(vazio se o túnel não usa usuário)' })
+  partes.push(h('form', { autocomplete: 'off', onsubmit: async (e) => {
+    e.preventDefault(); aviso.replaceChildren(); Object.values(erros).forEach((x) => x.replaceChildren())
+    if (!confirm('Salvar a configuração da VPN? Ela passa a valer para conferir o túnel, liberar o acesso ao painel e reconectar sozinho.')) return
+    try { const r = await api('POST', '/api/tarefas', { acao: 'vpn-config', perfil: perfil.value.trim(), redes: redes.value, usuario: usuario.value.trim() }); tarefaAberta = r.id; tela = 'tarefas'; desenhar() } catch (err) {
+      aviso.append(h('div', { class: 'alerta erro' }, err.message)); for (const [k, m] of Object.entries(err.dados?.erros ?? {})) erros[k]?.append(m)
+    }
+  } }, h('h3', {}, v.configurada ? 'Editar a configuração' : 'Registrar a configuração'),
+  h('p', { class: 'dica' }, 'Informe o perfil já criado no FortiClient, as redes internas da empresa que passam pela VPN e o usuário (se houver). Gateway, chave (PSK), IKE e senha ficam no próprio FortiClient — para mudá-los, use o terminal: sudo forticlient vpn edit <perfil>.'),
+  h('div', { class: 'linha-2' },
+    h('div', { class: 'campo' }, h('label', { for: 'vpn-perfil' }, 'Perfil do FortiClient'), perfil, erros.perfil),
+    h('div', { class: 'campo' }, h('label', { for: 'vpn-usuario' }, 'Usuário da VPN'), usuario, erros.usuario)),
+  h('div', { class: 'campo' }, h('label', { for: 'vpn-redes' }, 'Redes internas pela VPN'), redes, h('span', { class: 'dica' }, 'Separe várias por vírgula. Nunca 0.0.0.0/0.'), erros.redes),
+  aviso, h('button', { class: 'principal', type: 'submit' }, 'Salvar configuração')))
+  partes.push(h('p', { class: 'dica' }, 'Por segurança, a instalação do FortiClient, a criação do perfil e o fechamento da porta 22 continuam só pelo terminal.'))
   area.append(h('section', { class: 'cartao' }, ...partes))
 }
 

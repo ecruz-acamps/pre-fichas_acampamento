@@ -582,8 +582,7 @@ sudo ./scripts/vpn-fortinet.sh fechar-ssh   # 22 só a partir das redes da VPN; 
 - A versão Linux não tem todos os recursos das versões Windows/macOS.
 - Em servidor sem interface gráfica, salvar a senha pode depender do `gnome-keyring`.
 
-**Plano B:** se o FortiClient não conseguir manter o túnel IPsec sem tela, use
-`sudo ./scripts/vpn-ipsec-strongswan.sh configurar`. Ele usa o strongSwan, compatível com o mesmo túnel do FortiGate.
+**Versão:** use o FortiClient da **mesma linha do FortiOS do FortiGate**. Para FortiOS 7.4.x (ex.: 7.4.13), a linha 7.4 (padrão do script). Para outra linha: `sudo FORTICLIENT_VERSAO=7.2 ./scripts/vpn-fortinet.sh configurar`. O painel mostra a versão instalada e avisa se não for da linha 7.4.
 
 **Emergência** (VPN fora do ar e SSH fechado): use o console da VM no provedor ou hipervisor e rode
 `sudo ./scripts/vpn-fortinet.sh abrir-ssh`.
@@ -683,15 +682,11 @@ baixe as listas de quarentena/conferência se quiser e confirme. Abaixo ficam as
   só o atual e o anterior, 3 erros travam o caminho por 1 hora, sessões derrubadas). Para desligar esse caminho: `REDEFINIR_POR_MFA: "false"` no `docker-compose.yml` do painel e `docker compose up -d`.
 - Quem perdeu a senha **e** o celular do autenticador no painel central usa o terminal (`cli.mjs nova-senha` e `novo-autenticador`); no acampamento, outro administrador redefine o acesso.
 
-**VPN pelo painel central (aba Configurações → "VPN do servidor"):**
-- **Situação:** conectada ou desconectada, redes pelo túnel e, no strongSwan, o IP do servidor na VPN. É atualizada a cada minuto.
-- **Reconectar:** reinicia o túnel (FortiClient ou strongSwan). Se você acessa o painel pela VPN, ele pode ficar alguns segundos sem resposta; a tela de Tarefas tenta de novo sozinha.
-- **Trocar chave (PSK) e/ou senha, com retorno automático** *(strongSwan)*: o servidor guarda a configuração anterior, aplica a nova e
-  reinicia o túnel. **Se ele não subir em 90 segundos, volta sozinho para a configuração anterior** (arquivo restaurado idêntico) e
-  avisa em Tarefas. Os valores novos não aparecem em auditoria, lista de tarefas nem logs; antes de trocar, faça a mudança no FortiGate.
-- **FortiClient:** a troca de chave/senha ainda é feita pelo terminal (`vpn-fortinet.sh configurar`), porque a importação de perfil do
-  FortiClient ainda não foi validada num servidor real. O painel mostra situação e Reconectar.
-- **Só pelo terminal, de propósito:** a **configuração inicial** da VPN e o **fechamento da porta 22**. Um erro neles pode deixar o servidor inacessível.
+**VPN pelo painel central (aba Configurações → "VPN do servidor (FortiClient)"):**
+- **Configuração:** perfil do FortiClient, usuário, redes internas pela VPN, IP do servidor na VPN, versão do FortiClient e se a reconexão automática (a cada 2 min) está ligada. Atualizada a cada minuto. Senha e chave (PSK) nunca aparecem: ficam só no FortiClient.
+- **Editar/registrar a configuração:** informe o perfil já criado no FortiClient, as redes internas e o usuário; o painel grava e liga a reconexão automática. Útil também se o perfil foi criado à mão no FortiClient.
+- **Reconectar:** reinicia o túnel. Se você acessa o painel pela VPN, ele pode ficar alguns segundos sem resposta; a tela de Tarefas tenta de novo sozinha.
+- Gateway, chave (PSK), IKE e senha continuam sendo alterados pelo terminal: `sudo forticlient vpn edit prefichas` (ou `vpn-fortinet.sh configurar`).
 
 **Acesso (a VPN é opcional):**
 - **Pela internet, na porta web normal (recomendado):** informe um domínio, por exemplo

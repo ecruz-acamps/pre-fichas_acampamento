@@ -42,3 +42,7 @@ button.perigo { background: #b3261e; color: #fff; border: 0; border-radius: 8px;
 button.perigo:hover { background: #8c1d18; }
 
 pre.chave { background: #fff8e1; border: 1px dashed #b8860b; padding: 12px; font-size: 1.05rem; white-space: pre-wrap; word-break: break-all; user-select: all; }
+
+.tabela-vpn th { text-align: left; font-weight: 600; width: 40%; color: var(--texto-suave, #555); }
+.tabela-vpn td, .tabela-vpn th { padding: 6px 10px; border-bottom: 1px solid #e5e7eb; }
+details { margin: 8px 0; }

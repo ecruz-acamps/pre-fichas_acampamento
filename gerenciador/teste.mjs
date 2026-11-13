@@ -107,29 +107,25 @@ test('aba Configurações: token da Cloudflare é validado e nunca vaza (auditor
   assert.equal((await post({ acao: 'cloudflare-remover' })).status, 201)
 })
 
-test('aba Configurações: VPN (situação, reconectar, trocar credenciais) valida e nunca vaza segredos', async () => {
+test('aba Configurações: VPN FortiClient (situação, reconectar, configurar perfil/redes/usuário) valida o pedido', async () => {
   const post = (corpo) => fetch(`${url}/api/tarefas`, { method: 'POST', headers: { ...H, cookie: globalThis.cookie }, body: JSON.stringify(corpo) })
   assert.equal((await fetch(`${url}/api/vpn`)).status, 401)
-  writeFileSync(join(base, 'estado', 'vpn.json'), JSON.stringify({ tipo: 'strongswan', configurada: true, conectada: true, troca_credenciais: true, redes: ['192.168.10.0/24'] }))
+  writeFileSync(join(base, 'estado', 'vpn.json'), JSON.stringify({ tipo: 'forticlient', instalado: true, configurada: true, conectada: true, perfil: 'prefichas', redes: ['192.168.15.0/24'], usuario: 'servidor', ip_na_vpn: '192.168.50.10' }))
   const v = await (await fetch(`${url}/api/vpn`, { headers: { cookie: globalThis.cookie } })).json()
-  assert.equal(v.conectada, true)
+  assert.deepEqual([v.conectada, v.perfil, v.ip_na_vpn], [true, 'prefichas', '192.168.50.10'])
   assert.equal((await post({ acao: 'vpn-reconectar' })).status, 201)
-  // valores inválidos: vazio, curto, controle/quebra de linha
-  assert.equal((await post({ acao: 'vpn-credenciais' })).status, 400)
-  assert.equal((await post({ acao: 'vpn-credenciais', psk: 'abc' })).status, 400)
-  assert.equal((await post({ acao: 'vpn-credenciais', psk: 'chave-ok-1234\nOUTRA' })).status, 400)
-  assert.equal((await post({ acao: 'vpn-credenciais', senha: 'com\nquebra' })).status, 400)
-  const PSK = 'chave-secreta-da-vpn-9876', SENHA = 'senha secreta 123 ç'
-  const antes = readdirSync(join(base, 'pedidos')).length
-  assert.equal((await post({ acao: 'vpn-credenciais', psk: PSK, senha: SENHA })).status, 201)
-  const arquivos = readdirSync(join(base, 'pedidos'))
-  assert.equal(arquivos.length, antes + 1)
-  const p = arquivos.map((f) => JSON.parse(readFileSync(join(base, 'pedidos', f), 'utf8'))).find((x) => x.acao === 'vpn-credenciais')
-  assert.equal(p.psk, PSK); assert.equal(p.senha, SENHA)
-  const lista = await (await fetch(`${url}/api/tarefas`, { headers: { cookie: globalThis.cookie } })).text()
-  assert.doesNotMatch(lista, /chave-secreta-da-vpn/); assert.doesNotMatch(lista, /senha secreta/)
-  const aud = readFileSync(join(base, 'dados', 'auditoria.jsonl'), 'utf8')
-  assert.match(aud, /pedido-vpn-credenciais/); assert.doesNotMatch(aud, /chave-secreta-da-vpn/); assert.doesNotMatch(aud, /senha secreta/)
+  // a troca de credenciais (só existia para o strongSwan) não existe mais
+  assert.equal((await post({ acao: 'vpn-credenciais', psk: 'chave-qualquer-123' })).status, 400)
+  const ok = { acao: 'vpn-config', perfil: 'prefichas', redes: '192.168.15.0/24, 192.168.16.0/24', usuario: 'servidor' }
+  for (const ruim of [{ perfil: '' }, { perfil: 'perfil; rm' }, { redes: '' }, { redes: '0.0.0.0/0' }, { redes: '192.168.15.0' }, { redes: '999.1.1.0/24' }, { redes: '10.0.0.0/8;$(id)' }, { usuario: 'a b' }]) {
+    assert.equal((await post({ ...ok, ...ruim })).status, 400, JSON.stringify(ruim))
+  }
+  const antes = new Set(readdirSync(join(base, 'pedidos')))
+  assert.equal((await post(ok)).status, 201)
+  const novo = readdirSync(join(base, 'pedidos')).find((f) => !antes.has(f))
+  const p = JSON.parse(readFileSync(join(base, 'pedidos', novo), 'utf8'))
+  assert.deepEqual([p.perfil, p.redes, p.usuario], ['prefichas', '192.168.15.0/24,192.168.16.0/24', 'servidor'], 'redes normalizadas (sem espaços)')
+  assert.equal((await post({ ...ok, usuario: '' })).status, 201, 'usuário é opcional')
 })
 
 test('bloqueio após 5 tentativas erradas', async () => {

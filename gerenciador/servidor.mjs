@@ -147,8 +147,6 @@ const RE = {
   chave: /^[A-Za-z0-9-]{3,20}$/,
   instancia: /^prefichas-[a-z0-9-]{1,80}$/,
   tokenCf: /^[A-Za-z0-9_-]{20,200}$/,
-  psk: /^[\x20-\x7E]{4,128}$/,
-  senhaVpn: /^[^\x00-\x1f\x7f]{1,128}$/u,
   hostSmtp: /^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/,
   usuarioSmtp: /^[A-Za-z0-9._%+@-]{3,120}$/,
   guid: /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/,
@@ -217,14 +215,16 @@ function validarPedido(c) {
   }
   if (acao === 'cloudflare-remover') return { pedido: { acao } }
   if (acao === 'vpn-reconectar') return { pedido: { acao } }
-  if (acao === 'vpn-credenciais') {
+  if (acao === 'vpn-config') {
     const e = {}
-    const psk = String(c.psk ?? ''), senha = String(c.senha ?? '')
-    if (!psk && !senha) e.psk = 'Informe a nova chave (PSK) e/ou a nova senha.'
-    if (psk && !RE.psk.test(psk)) e.psk = 'Chave (PSK) inválida: de 4 a 128 caracteres comuns, sem acentos.'
-    if (senha && !RE.senhaVpn.test(senha)) e.senha = 'Senha inválida (até 128 caracteres, sem quebra de linha).'
+    const perfil = String(c.perfil ?? '').trim(), usuario = String(c.usuario ?? '').trim()
+    const redes = String(c.redes ?? '').replace(/\s+/g, '').split(/[,;]/).filter(Boolean)
+    if (!/^[A-Za-z0-9._-]{1,64}$/.test(perfil)) e.perfil = 'Nome do perfil inválido (letras, números, ponto, hífen e sublinhado).'
+    if (!redes.length || redes.length > 16 || !redes.every((r) => /^(\d{1,3}\.){3}\d{1,3}\/(\d|[12]\d|3[0-2])$/.test(r) && r.split('/')[0].split('.').every((o) => Number(o) <= 255))) e.redes = 'Informe as redes internas no formato 192.168.10.0/24 (separe várias por vírgula).'
+    else if (redes.some((r) => r.endsWith('/0'))) e.redes = 'Todo o tráfego pela VPN (/0) derrubaria o site. Peça split tunnel ao analista.'
+    if (usuario && !/^[A-Za-z0-9@._-]{1,128}$/.test(usuario)) e.usuario = 'Usuário inválido.'
     if (Object.keys(e).length) return { erros: e }
-    return { pedido: { acao, ...(psk ? { psk } : {}), ...(senha ? { senha } : {}) } }
+    return { pedido: { acao, perfil, redes: redes.join(','), usuario } }
   }
   if (acao === 'email') {
     const e = {}
