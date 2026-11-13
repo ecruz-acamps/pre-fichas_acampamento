@@ -618,7 +618,7 @@ function formVpnSsl(v) {
       senha.value = ''; tarefaAberta = r.id; tela = 'tarefas'; desenhar()
     } catch (err) { senha.value = ''; aviso.append(h('div', { class: 'alerta erro' }, err.message)); for (const [k, m] of Object.entries(err.dados?.erros ?? {})) erros[k]?.append(m) }
   } }, h('h3', {}, v.configurada ? 'Alterar a configuração (SSL-VPN)' : 'Configurar a VPN (SSL-VPN)'),
-  h('p', { class: 'dica' }, 'Instala o FortiClient VPN (se faltar), cria o perfil SSL-VPN, conecta e liga a reconexão automática. A senha vai direto para o FortiClient e nunca aparece em tela, tarefa ou log. No FortiGate: SSL-VPN em modo túnel com split tunnel (só as redes internas) e usuário sem FortiToken.'),
+  h('p', { class: 'dica' }, 'Instala o FortiClient VPN (se faltar), cria o perfil SSL-VPN, conecta e liga a reconexão automática. Para trocar só a senha (quando ela mudar ou expirar), digite a nova e clique no botão: os outros campos já estão preenchidos. A senha vai direto para o FortiClient e nunca aparece em tela, tarefa ou log. No FortiGate: SSL-VPN em modo túnel com split tunnel (só as redes internas) e usuário sem FortiToken.'),
   h('div', { class: 'linha-2' }, campo('gateway', 'Gateway (FortiGate)', gateway), campo('porta', 'Porta do SSL-VPN', porta)),
   h('div', { class: 'linha-2' }, campo('usuario', 'Usuário da VPN', usuario), campo('senha', 'Senha da VPN', senha)),
   campo('redes', 'Redes internas pela VPN', redes, 'As mesmas do split tunnel do FortiGate. Separe por vírgula. Nunca 0.0.0.0/0.'),
@@ -660,22 +660,6 @@ async function cartaoVpn(area) {
 
   partes.push(formVpnSsl(v))
 
-  // ---- trocar a senha do usuário da VPN (vai direto para o chaveiro do FortiClient; nunca volta para a tela)
-  if (v.configurada && v.usuario) {
-    const avisoS = h('div'), erroS = h('span', { class: 'erro-campo' })
-    const senha = h('input', { id: 'vpn-senha', type: 'password', maxlength: '128', autocomplete: 'new-password', spellcheck: 'false' })
-    partes.push(h('form', { autocomplete: 'off', onsubmit: async (e) => {
-      e.preventDefault(); avisoS.replaceChildren(); erroS.replaceChildren()
-      if (!senha.value) { erroS.append('Informe a senha.'); return }
-      if (!confirm(`Gravar a nova senha do usuário ${v.usuario} e reconectar a VPN? Se você acessa o painel pela VPN, ele pode ficar alguns segundos sem resposta.`)) return
-      try { const r = await api('POST', '/api/tarefas', { acao: 'vpn-senha', senha: senha.value }); senha.value = ''; tarefaAberta = r.id; tela = 'tarefas'; desenhar() } catch (err) {
-        senha.value = ''; avisoS.append(h('div', { class: 'alerta erro' }, err.message)); if (err.dados?.erros?.senha) erroS.append(err.dados.erros.senha)
-      }
-    } }, h('h3', {}, 'Senha da VPN'),
-    h('p', { class: 'dica' }, `Grava a senha do usuário ${v.usuario} no FortiClient (fica salva para a reconexão automática) e reconecta. Use quando a senha for trocada ou expirar. O usuário do servidor não pode ter FortiToken/MFA.`),
-    h('div', { class: 'campo' }, h('label', { for: 'vpn-senha' }, 'Nova senha'), senha, erroS),
-    avisoS, h('button', { class: 'principal', type: 'submit' }, 'Salvar senha e conectar')))
-  }
   partes.push(h('p', { class: 'dica' }, 'Por segurança, a instalação do FortiClient, a criação do perfil e o fechamento da porta 22 continuam só pelo terminal.'))
   area.append(h('section', { class: 'cartao' }, ...partes))
 }
