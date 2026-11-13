@@ -27,7 +27,7 @@ exe('forticlient', `[ -n "$XDG_RUNTIME_DIR" ] && [ -d "$XDG_RUNTIME_DIR" ] || { 
 case "$2" in
   connect) if [ -n "$PTY_FAKE" ]; then IFS= read -r pw; printf '%s' "$pw" > "${T}/senha-recebida"; fi; [ -e "${T}/recusa" ] || touch "${T}/tunel" ;;
   disconnect) rm -f "${T}/tunel" ;;
-  edit) if [ -n "$PTY_FAKE" ]; then echo 'Remote Gateway:'; IFS= read -r g; echo 'Port [default=443]:'; IFS= read -r p; echo 'Username:'; IFS= read -r u; printf '%s|%s|%s' "$g" "$p" "$u" > "${T}/edit-respostas"; echo 'Saved VPN tunnel'; fi ;;
+  edit) if [ -n "$PTY_FAKE" ]; then printf 'Remote Gateway: '; IFS= read -r g; printf 'Port [default=443]: '; IFS= read -r p; printf 'Authentication (1.prompt / 2.save / 3.disable) [default=1]: '; IFS= read -r a; printf 'Certificate Type (1.local (pkcs12) / 2.smartcard (pkcs11) / 3.disable) [current=disable]: '; IFS= read -r c; printf '%s|%s|%s|%s' "$g" "$p" "$a" "$c" > "${T}/edit-respostas"; echo 'DONE.'; fi ;;
 esac
 case "$2" in status) printf 'Status: Connected\\nRemote gateway: vpn.empresa.com.br\\nPassword: segredo-nao-pode-aparecer\\n' ;; list) printf 'prefichas  ipsec  vpn.empresa.com.br\\nPSK: chave-nao-pode-aparecer\\n' ;; esac; exit 0`)
 exe('systemctl', 'exit 0')
@@ -149,9 +149,10 @@ test('SSL-VPN pelo painel: responde o assistente (gateway, porta, usuário), con
   writeFileSync(LOG, '')
   const r = pedir(SSL)
   assert.equal(r.tarefa.situacao, 'concluida', r.log)
-  assert.equal(readFileSync(join(T, 'edit-respostas'), 'utf8'), 'ecruz.exemplo.com.br|10443|vpn_acampamento')
+  assert.equal(readFileSync(join(T, 'edit-respostas'), 'utf8'), 'ecruz.exemplo.com.br|10443|2|3')
   assert.equal(readFileSync(join(T, 'senha-recebida'), 'utf8'), SSL.senha)
   assert.match(r.log, /Remote Gateway/, 'o log mostra as perguntas do assistente (para ajustar se a Fortinet mudar)')
+  assert.doesNotMatch(r.log, /Pipe quebrado|Broken pipe/)
   assert.match(r.log, /VPN conectada/)
   const env = spawnSync('bash', ['-c', `. '${join(D.etc, 'vpn-forticlient.env')}'; printf '%s|%s|%s|%s' "$VPN_GATEWAY" "$VPN_PORTA" "$VPN_USUARIO" "$VPN_REDES"`], { encoding: 'utf8' }).stdout
   assert.equal(env, 'ecruz.exemplo.com.br|10443|vpn_acampamento|192.168.1.0/24,192.168.50.0/24')

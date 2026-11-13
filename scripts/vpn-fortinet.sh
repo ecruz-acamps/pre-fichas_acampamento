@@ -319,8 +319,10 @@ ssl)
   sleep 2
   gravar_saida
   echo "→ Criando o perfil SSL-VPN \"$PERFIL\" ($VPN_GATEWAY:$VPN_PORTA, usuário $VPN_USUARIO). Respostas do assistente:"
-  # respostas: gateway, porta, usuário; depois ENTER (padrão) para o que mais for perguntado
-  { printf '%s\n' "$VPN_GATEWAY" "$VPN_PORTA" "$VPN_USUARIO"; for _ in 1 2 3 4 5 6 7 8; do sleep "${VPN_ESPERA_PASSO:-1}"; printf '\n'; done; sleep "${VPN_ESPERA_PASSO:-4}"; } \
+  # perguntas do assistente (FortiClient VPN 7.4.3): Remote Gateway, Port, Authentication (1.prompt / 2.save /
+  # 3.disable), Certificate Type (1.pkcs12 / 2.pkcs11 / 3.disable). O usuário não é perguntado: vai no "connect".
+  # Depois, ENTER (padrão) para o que mais aparecer. Erros de escrita depois que o assistente termina são ignorados.
+  { printf '%s\n' "$VPN_GATEWAY" "$VPN_PORTA" 2 3; for _ in 1 2 3 4; do sleep "${VPN_ESPERA_PASSO:-1}"; printf '\n'; done; sleep "${VPN_ESPERA_PASSO:-4}"; } 2>/dev/null \
     | FC_PTY=1 FC_TIMEOUT=40 fc vpn edit "$PERFIL" 2>&1 | limpar_saida | tail -40 | sed 's/^/  │ /' || true
   echo "→ Perfil gravado no FortiClient:"
   ( FC_TIMEOUT=15 fc vpn view "$PERFIL" 2>&1 || FC_TIMEOUT=15 fc vpn list 2>&1 ) | limpar_saida | head -30 | sed 's/^/  │ /' || true
