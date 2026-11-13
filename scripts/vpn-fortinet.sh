@@ -9,7 +9,9 @@
 #   sudo ./scripts/vpn-fortinet.sh remover      # desconecta, apaga o perfil e o vigia
 #   ./scripts/vpn-fortinet.sh registrar         # (painel) grava perfil/redes/usuário de um perfil já criado e liga o vigia
 #
-# Instala o FortiClient pelo repositório OFICIAL da Fortinet (repo.fortinet.com), conferindo a
+# Instala o FortiClient VPN (edição GRATUITA, só VPN, sem EMS) baixado da Fortinet (filestore.fortinet.com),
+# conferindo o SHA-256 fixado abaixo. A edição completa do repositório (repo.fortinet.com) se registra num EMS e,
+# sem EMS, recusa o IPsec ("IPsec VPN is disabled while registered to EMS"): se estiver instalada, é trocada. Antes:
 # impressão digital da chave de assinatura. O perfil (IPsec, gateway, PSK…) é preenchido no
 # assistente do próprio FortiClient (`fc vpn edit`). Um vigia (systemd) reconecta se cair.
 #
@@ -22,7 +24,10 @@ PERFIL="${VPN_PERFIL:-prefichas}"
 ETC_PF="${PREFICHAS_ETC:-/etc/prefichas}"
 ESTADO="$ETC_PF/vpn-forticlient.env"
 UNIDADES="${PREFICHAS_SYSTEMD:-/etc/systemd/system}"   # os testes usam outra pasta
-CHAVE_OFICIAL=264E114C6911D08D3BA6CE6C18AC26395E54716D   # repo.fortinet.com (DEB)
+# FortiClient VPN gratuito (Linux, amd64). Para atualizar: baixe o .deb novo, confira e troque URL e SHA-256 juntos.
+VPN_DEB_URL="${FORTICLIENT_VPN_URL:-https://filestore.fortinet.com/forticlient/downloads/forticlient_vpn_7.4.3.5411_amd64.deb}"
+VPN_DEB_SHA256="${FORTICLIENT_VPN_SHA256:-d2c0366decbf0b907fbf0d9306b8ac0b705d2d9cb4eb7b946ae06ce5388d4e5a}"
+FC_CLI="${FORTICLIENT_CLI:-/opt/forticlient/forticlient-cli}"
 VIGIA=prefichas-vpn-vigia
 
 erro() { echo "✗ $*" >&2; exit 1; }
@@ -84,6 +89,35 @@ ip_na_vpn() {
   local alvo; alvo="$(printf '%s' "${VPN_REDES%%,*}" | cut -d/ -f1 | awk -F. '{print $1"."$2"."$3"."($4+1)}')"
   ip route get "$alvo" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}'
 }
+# A edição completa (EMS) tem o módulo "Endpoint Control"; a gratuita só tem VPN
+edicao_completa() { [ -r "$FC_CLI" ] && grep -aq "Endpoint Control CLI interface" "$FC_CLI"; }
+# A edição completa 7.4.8 usa --username; a gratuita 7.4.3 usa --user (e -p para pedir a senha)
+flag_usuario() { if [ -r "$FC_CLI" ] && grep -aq -- "--username" "$FC_CLI"; then echo --username; else echo --user; fi; }
+args_usuario() { # USUARIO [pedir-senha] → argumentos de usuário para o "vpn connect" desta edição
+  [ -n "$1" ] || return 0
+  local f; f="$(flag_usuario)"; printf '%s\n' "$f=$1"
+  [ "${2:-}" = pedir-senha ] && [ "$f" = --user ] && printf '%s\n' --password
+  return 0
+}
+instalar_vpn_gratuito() {
+  command -v apt-get >/dev/null || erro "Este instalador é para Ubuntu/Debian."
+  [ "$(dpkg --print-architecture)" = amd64 ] || erro "O FortiClient VPN gratuito para Linux é só amd64."
+  local d; d="$(mktemp -d)"; trap 'rm -rf "$d"' EXIT
+  echo "→ Baixando o FortiClient VPN (gratuito, só VPN)…"
+  curl -fsSL --retry 4 --retry-all-errors -o "$d/forticlient-vpn.deb" "$VPN_DEB_URL" || erro "Não consegui baixar o FortiClient VPN."
+  [ "$(sha256sum "$d/forticlient-vpn.deb" | cut -d' ' -f1)" = "$VPN_DEB_SHA256" ] || erro "O arquivo baixado não confere com o SHA-256 esperado. Instalação cancelada."
+  if dpkg -s forticlient >/dev/null 2>&1; then
+    echo "→ Removendo o FortiClient completo (EMS)…"
+    ( FC_TIMEOUT=30 fc vpn disconnect ) >/dev/null 2>&1 || true
+    DEBIAN_FRONTEND=noninteractive apt-get purge -y -qq forticlient >/dev/null
+  fi
+  # sem o repositório da edição completa, o apt nunca "atualiza" de volta para ela
+  rm -f /etc/apt/sources.list.d/repo.fortinet.com.list /usr/share/keyrings/repo.fortinet.com.gpg
+  echo "→ Instalando o FortiClient VPN…"
+  DEBIAN_FRONTEND=noninteractive apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$d/forticlient-vpn.deb" >/dev/null
+  apt-mark hold forticlient >/dev/null 2>&1 || true
+}
 validar_redes() {
   VPN_REDES="$(printf '%s' "$VPN_REDES" | tr -d ' ')"
   [ -n "$VPN_REDES" ] || erro "Informe as redes internas (usadas para conferir o túnel e fechar a 22)."
@@ -132,22 +166,8 @@ configurar)
   perguntar VPN_USUARIO "Usuário da VPN (ENTER se o túnel não usa usuário)" ""
   [ -z "$VPN_USUARIO" ] || [[ "$VPN_USUARIO" =~ ^[A-Za-z0-9@._\\-]{1,128}$ ]] || erro "Usuário inválido."
 
-  # 1) Instalar pelo repositório oficial, conferindo a chave de assinatura
-  if ! command -v forticlient >/dev/null; then
-    command -v apt-get >/dev/null || erro "Este instalador é para Ubuntu/Debian."
-    ARQ=amd64; [ "$(dpkg --print-architecture)" = arm64 ] && ARQ=arm64
-    echo "→ Baixando a chave da Fortinet…"
-    TMP="$(mktemp)"; trap 'rm -f "$TMP"' EXIT
-    curl -fsSL "https://repo.fortinet.com/repo/forticlient/${VERSAO}/ubuntu/DEB-GPG-KEY" -o "$TMP"
-    IMPRESSAO="$(gpg --show-keys --with-colons "$TMP" 2>/dev/null | awk -F: '$1=="fpr"{print $10; exit}')"
-    [ "$IMPRESSAO" = "$CHAVE_OFICIAL" ] || erro "A chave baixada não é a oficial da Fortinet (recebida: ${IMPRESSAO:-nenhuma}). Instalação cancelada."
-    gpg --dearmor < "$TMP" > /usr/share/keyrings/repo.fortinet.com.gpg
-    echo "deb [arch=${ARQ} signed-by=/usr/share/keyrings/repo.fortinet.com.gpg] https://repo.fortinet.com/repo/forticlient/${VERSAO}/ubuntu/ stable non-free" \
-      > /etc/apt/sources.list.d/repo.fortinet.com.list
-    echo "→ Instalando o FortiClient ${VERSAO}…"
-    DEBIAN_FRONTEND=noninteractive apt-get update -qq
-    DEBIAN_FRONTEND=noninteractive apt-get install -y -qq forticlient >/dev/null
-  fi
+  # 1) Instalar o FortiClient VPN gratuito (troca a edição completa/EMS, se for ela)
+  if ! command -v forticlient >/dev/null || edicao_completa; then instalar_vpn_gratuito; fi
   command -v forticlient >/dev/null || erro "FortiClient não foi instalado."
 
   preparar_usuario
@@ -165,7 +185,7 @@ configurar)
   echo
   echo "→ Conectando (digite a senha da VPN se for pedida)…"
   CONECTAR=(fc vpn connect "$PERFIL" --save-password --always-up --auto-connect)
-  [ -n "$VPN_USUARIO" ] && CONECTAR+=(--username="$VPN_USUARIO")
+  mapfile -t U < <(args_usuario "$VPN_USUARIO" pedir-senha); CONECTAR+=("${U[@]}")
   "${CONECTAR[@]}" </dev/tty || true
 
   gravar_config
@@ -189,7 +209,7 @@ vigiar)
   # Chamado pelo systemd: reconecta se o túnel caiu (usa a senha salva no FortiClient)
   tunel_ativo && exit 0
   logger -t prefichas-vpn "Túnel FortiClient fora do ar: reconectando o perfil ${VPN_PERFIL:-$PERFIL}"
-  FC_TIMEOUT=90 fc vpn connect "${VPN_PERFIL:-$PERFIL}" ${VPN_USUARIO:+--username="$VPN_USUARIO"} --always-up </dev/null >/dev/null 2>&1 || true
+  FC_TIMEOUT=90 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "${VPN_USUARIO:-}") --always-up </dev/null >/dev/null 2>&1 || true
   ;;
 estado-json)
   # usado pelo painel central: situação e configuração em JSON (sem segredos: senha e PSK ficam só no FortiClient)
@@ -203,10 +223,11 @@ estado-json)
     perfis="$(FC_TIMEOUT=10 fc vpn list 2>/dev/null | grep -viE 'pass|psk|secret|senha|key' | head -c 600 || true)"
   fi
   versao=""; [ "$inst" = true ] && versao="$(dpkg-query -W -f='${Version}' forticlient 2>/dev/null || true)"
-  jq -n --argjson i "$inst" --argjson c "$conf" --argjson k "$con" --argjson v "$vig" --arg r "${VPN_REDES:-}" --arg d "$det" --arg l "$perfis" \
+  ems=false; [ "$inst" = true ] && edicao_completa && ems=true
+  jq -n --argjson ems "$ems" --argjson i "$inst" --argjson c "$conf" --argjson k "$con" --argjson v "$vig" --arg r "${VPN_REDES:-}" --arg d "$det" --arg l "$perfis" \
     --arg perfil "${VPN_PERFIL:-$PERFIL}" --arg u "${VPN_USUARIO:-}" --arg ip "$(ip_na_vpn || true)" --arg ver "$versao" --arg linha "$VERSAO" \
     '{tipo:"forticlient", instalado:$i, configurada:$c, conectada:$k, vigia:$v, redes:($r|split(",")|map(select(length>0))), perfil:$perfil,
-      usuario:$u, ip_na_vpn:$ip, detalhe:$d, perfis:$l, versao:$ver, linha_esperada:$linha,
+      usuario:$u, ip_na_vpn:$ip, detalhe:$d, perfis:$l, versao:$ver, linha_esperada:$linha, edicao_ems:$ems,
       versao_ok:($ver == "" or ($ver | startswith($linha + ".")))}'
   ;;
 registrar)
@@ -229,7 +250,7 @@ reconectar)
   echo "→ Reconectando a VPN (perfil ${VPN_PERFIL:-$PERFIL})…"
   FC_TIMEOUT=30 fc vpn disconnect >/dev/null 2>&1 || true
   sleep 2
-  FC_TIMEOUT=90 fc vpn connect "${VPN_PERFIL:-$PERFIL}" ${VPN_USUARIO:+--username="$VPN_USUARIO"} --always-up </dev/null >/dev/null 2>&1 || true
+  FC_TIMEOUT=90 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "${VPN_USUARIO:-}") --always-up </dev/null >/dev/null 2>&1 || true
   for _ in $(seq 1 20); do tunel_ativo && break; sleep 3; done
   if tunel_ativo; then echo "✓ VPN reconectada."; else erro "A VPN não voltou. Veja: fc vpn status — a senha salva pode ter expirado: rode vpn-fortinet.sh configurar."; fi
   ;;
@@ -243,7 +264,7 @@ senha)
   echo "→ Gravando a nova senha e reconectando (perfil ${VPN_PERFIL:-$PERFIL}, usuário $VPN_USUARIO)…"
   FC_TIMEOUT=30 fc vpn disconnect >/dev/null 2>&1 || true
   sleep 2
-  { printf '%s\n' "$SENHA"; sleep 40; } | FC_PTY=1 FC_TIMEOUT=60 fc vpn connect "${VPN_PERFIL:-$PERFIL}" --username="$VPN_USUARIO" --save-password --always-up --auto-connect >/dev/null 2>&1 || true
+  { printf '%s\n' "$SENHA"; sleep 40; } | FC_PTY=1 FC_TIMEOUT=60 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "$VPN_USUARIO" pedir-senha) --save-password --always-up --auto-connect >/dev/null 2>&1 || true
   SENHA=""
   for _ in $(seq 1 20); do tunel_ativo && break; sleep 3; done
   if tunel_ativo; then echo "✓ Senha salva e VPN conectada."; else erro "A VPN não conectou com essa senha. Confira a senha e o usuário (ou se o usuário tem FortiToken/MFA, que impede a conexão automática)."; fi
