@@ -25,8 +25,9 @@ const SO_HOME = join(T, 'home-vpn')
 exe('forticlient', `[ -n "$XDG_RUNTIME_DIR" ] && [ -d "$XDG_RUNTIME_DIR" ] || { echo "Error: failed to find runtime user dir" >&2; exit 1; }
 [ "$HOME" = "${SO_HOME}" ] && { [ -n "$DBUS_FAKE" ] || [ -n "$DBUS_SESSION_BUS_ADDRESS" ]; } && [ "$CHAVEIRO_FAKE" = destravado ] || { echo 'Error: please run this command under non-root user.' >&2; exit 1; }
 case "$2" in
-  connect) if [ -n "$PTY_FAKE" ]; then case "$*" in *--password*) IFS= read -r pw; printf '%s' "$pw" > "${T}/senha-recebida" ;; esac; fi
-    if [ -e "${T}/cert-ruim" ]; then printf 'Reason: X509 verify certificate failed\nConfirm (y/n) [default=n]:'; IFS= read -r y || y=; [ "$y" = y ] || { echo 'Notification: Login canceled'; exit 0; }; fi
+  connect) if [ -n "$PTY_FAKE" ]; then case "$*" in *--password*) printf 'Password:'; IFS= read -r pw; [ -n "$FAKE_ECO" ] && printf '%s\\n' "$pw"; printf '%s' "$pw" > "${T}/senha-recebida" ;; esac; fi
+    # como o real: o que foi digitado ANTES da pergunta do certificado se perde (por isso só se responde depois dela)
+    if [ -e "${T}/cert-ruim" ]; then sleep 0.3; while IFS= read -r -t 0.2 descarta; do :; done; printf 'Reason: X509 verify certificate failed\nConfirm (y/n) [default=n]:'; IFS= read -r y || y=; [ "$y" = y ] || { echo 'Notification: Login canceled'; exit 0; }; fi
     [ -e "${T}/recusa" ] || touch "${T}/tunel"; echo 'Status: Connected' ;;
   disconnect) rm -f "${T}/tunel" ;;
   edit) if [ -n "$PTY_FAKE" ]; then printf 'Remote Gateway: '; IFS= read -r g; printf 'Port [default=443]: '; IFS= read -r p; printf 'Authentication (1.prompt / 2.save / 3.disable) [default=1]: '; IFS= read -r a; u=-; if [ "$a" = 2 ]; then printf 'Username: '; IFS= read -r u; fi; printf 'Certificate Type (1.local (pkcs12) / 2.smartcard (pkcs11) / 3.disable) [current=disable]: '; IFS= read -r c; printf '%s|%s|%s|%s|%s' "$g" "$p" "$a" "$u" "$c" > "${T}/edit-respostas"; echo 'DONE.'; fi ;;
@@ -42,7 +43,7 @@ exe('runuser', '[ "$1" = -u ] && [ "$2" = prefichas-vpn ] && [ "$3" = -- ] || ex
 exe('dbus-run-session', '[ "$1" = -- ] && shift; DBUS_FAKE=1 exec "$@"')
 exe('gnome-keyring-daemon', `case "$*" in *--unlock*) s=$(cat); [ \${#s} -ge 32 ] && echo "CHAVEIRO_FAKE=destravado; export CHAVEIRO_FAKE" ;; esac; exit 0`)
 // como um terminal de verdade, ecoa o que é digitado (o pior caso: antes do FortiClient desligar o eco)
-exe('script', '[ "$1" = -qec ] && [ "$3" = /dev/null ] || exit 9; IFS= read -r l; printf "%s\\n" "$l"; { printf "%s\\n" "$l"; cat; } | PTY_FAKE=1 bash -c "$2"'); exe('dbus-launch', 'exit 0'); exe('id', 'case "$*" in "-u prefichas-vpn"|"-g prefichas-vpn") echo 0 ;; prefichas-vpn) exit 0 ;; *) exec /usr/bin/id "$@" ;; esac'); exe('install', 'shift 7; mkdir -p "$1"'); exe('useradd', 'exit 0'); exe('chown', 'exit 0')
+exe('script', '[ "$1" = -qec ] && [ "$3" = /dev/null ] || exit 9; PTY_FAKE=1 FAKE_ECO=1 exec bash -c "$2"'); exe('dbus-launch', 'exit 0'); exe('id', 'case "$*" in "-u prefichas-vpn"|"-g prefichas-vpn") echo 0 ;; prefichas-vpn) exit 0 ;; *) exec /usr/bin/id "$@" ;; esac'); exe('install', 'shift 7; mkdir -p "$1"'); exe('useradd', 'exit 0'); exe('chown', 'exit 0')
 exe('dpkg-query', "printf '7.4.3.1714'")
 // túnel no ar = arquivo "tunel"; "full" = o FortiGate empurra a rota da internet (split tunnel desligado)
 writeFileSync(join(T, 'tunel'), '')
@@ -104,7 +105,7 @@ test('o FortiClient roda como usuário comum (o 7.4 recusa root) numa sessão D-
   const r = pedir({ acao: 'vpn-reconectar' })
   assert.equal(r.tarefa.situacao, 'concluida', r.log)
   const log = readFileSync(LOG, 'utf8')
-  assert.match(log, /runuser -u prefichas-vpn -- env -i HOME=\S+ PATH=\S+ LANG=C.UTF-8 XDG_RUNTIME_DIR=\S+run-user\/0 /); assert.match(log, /forticlient vpn connect prefichas --user=servidor --always-up/)
+  assert.match(log, /runuser -u prefichas-vpn -- env -i HOME=\S+ PATH=\S+ LANG=C.UTF-8 XDG_RUNTIME_DIR=\S+run-user\/0 /); assert.match(log, /forticlient vpn connect prefichas --user=servidor(\s|$)/)
   assert.doesNotMatch(log, new RegExp(readFileSync(ch, 'utf8')), 'a senha do chaveiro não vai na linha de comando')
   assert.doesNotMatch(r.log, /non-root/)
 })
@@ -115,7 +116,7 @@ test('trocar a senha pelo painel: vai pelo prompt do FortiClient (pseudo-termina
   assert.equal(r.tarefa.situacao, 'concluida', r.log)
   assert.equal(readFileSync(join(T, 'senha-recebida'), 'utf8'), SENHA, 'o FortiClient recebeu a senha exata no prompt')
   const log = readFileSync(LOG, 'utf8')
-  assert.match(log, /forticlient vpn connect prefichas --user=servidor --password --save-password --always-up --auto-connect/)
+  assert.match(log, /forticlient vpn connect prefichas --user=servidor --password --save-password/)
   assert.doesNotMatch(log + r.log + JSON.stringify(r.tarefa), /S3nh@/, 'a senha não aparece em comandos, no log da tarefa nem na tarefa')
   const r2 = spawnSync('grep', ['-rl', 'S3nh@', D.dados, D.etc], { encoding: 'utf8' })
   assert.equal(r2.stdout, '', 'nem em nenhum arquivo do painel ou de /etc/prefichas')
@@ -131,7 +132,7 @@ test('edição completa (EMS) é detectada: o painel avisa, e os argumentos de u
   assert.equal(JSON.parse(direto(['estado-json']).stdout).edicao_ems, false)
   writeFileSync(LOG, '')
   direto(['reconectar'], { FORTICLIENT_CLI: CLI_EMS })
-  assert.match(readFileSync(LOG, 'utf8'), /forticlient vpn connect prefichas --username=servidor --always-up/, 'a completa usa --username')
+  assert.match(readFileSync(LOG, 'utf8'), /forticlient vpn connect prefichas --username=servidor(\s|$)/, 'a completa usa --username')
 })
 
 test('instalador: troca a edição completa pela gratuita só se o SHA-256 do .deb conferir; tira o repositório e segura a versão', { skip: !root && 'precisa de root' }, () => {
@@ -222,4 +223,14 @@ test('sessão permanente do usuário da VPN: com /run/user/<uid>/bus, o FortiCli
   const log = readFileSync(LOG, 'utf8')
   assert.match(log, /DBUS_SESSION_BUS_ADDRESS=unix:path=\S+run-user\/0\/bus/); assert.doesNotMatch(log, /dbus-run-session/)
   spawnSync('rm', ['-f', join(T, 'run-user/0/bus')])
+})
+
+test('reconectar termina assim que o FortiClient termina (não espera a folga de 40 s da entrada)', { skip: !root && 'precisa de root' }, () => {
+  spawnSync('rm', ['-f', join(T, 'tunel'), join(T, 'cert-ruim'), join(T, 'full')])
+  const inicio = Date.now()
+  const r = direto(['reconectar'], { VPN_ESPERA_PTY: '40' })
+  const s = (Date.now() - inicio) / 1000
+  assert.equal(r.status, 0, r.stderr); assert.match(r.stdout, /VPN reconectada/)
+  assert.ok(s < 15, `levou ${s.toFixed(1)} s`)
+  assert.equal(spawnSync('pgrep', ['-f', 'sleep 40'], { encoding: 'utf8' }).stdout, '', 'a espera de folga não fica para trás')
 })
