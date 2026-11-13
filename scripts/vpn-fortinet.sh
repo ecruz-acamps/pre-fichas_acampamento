@@ -52,7 +52,7 @@ fc() {
   [ -d "$rt" ] && [ ! -L "$rt" ] || install -d -m 700 -o "$SO_USUARIO" -g "$(id -g "$SO_USUARIO")" "$rt"
   # a senha do chaveiro vai pelo descritor 3 (aberto pelo root); o usuário da VPN não consegue ler o arquivo
   "${t[@]}" runuser -u "$SO_USUARIO" -- env -i HOME="$SO_HOME" PATH="${PREFICHAS_VPN_PATH:-/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin}" LANG=C.UTF-8 XDG_RUNTIME_DIR="$rt" ${TERM:+TERM="$TERM"} FC_PTY="${FC_PTY:-}" \
-    dbus-run-session -- bash -c 'eval "$(gnome-keyring-daemon --unlock --components=secrets <&3 2>/dev/null)" >/dev/null; exec 3<&-; gnome-keyring-daemon --start --components=secrets >/dev/null 2>&1 || true; if [ -n "$FC_PTY" ]; then exec script -qec "$(printf "%q " forticlient "$@")" /dev/null; fi; exec forticlient "$@"' fc "$@" 3< "$CHAVEIRO"
+    dbus-run-session -- bash -c 'eval "$(gnome-keyring-daemon --unlock --components=secrets <&3 2>/dev/null)" >/dev/null; exec 3<&-; gnome-keyring-daemon --start --components=secrets >/dev/null 2>&1 || true; if [ -n "$FC_PTY" ]; then exec script -qec "stty -echo 2>/dev/null; exec $(printf "%q " forticlient "$@")" /dev/null; fi; exec forticlient "$@"' fc "$@" 3< "$CHAVEIRO"
 }
 preparar_usuario() { # usuário de sistema sem login + D-Bus + chaveiro
   [ -n "$SO_USUARIO" ] || return 0
@@ -140,10 +140,14 @@ proteger() { # depois de conectar: se a internet passou a sair pela VPN, derruba
   erro "O FortiGate mandou TODO o tráfego pela VPN (split tunnel desligado): o site e o SSH ficariam fora do ar. Desconectei e desliguei a reconexão automática. Ligue o split tunnel no portal SSL-VPN do FortiGate (só as redes internas) e configure de novo."
 }
 limpar_saida() { sed -e 's/\x1b\[[0-9;?]*[A-Za-z]//g' -e 's/\r//g' | grep -viE 'pass|senha|secret|key' | grep -v '^[[:space:]]*$' || true; }
+mascarar() { # nunca deixa a senha (em $SENHA) passar para o log, mesmo se o terminal a ecoar
+  local l
+  while IFS= read -r l; do [ -n "${SENHA:-}" ] && l="${l//"$SENHA"/********}"; printf '%s\n' "$l"; done
+}
 conectar_com_senha() { # senha em $SENHA; digitada no prompt do FortiClient por pseudo-terminal
   ( FC_TIMEOUT=30 fc vpn disconnect ) >/dev/null 2>&1 || true
   sleep 2
-  { printf '%s\n' "$SENHA"; sleep "${VPN_ESPERA_PTY:-40}"; } | FC_PTY=1 FC_TIMEOUT=60 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "$VPN_USUARIO" pedir-senha) --save-password --always-up --auto-connect 2>&1 | limpar_saida | tail -15 || true
+  { printf '%s\n' "$SENHA"; sleep "${VPN_ESPERA_PTY:-40}"; } | FC_PTY=1 FC_TIMEOUT=60 fc vpn connect "${VPN_PERFIL:-$PERFIL}" $(args_usuario "$VPN_USUARIO" pedir-senha) --save-password --always-up --auto-connect 2>&1 | mascarar | limpar_saida | tail -15 || true
   SENHA=""
   for _ in $(seq 1 20); do { tunel_ativo || tudo_pela_vpn; } && break; sleep "${VPN_ESPERA_PASSO:-3}"; done
   proteger
