@@ -608,12 +608,13 @@ function formVpnSsl(v) {
   const porta = h('input', { id: 'vpn-ssl-porta', type: 'number', min: '1', max: '65535', value: v.porta || '443' })
   const usuario = h('input', { id: 'vpn-ssl-usuario', value: v.usuario || '', maxlength: '128', spellcheck: 'false', autocomplete: 'off' })
   const senha = h('input', { id: 'vpn-ssl-senha', type: 'password', maxlength: '128', autocomplete: 'new-password' })
+  const cert = h('input', { id: 'vpn-ssl-cert_sha1', value: v.cert_sha1 || '', placeholder: '40:A5:0D:…  (só se o certificado do FortiGate for autoassinado)', spellcheck: 'false', autocomplete: 'off', maxlength: '80' })
   const redes = h('input', { id: 'vpn-ssl-redes', value: (v.redes ?? []).join(', '), placeholder: '192.168.1.0/24, 192.168.50.0/24', spellcheck: 'false', autocomplete: 'off' })
   return h('form', { autocomplete: 'off', onsubmit: async (e) => {
     e.preventDefault(); aviso.replaceChildren(); Object.values(erros).forEach((x) => x.replaceChildren())
     if (!confirm('Configurar e conectar a VPN agora? Se o FortiGate mandar todo o tráfego pela VPN (split tunnel desligado), o servidor desconecta sozinho para o site e o SSH não caírem.')) return
     try {
-      const r = await api('POST', '/api/tarefas', { acao: 'vpn-ssl', perfil: v.perfil || 'prefichas', gateway: gateway.value.trim(), porta: Number(porta.value), usuario: usuario.value.trim(), senha: senha.value, redes: redes.value })
+      const r = await api('POST', '/api/tarefas', { acao: 'vpn-ssl', perfil: v.perfil || 'prefichas', gateway: gateway.value.trim(), porta: Number(porta.value), usuario: usuario.value.trim(), senha: senha.value, redes: redes.value, cert_sha1: cert.value.trim() })
       senha.value = ''; tarefaAberta = r.id; tela = 'tarefas'; desenhar()
     } catch (err) { senha.value = ''; aviso.append(h('div', { class: 'alerta erro' }, err.message)); for (const [k, m] of Object.entries(err.dados?.erros ?? {})) erros[k]?.append(m) }
   } }, h('h3', {}, v.configurada ? 'Alterar a configuração (SSL-VPN)' : 'Configurar a VPN (SSL-VPN)'),
@@ -621,6 +622,7 @@ function formVpnSsl(v) {
   h('div', { class: 'linha-2' }, campo('gateway', 'Gateway (FortiGate)', gateway), campo('porta', 'Porta do SSL-VPN', porta)),
   h('div', { class: 'linha-2' }, campo('usuario', 'Usuário da VPN', usuario), campo('senha', 'Senha da VPN', senha)),
   campo('redes', 'Redes internas pela VPN', redes, 'As mesmas do split tunnel do FortiGate. Separe por vírgula. Nunca 0.0.0.0/0.'),
+  campo('cert_sha1', 'Impressão digital do certificado (SHA1)', cert, 'Só se o FortiGate usa certificado autoassinado: confira em System → Certificates e cole aqui. A conexão só é aceita se o certificado apresentado for exatamente esse. O ideal é um certificado válido (Let\'s Encrypt no FortiGate), aí deixe vazio.'),
   aviso, h('button', { class: 'principal', type: 'submit' }, 'Configurar e conectar'))
 }
 async function cartaoVpn(area) {
