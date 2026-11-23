@@ -4,6 +4,7 @@ import { construirApp } from './app.js'
 import { limparSessoesExpiradas } from './sessao.js'
 import { aplicarMarcaInicial } from './marca.js'
 import { carregarModalidades } from './modalidades.js'
+import { chavesPush, escutarMudancas } from './avisos.js'
 
 const config = lerConfig()
 const pool = criarPool(config.databaseUrl)
@@ -13,12 +14,16 @@ await migrar(pool, app.log)
 await carregarModalidades(pool)   // só agora a tabela de modalidades existe (instalação nova ou atualização)
 await aplicarMarcaInicial(pool, config.marcaInicial, app.log, config.nomeInicial)
 
+await chavesPush(pool)            // gera as chaves dos avisos no celular na primeira vez
+const pararAvisos = escutarMudancas(pool, { config, log: app.log })
+
 const limpeza = setInterval(() => limparSessoesExpiradas(pool).catch((e) => app.log.error(e)), 60 * 60 * 1000)
 limpeza.unref()
 
 async function encerrar(sinal) {
   app.log.info(`Recebido ${sinal}, encerrando…`)
   app.verificadorAtualizacao.parar()
+  await pararAvisos()
   await app.close()
   await pool.end()
   process.exit(0)

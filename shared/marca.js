@@ -43,6 +43,8 @@ export const MARCA_PADRAO = {
   cadastroEquipe: true,          // permite que coordenadores/equipe se cadastrem sozinhos (ficam pendentes até um admin liberar)
   // Área do participante: mostrar a posição na fila (desligado = mostra só a situação)
   mostrarPosicaoFila: false,
+  // Avisos no celular (Web Push) quando a situação da pré-ficha muda (a pessoa ainda precisa aceitar no aparelho)
+  avisosStatus: false,
   // Cabeçalho da ficha impressa (vazio = usa o nome do acampamento)
   impressaoTitulo: 'Ficha de pré-inscrição',
   impressaoSubtitulo: '',
@@ -99,6 +101,7 @@ export function validarMarca(entrada) {
   if (bruto.coordenadorVeTudo !== undefined) m.coordenadorVeTudo = bruto.coordenadorVeTudo === true
   if (bruto.preferenciaConjuge !== undefined) m.preferenciaConjuge = bruto.preferenciaConjuge === true
   if (bruto.mostrarPosicaoFila !== undefined) m.mostrarPosicaoFila = bruto.mostrarPosicaoFila === true
+  if (bruto.avisosStatus !== undefined) m.avisosStatus = bruto.avisosStatus === true
 
   if (bruto.termos !== undefined) {
     const termos = Array.isArray(bruto.termos)

@@ -11,6 +11,7 @@ import { acharDuplicada, anotarDuplicada, conferirCaptcha, limiteGlobalDe, regis
 import { fezSenior, validarCasais } from '../casais.js'
 import { cabecalhosFoto, FOTO_MAX_BYTES, lerFoto, limparJpeg, removerFoto, salvarFoto } from '../foto.js'
 import { transacao } from '../db.js'
+import { chavesPush, chavesValidas, endpointValido, MAX_APARELHOS } from '../avisos.js'
 import {
   COOKIE_CONTA, STATUS_ATIVOS, buscarPorLogin, buscarSessaoConta, criarRedefinicao, criarSessaoConta,
   encerrarSessaoConta, encerrarSessoesConta, importarParticipantes, usarRedefinicao,
@@ -256,6 +257,32 @@ export default async function rotasConta(app) {
     try { ok = await conferir(String(req.body?.senhaAtual ?? ''), p.senha_hash) } catch (e) { if (e.code === 'OCUPADO') return ocupado(reply); throw e }
     if (!ok) return reply.code(400).send({ mensagem: 'A senha atual está incorreta.' })
     await pool.query('update participantes set senha_hash = $1, senha_inicial = false where id = $2', [await hashLimitado(nova), req.participante.id])
+    return { ok: true }
+  })
+
+  // ------------------------------------------------------------ avisos no celular (Web Push)
+  // Disponível só se o administrador ligou. O aparelho informa onde receber (endpoint de um serviço de push conhecido).
+  app.get('/api/conta/avisos', { onRequest: [logado] }, async () => {
+    const marca = await carregarMarca(pool)
+    if (!marca.avisosStatus) return { disponivel: false }
+    return { disponivel: true, chave: (await chavesPush(pool)).publica }
+  })
+  app.post('/api/conta/avisos', { onRequest: [logado], config: limite }, async (req, reply) => {
+    if (!(await carregarMarca(pool)).avisosStatus) return reply.code(409).send({ mensagem: 'Os avisos no celular estão desligados neste acampamento.' })
+    const endpoint = String(req.body?.endpoint ?? ''), keys = req.body?.keys
+    if (!endpointValido(endpoint) || !chavesValidas(keys)) return reply.code(400).send({ mensagem: 'Este aparelho não informou um endereço de avisos válido.' })
+    await transacao(pool, async (db) => {
+      // o mesmo aparelho (endpoint) passa a ser desta conta; mantém no máximo MAX_APARELHOS por pessoa (apaga os mais antigos)
+      await db.query(`insert into push_inscricoes (participante_id, endpoint, p256dh, auth) values ($1, $2, $3, $4)
+        on conflict (endpoint) do update set participante_id = excluded.participante_id, p256dh = excluded.p256dh, auth = excluded.auth, falhas = 0`,
+      [req.participante.id, endpoint, keys.p256dh, keys.auth])
+      await db.query(`delete from push_inscricoes where participante_id = $1 and id not in
+        (select id from push_inscricoes where participante_id = $1 order by criado_em desc, id desc limit $2)`, [req.participante.id, MAX_APARELHOS])
+    })
+    return { ok: true }
+  })
+  app.delete('/api/conta/avisos', { onRequest: [logado], config: limite }, async (req) => {
+    await pool.query('delete from push_inscricoes where participante_id = $1 and endpoint = $2', [req.participante.id, String(req.body?.endpoint ?? '')])
     return { ok: true }
   })
 

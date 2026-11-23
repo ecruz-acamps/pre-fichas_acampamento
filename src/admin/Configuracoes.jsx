@@ -6,7 +6,7 @@ import { carregarMarca, TextoMarca } from '../lib/marca.jsx'
 import { ajustarCor, corTextoSobre } from '../../shared/marca.js'
 
 const CAMPOS_EXPORTADOS = ['nome', 'nomeCurto', 'corPrimaria', 'whatsapp', 'email', 'instagram', 'site',
-  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila', 'edicoesPreferenciaConjuge', 'preferenciaConjuge', 'casaisExigeSenior', 'cadastroEquipe', 'coordenadorVeTudo', 'mostrarPosicaoFila', 'impressaoTitulo', 'impressaoSubtitulo', 'impressaoTextoDireita']
+  'tituloFormulario', 'textoFormulario', 'mensagemSucesso', 'termos', 'tribos', 'recusasParaFimDaFila', 'edicoesPreferenciaConjuge', 'preferenciaConjuge', 'casaisExigeSenior', 'cadastroEquipe', 'coordenadorVeTudo', 'mostrarPosicaoFila', 'avisosStatus', 'impressaoTitulo', 'impressaoSubtitulo', 'impressaoTextoDireita']
 
 /** Publicação na internet pela Cloudflare: o administrador liga ou desliga. */
 function Publicacao({ nomeCurto }) {
@@ -471,6 +471,10 @@ export default function Configuracoes({ marca, onSalvar }) {
             <label className="check">
               <input type="checkbox" checked={m.mostrarPosicaoFila === true} onChange={(e) => setM({ ...m, mostrarPosicaoFila: e.target.checked })} />
               <span>Mostrar a <strong>posição na fila</strong> para a pessoa quando ela entra na conta (desligado = mostra só a situação: aguardando, em contato…)</span>
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={m.avisosStatus === true} onChange={(e) => setM({ ...m, avisosStatus: e.target.checked })} />
+              <span>Enviar <strong>aviso no celular</strong> quando a situação da pré-ficha mudar (em contato, confirmado…). A pessoa ainda precisa tocar em "Receber avisos" na área dela e aceitar no aparelho. O aviso não mostra nome nem situação: só "há uma novidade na sua pré-ficha". No iPhone, só com o app instalado na tela inicial (iOS 16.4 ou mais novo).</span>
             </label>
             <ContasAntigas />
           </section>

@@ -158,6 +158,60 @@ function MinhaFoto({ conta, recarregar, onAviso }) {
   return <FotoPerfil key={conta.fotoVersao ?? 'sem'} urlAtual={conta.temFoto ? `/api/conta/foto?v=${conta.fotoVersao}` : null} rotulo="Sua foto" onChange={mudou} desabilitado={salvando} />
 }
 
+// Avisos no celular: só aparece se o administrador ligou. A pessoa decide em cada aparelho (o celular pergunta).
+const base64ParaBytes = (b64) => { const s = (b64 + '='.repeat((4 - (b64.length % 4)) % 4)).replace(/-/g, '+').replace(/_/g, '/'); return Uint8Array.from(atob(s), (c) => c.charCodeAt(0)) }
+function AvisosCelular({ onAviso }) {
+  const [info, setInfo] = useState(null)
+  const [ligado, setLigado] = useState(false)
+  const [ocupado, setOcupado] = useState(false)
+  const suportado = typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window
+  const iphone = typeof navigator !== 'undefined' && /iPhone|iPad|iPod/.test(navigator.userAgent)
+  const instalado = typeof window !== 'undefined' && (window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true)
+  useEffect(() => {
+    api.get('/api/conta/avisos').then(setInfo).catch(() => setInfo({ disponivel: false }))
+    if (suportado) navigator.serviceWorker.getRegistration().then((r) => r?.pushManager.getSubscription()).then((s) => setLigado(!!s && Notification.permission === 'granted')).catch(() => {})
+  }, [suportado])
+  if (!info?.disponivel) return null
+  async function ligar() {
+    setOcupado(true)
+    try {
+      if (await Notification.requestPermission() !== 'granted') { onAviso('Os avisos não foram permitidos. Para ligar depois, libere as notificações deste site nas configurações do celular.'); return }
+      const reg = await navigator.serviceWorker.ready
+      const inscricao = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64ParaBytes(info.chave) })
+      await api.post('/api/conta/avisos', inscricao.toJSON())
+      setLigado(true); onAviso('Pronto! Você vai receber um aviso neste aparelho quando a situação da sua pré-ficha mudar.')
+    } catch (e) { onAviso(e.dados?.mensagem || 'Não foi possível ligar os avisos neste aparelho.') } finally { setOcupado(false) }
+  }
+  async function desligar() {
+    setOcupado(true)
+    try {
+      const s = await (await navigator.serviceWorker.ready).pushManager.getSubscription()
+      if (s) { await api.delete('/api/conta/avisos', { endpoint: s.endpoint }).catch(() => {}); await s.unsubscribe() }
+      setLigado(false); onAviso('Avisos desligados neste aparelho.')
+    } catch { onAviso('Não foi possível desligar os avisos.') } finally { setOcupado(false) }
+  }
+  return (
+    <div className="bloco-avisos">
+      <h3>Avisos no celular</h3>
+      {!suportado ? (
+        <p className="dica">{iphone && !instalado
+          ? 'No iPhone, os avisos só funcionam com o app instalado: toque em Compartilhar → "Adicionar à Tela de Início", abra o app por lá e entre de novo (iOS 16.4 ou mais novo).'
+          : 'Este navegador não recebe avisos. No celular, use o Chrome (Android) ou o app instalado na tela inicial (iPhone).'}</p>
+      ) : ligado ? (
+        <>
+          <p className="dica">Avisos <strong>ligados</strong> neste aparelho: você recebe um aviso quando a situação da sua pré-ficha mudar.</p>
+          <button className="botao-secundario" disabled={ocupado} onClick={desligar}>Desligar avisos</button>
+        </>
+      ) : (
+        <>
+          <p className="dica">Receba um aviso quando a situação da sua pré-ficha mudar (por exemplo, quando entrarem em contato). O aviso não mostra seus dados.</p>
+          <button className="botao-secundario" disabled={ocupado} onClick={ligar}>Receber avisos no celular</button>
+        </>
+      )}
+    </div>
+  )
+}
+
 function MinhaArea({ marca, info, recarregar, onSair }) {
   const [tela, setTela] = useState('inicio')
   const [aviso, setAviso] = useState('')
@@ -192,6 +246,7 @@ function MinhaArea({ marca, info, recarregar, onSair }) {
       {conta.senhaInicial && <div className="alerta-aviso">Sua senha ainda é o seu CPF. Recomendamos trocá-la em "Alterar senha" para proteger seus dados.</div>}
       {aviso && <div className="alerta-ok">{aviso}</div>}
       <MinhaFoto conta={conta} recarregar={recarregar} onAviso={setAviso} />
+      <AvisosCelular onAviso={setAviso} />
 
       {ficha?.ativa ? (
         <div className="bloco-situacao">
