@@ -1,7 +1,7 @@
 // Service worker do PWA. Regra de ouro: NADA de dados pessoais fica guardado no aparelho.
 //  - /api/* e páginas HTML: sempre da rede (nunca em cache). Sem internet, mostra /offline.html.
 //  - /assets/* (arquivos com hash no nome, públicos): cache, para abrir mais rápido.
-const VERSAO = 'v1'
+const VERSAO = 'v2'
 const CACHE = `prefichas-${VERSAO}`
 const OFFLINE = '/offline.html'
 
@@ -32,4 +32,23 @@ self.addEventListener('fetch', (e) => {
       return resp
     }))
   }
+})
+
+// Avisos no celular (Web Push). O texto vem do servidor e nunca traz dado pessoal.
+self.addEventListener('push', (e) => {
+  let d = {}
+  try { d = e.data ? e.data.json() : {} } catch { d = {} }
+  const titulo = typeof d.titulo === 'string' ? d.titulo.slice(0, 80) : 'Acampamento'
+  const texto = typeof d.texto === 'string' ? d.texto.slice(0, 200) : 'Há uma novidade na sua pré-ficha.'
+  e.waitUntil(self.registration.showNotification(titulo, { body: texto, icon: '/icon-192.png', badge: '/icon-192.png', tag: 'situacao-prefixa', renotify: true, data: { url: '/' } }))
+})
+
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close()
+  // só abre páginas do próprio site
+  const alvo = new URL('/', self.location.origin).href
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((janelas) => {
+    for (const j of janelas) if (j.url.startsWith(self.location.origin) && 'focus' in j) { j.navigate?.(alvo); return j.focus() }
+    return self.clients.openWindow(alvo)
+  }))
 })

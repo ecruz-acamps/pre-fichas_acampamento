@@ -1,5 +1,13 @@
 # Histórico de versões
 
+## 2.33.0 — Avisos no celular quando a situação da pré-ficha muda
+
+- **Configurações → Área do participante → "Enviar aviso no celular quando a situação da pré-ficha mudar"** (desligado por padrão). Ligado, a área do participante mostra **"Receber avisos no celular"**: a pessoa toca, o celular pergunta e, se ela aceitar, recebe um aviso a cada mudança de situação (aguardando, em contato, confirmado, participou). Desistência feita pela própria pessoa não gera aviso.
+- **Sem dado pessoal na notificação:** ela aparece na tela bloqueada, então diz só "Há uma novidade na sua pré-ficha. Toque para ver."; o detalhe aparece depois do login.
+- Funciona no Android (Chrome) e no iPhone com o app instalado na tela inicial (iOS 16.4+). Padrão Web Push, sem serviço pago: as chaves (VAPID) são geradas na primeira inicialização e ficam no banco.
+- Segurança: o servidor só envia para os serviços de push conhecidos (Google, Apple, Mozilla, Microsoft), nunca para um endereço qualquer informado pelo aparelho; no máximo 10 aparelhos por pessoa; aparelhos que cancelaram são apagados sozinhos.
+- Toda mudança de status (tela da ficha, recusa, registro no acampamento…) é detectada por um gatilho no banco (`LISTEN/NOTIFY`).
+
 ## 2.32.0 — Atualizar sem desconectar e sem encher o disco
 
 - **"Atualizar o painel" não desconecta mais:** as sessões do painel central ficavam só na memória e sumiam quando o container era recriado. Agora ficam também em `dados/sessoes.json` (só o hash do token, modo 600; o token nunca é gravado), com as renovações gravadas a cada minuto e ao desligar.

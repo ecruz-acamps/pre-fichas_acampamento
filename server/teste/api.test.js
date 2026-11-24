@@ -16,6 +16,7 @@ import { _codigoNoPasso, passoAtual } from '../totp.js'
 import { gerarHash } from '../senha.js'
 import { modalidadesCompativeis } from '../../shared/util.js'
 import { limparJpeg } from '../foto.js'
+import { escutarMudancas } from '../avisos.js'
 import { aplicar, casarTribo, decodificar, desfazer, lerCsv, lerEdicao, lerPlanilha, mapearLinha, planejar, relatorios } from '../importacao.js'
 import { crc32, deflateRawSync } from 'node:zlib'
 import { generateKeyPairSync, createSign, randomUUID } from 'node:crypto'
@@ -2738,4 +2739,81 @@ describe('API', { skip: pular }, () => {
     assert.equal((await req('admin', 'GET', '/api/auth/eu')).json().usuario, null)
     assert.equal((await req('admin', 'GET', '/api/admin/pre-fichas')).statusCode, 401)
   })
+
+  // ------------------------------------------------------------------ avisos no celular (Web Push)
+  describe('avisos no celular quando a situação muda', () => {
+    const jar = {}
+    const conta = (method, url, payload) => app.inject({ method, url, payload, headers: { ...H, ...(jar.p ? { cookie: jar.p } : {}) } })
+    const CPF_AVISO = '714.602.380-01'
+    const FCM = 'https://fcm.googleapis.com/fcm/send/abcdefghijklmnop:qrstuvwxyz0123456789'
+    const KEYS = { p256dh: 'BNcRdreALRFXTkOOUHK1EtK2wtaz5Ry4YfYCA_0QTpQtUbVlUls0VJXg7A8u-Ts1XbjhazAkj7I99e8QcYP7DkM', auth: 'tBHItJI5svbpez7KI4CCXg' }
+    let entregas = [], enviar = async (sub, corpo) => { entregas.push({ sub, corpo: JSON.parse(corpo) }) }, parar, fichaId
+    const esperarEntrega = async (n, ms = 3000) => { const fim = Date.now() + ms; while (entregas.length < n && Date.now() < fim) await new Promise((r) => setTimeout(r, 50)); return entregas.length }
+    const ligar = async (v) => { const m = (await app.inject({ method: 'GET', url: '/api/marca' })).json(); assert.equal((await req('admin', 'PUT', '/api/admin/marca', { ...m, avisosStatus: v })).statusCode, 200) }
+
+    before(async () => {
+      for (const quem of ['admin', 'equipe']) sessoes[quem] = (await login(`${quem}@x.com`)).cookie   // o teste anterior faz logout
+      parar = escutarMudancas(pool, { config: app.config, enviar: (...a) => enviar(...a) })
+      const r = await conta('POST', '/api/conta/cadastro', { cpf: CPF_AVISO, senha: 'senha-avisos-1', ficha: { ...FICHA, nome_completo: 'Paula Avisos', email: 'paula.avisos@x.com', telefone: '(48) 91234-5678' } })
+      assert.equal(r.statusCode, 201, r.body)
+      const c = r.cookies.find((k) => k.name === 'prefichas_conta'); jar.p = `${c.name}=${c.value}`
+      fichaId = await idPorNome('Paula Avisos')
+    })
+    after(async () => { await parar?.() })
+
+    test('desligado por padrão: a pessoa não vê a opção e não consegue se inscrever', async () => {
+      assert.deepEqual((await conta('GET', '/api/conta/avisos')).json(), { disponivel: false })
+      assert.equal((await conta('POST', '/api/conta/avisos', { endpoint: FCM, keys: KEYS })).statusCode, 409)
+      assert.equal((await app.inject({ method: 'GET', url: '/api/conta/avisos' })).statusCode, 401, 'só logado')
+    })
+
+    test('ligado: aceita só endereços de serviços de push conhecidos (nada de endereço interno)', async () => {
+      await ligar(true)
+      const g = (await conta('GET', '/api/conta/avisos')).json()
+      assert.equal(g.disponivel, true); assert.match(g.chave, /^[A-Za-z0-9_-]{80,90}$/)
+      for (const endpoint of ['https://10.0.0.5/push', 'http://fcm.googleapis.com/fcm/send/x1234567890', 'https://fcm.googleapis.com:8443/fcm/send/x1234567890', 'https://fcm.googleapis.com.mal.com/x1234567890', 'https://user:pw@fcm.googleapis.com/x1234567890', 'javascript:alert(1)'])
+        assert.equal((await conta('POST', '/api/conta/avisos', { endpoint, keys: KEYS })).statusCode, 400, endpoint)
+      assert.equal((await conta('POST', '/api/conta/avisos', { endpoint: FCM, keys: { p256dh: 'x', auth: 'y' } })).statusCode, 400)
+      assert.equal((await conta('POST', '/api/conta/avisos', { endpoint: FCM, keys: KEYS })).statusCode, 200)
+      assert.equal((await conta('POST', '/api/conta/avisos', { endpoint: 'https://web.push.apple.com/QGuQ_abcdefghijklmnop', keys: KEYS })).statusCode, 200)
+    })
+
+    test('a equipe muda o status → cada aparelho recebe um aviso SEM dado pessoal', async () => {
+      entregas = []
+      assert.equal((await req('equipe', 'PATCH', `/api/admin/pre-fichas/${fichaId}`, { status: 'em_contato' })).statusCode, 200)
+      assert.equal(await esperarEntrega(2), 2)
+      assert.deepEqual(entregas.map((e) => e.sub.endpoint).sort(), [FCM, 'https://web.push.apple.com/QGuQ_abcdefghijklmnop'].sort())
+      const texto = JSON.stringify(entregas)
+      assert.doesNotMatch(texto, /Paula|714\.?602|em_contato|Em contato|paula\.avisos/i, 'nada de nome, CPF, e-mail ou situação')
+      assert.match(entregas[0].corpo.texto, /novidade na sua pré-ficha/)
+    })
+
+    test('não avisa: observação sem mudança de status, desistência e opção desligada', async () => {
+      entregas = []
+      await req('equipe', 'PATCH', `/api/admin/pre-fichas/${fichaId}`, { observacoes_internas: 'só uma nota' })
+      await conta('POST', '/api/conta/desistir')
+      await new Promise((r) => setTimeout(r, 600))
+      assert.equal(entregas.length, 0)
+      await ligar(false)
+      await req('equipe', 'PATCH', `/api/admin/pre-fichas/${fichaId}`, { status: 'aguardando' })
+      await new Promise((r) => setTimeout(r, 600))
+      assert.equal(entregas.length, 0, 'desligado pelo administrador: nada é enviado')
+      await ligar(true)
+    })
+
+    test('aparelho que cancelou (410) sai da lista; desligar no aparelho apaga a inscrição; no máximo 10 por pessoa', async () => {
+      const n = async () => Number((await pool.query('select count(*) from push_inscricoes')).rows[0].count)
+      enviar = async (sub) => { if (sub.endpoint === FCM) throw Object.assign(new Error('gone'), { statusCode: 410 }); entregas.push({ sub }) }
+      entregas = []
+      await req('equipe', 'PATCH', `/api/admin/pre-fichas/${fichaId}`, { status: 'em_contato' })
+      await esperarEntrega(1)
+      await new Promise((r) => setTimeout(r, 300))
+      assert.equal(await n(), 1, 'o do FCM (410) foi apagado')
+      assert.equal((await conta('DELETE', '/api/conta/avisos', { endpoint: 'https://web.push.apple.com/QGuQ_abcdefghijklmnop' })).statusCode, 200)
+      assert.equal(await n(), 0)
+      for (let i = 0; i < 12; i++) await conta('POST', '/api/conta/avisos', { endpoint: `${FCM}-${i}`, keys: KEYS })
+      assert.equal(await n(), 10)
+    })
+  })
+
 })

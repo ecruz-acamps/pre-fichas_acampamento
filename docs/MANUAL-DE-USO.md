@@ -499,3 +499,11 @@ Aba **Mensagens** do painel central, pelo **textbee.dev** (um celular Android co
 **Quem recebe:** só **campistas** (quem já participou) de todos os acampamentos: no aniversário e no aniversário de acampamento (pela data de início da edição). A mesma pessoa em dois acampamentos recebe uma vez. Quem responder **SAIR** (ou PARAR) deixa de receber; também dá para bloquear um número pelo painel.
 
 **Atenção ao plano do textbee:** o gratuito permite 50 mensagens por dia e 300 por mês. Com ~40 mil pessoas, os aniversários dos campistas passam disso: use o plano Pro (5.000/mês) ou maior e ajuste o **máximo por dia**. Use **Ver prévia de hoje** para saber quantas mensagens sairiam.
+
+## Avisos no celular (situação da pré-ficha)
+
+- **Administrador:** em **Configurações → Área do participante**, marque **"Enviar aviso no celular quando a situação da pré-ficha mudar"** e salve. Vem desligado.
+- **Participante:** na área dele aparece **"Receber avisos no celular"**. Ao tocar, o celular pergunta se permite notificações; aceitando, ele recebe um aviso sempre que a situação mudar (em contato, confirmado…). Dá para **desligar** no mesmo lugar. Vale por aparelho.
+- **iPhone:** só funciona com o app instalado na tela inicial (Compartilhar → "Adicionar à Tela de Início") e iOS 16.4 ou mais novo; a área explica isso quando falta. **Android:** funciona no Chrome, instalado ou não.
+- **Privacidade:** o aviso aparece na tela bloqueada, por isso diz só "Há uma novidade na sua pré-ficha. Toque para ver.". Nome, CPF e situação só aparecem depois do login.
+- Desligar a opção em Configurações para todos os envios na hora (as inscrições dos aparelhos ficam guardadas para quando ligar de novo).

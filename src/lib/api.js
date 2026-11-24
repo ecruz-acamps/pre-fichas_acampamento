@@ -43,7 +43,7 @@ export const api = {
   post: (url, corpo = {}) => requisitar('POST', url, corpo),
   patch: (url, corpo = {}) => requisitar('PATCH', url, corpo),
   put: (url, corpo = {}) => requisitar('PUT', url, corpo),
-  delete: (url) => requisitar('DELETE', url),
+  delete: (url, corpo) => requisitar('DELETE', url, corpo),
   /** Envia um arquivo como corpo da requisição (ex.: logo). */
   enviarArquivo: (url, arquivo, { metodo = 'PUT', cabecalhos = {} } = {}) => requisitar(metodo, url, undefined, arquivo, cabecalhos),
 }

@@ -537,6 +537,8 @@ a.botao-secundario { text-decoration: none; display: inline-block; }
 .area-participante h2 { margin: 0; }
 .bloco-situacao { margin-top: 20px; padding-top: 16px; border-top: 1px solid #eee; }
 .bloco-situacao h3 { margin: 0 0 8px; color: var(--cor); }
+.bloco-avisos { margin-top: 20px; padding-top: 16px; border-top: 1px solid #eee; }
+.bloco-avisos h3 { margin: 0 0 8px; color: var(--cor); }
 .posicao-participante { font-size: 1.15rem; }
 .tela-entrada .link, .tela-entrada .termos-uso, .area-participante .link { color: var(--cor); }
 .botoes-area { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin: 16px 0 8px; }
